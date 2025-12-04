@@ -1246,160 +1246,97 @@ def get_did_history(
         "total_versions": len(history_sorted)
     }
 
-#@app.get("/did-history", tags=["sut"])
-#def get_did_history(
-#    benchmarkExecutionID: str = Query(...),
-#    iterationID: Optional[str] = Query(None)
-#):
-#    """
-#    Return full DID history + change log for a given benchmark/iteration.
-#    Uses:
-#      - Mongo: latest state (did_vault_col)
-#      - Vault: chain + per-DID snapshots
-#    """
-#
-#    # ---------- Resolve iterationID (same logic as append_did) ----------
-#    record = None
-#
-#    if iterationID:
-#        record = did_vault_col.find_one({
-#            "benchmarkExecutionID": benchmarkExecutionID,
-#            "iterationID": iterationID
-#        })
-#        if not record:
-#            raise HTTPException(
-#                404,
-#                f"No record found for benchmarkExecutionID={benchmarkExecutionID} and iterationID={iterationID}"
-#            )
-#    else:
-#        matches = list(did_vault_col.find(
-#            {"benchmarkExecutionID": benchmarkExecutionID},
-#            {"_id": 0, "iterationID": 1}
-#        ))
-#        iteration_ids = list({m.get("iterationID") for m in matches if m.get("iterationID")})
-#
-#        if len(iteration_ids) == 0:
-#            raise HTTPException(404, f"No iterations found for {benchmarkExecutionID}")
-#        elif len(iteration_ids) == 1:
-#            iterationID = iteration_ids[0]
-#            record = did_vault_col.find_one({
-#                "benchmarkExecutionID": benchmarkExecutionID,
-#                "iterationID": iterationID
-#            })
-#        else:
-#            raise HTTPException(
-#                400,
-#                f"Multiple iterations found for {benchmarkExecutionID} — specify iterationID"
-#            )
-#
-#    if not record:
-#        raise HTTPException(
-#            404,
-#            f"No did_vault record found for benchmarkExecutionID={benchmarkExecutionID} and iterationID={iterationID}"
-#        )
-#
-#    # ---------- Read chain from Vault ----------
-#    chain_path = f"{iterationID}/chain"
-#    raw_chain_obj = vault_read(VAULT_MOUNT, chain_path) or {}
-#
-#    if isinstance(raw_chain_obj, list):
-#        chain_list = raw_chain_obj
-#    elif isinstance(raw_chain_obj, dict):
-#        chain_obj = normalize_vault_object(raw_chain_obj)
-#        if isinstance(chain_obj, list):
-#            chain_list = chain_obj
-#        elif isinstance(chain_obj, dict):
-#            chain_list = chain_obj.get("chain", [])
-#        else:
-#            chain_list = []
-#    else:
-#        chain_list = []
-#
-#    if not isinstance(chain_list, list):
-#        chain_list = []
-#
-#    # ---------- Read snapshots for each DID in chain ----------
-#    history: List[Dict[str, Any]] = []
-#
-#    for did in chain_list:
-#        try:
-#            snap_raw = vault_read(VAULT_MOUNT, f"{iterationID}/{did}") or {}
-#            snap = normalize_vault_object(snap_raw) if snap_raw else {}
-#
-#            # Ensure at least did + timestamp are present in the response
-#            history.append({
-#                "did": snap.get("did", did),
-#                "previous_did": snap.get("previous_did"),
-#                "timestamp": snap.get("timestamp"),
-#                "benchmarkExecutionID": snap.get("benchmarkExecutionID", benchmarkExecutionID),
-#                "iterationID": snap.get("iterationID", iterationID),
-#                "data": snap.get("data"),
-#                "diff": snap.get("diff"),
-#                "merkle_root": snap.get("merkle_root")
-#            })
-#        except Exception as e:
-#            # Don't break whole history if one snapshot is bad
-#            history.append({
-#                "did": did,
-#                "error": f"Failed to read snapshot for DID {did}: {e}"
-#            })
-#
-#    # Sort by timestamp if available
-#    def _ts_key(entry: Dict[str, Any]):
-#        ts = entry.get("timestamp")
-#        return ts or ""
-#
-#    history_sorted = sorted(history, key=_ts_key)
-#
-#    # ---------- Build response ----------
-#    latest_did = record.get("did")
-#    latest_data = record.get("data")
-#    latest_merkle = record.get("merkle_root")
-#    last_updated = record.get("last_updated")
-#
-#    return {
-#        "benchmarkExecutionID": benchmarkExecutionID,
-#        "iterationID": iterationID,
-#        "current": {
-#            "did": latest_did,
-#            "data": latest_data,
-#            "merkle_root": latest_merkle,
-#            "last_updated": last_updated,
-#        },
-#        "chain": chain_list,
-#        "versions": history_sorted,
-#        "total_versions": len(chain_list)
-#    }
-
-# -------------------------
-# Search SUT endpoint (benchmark/iteration)
-# -------------------------
 @app.get("/search-sut", tags=["sut"])
-def search_sut(benchmarkExecutionID: Optional[str] = Query(None), iterationID: Optional[str] = Query(None), x_api_token: str = Header(...)):
+def search_sut(
+    benchmarkExecutionID: Optional[str] = Query(None),
+    iterationID: Optional[str] = Query(None),
+    x_api_token: str = Header(...)
+):
     if x_api_token != API_ACCESS_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid API token")
+
     if not benchmarkExecutionID and not iterationID:
         raise HTTPException(status_code=400, detail="Provide benchmarkExecutionID or iterationID")
 
     if iterationID:
-        try:
-            mapping = get_from_vault_by_iteration(iterationID)
-            return {"source": "vault", "mapping": mapping}
-        except HTTPException:
-            rec = did_vault_col.find_one({"iterationID": iterationID})
-            if rec:
-                return {"source": "mongo", "mapping": clean_mongo_doc(rec)}
-            raise
+        return fetch_by_iteration(iterationID)
 
     if benchmarkExecutionID:
-        try:
-            master = get_from_vault_by_benchmark(benchmarkExecutionID)
-            return {"source": "vault", "mapping": master}
-        except HTTPException:
-            recs = list(did_vault_col.find({"benchmarkExecutionID": benchmarkExecutionID}, {"_id": 0}))
-            if recs:
-                return {"source": "mongo", "mappings": clean_mongo_doc(recs)}
-            raise HTTPException(status_code=404, detail="No mapping found for provided benchmark/iteration")
+        match = did_vault_col.find_one(
+            {"benchmarkExecutionID": benchmarkExecutionID},
+            {"iterationID": 1, "_id": 0}
+        )
+        if not match:
+            raise HTTPException(404, "No mapping found")
+
+        iterationID = match["iterationID"]
+        return fetch_by_iteration(iterationID)
+
+
+def fetch_by_iteration(iterationID: str):
+    """
+    Fetch all DID records from Vault under secret/<iterationID>/…
+    """
+    try:
+        # List folder
+        keys_resp = client.secrets.kv.v2.list_secrets(
+            path=iterationID, mount_point="secret"
+        )
+        keys = keys_resp.get("data", {}).get("keys", [])
+
+        did_records = []
+
+        for key in keys:
+            if key.endswith("/"):  # Skip inner folders if any
+                continue
+
+            result = client.secrets.kv.v2.read_secret_version(
+                path=f"{iterationID}/{key}", mount_point="secret"
+            )
+            data = result.get("data", {}).get("data", {})
+            did_records.append(data)
+
+        if did_records:
+            return {"source": "vault", "records": did_records}
+
+    except Exception:
+        pass  # fallback below
+
+    # Fallback: Mongo
+    recs = list(did_vault_col.find({"iterationID": iterationID}, {"_id": 0}))
+    if recs:
+        return {"source": "mongo", "records": recs}
+
+    raise HTTPException(404, "No records found")
+
+# Search SUT endpoint (benchmark/iteration)
+# -------------------------
+#@app.get("/search-sut", tags=["sut"])
+#def search_sut(benchmarkExecutionID: Optional[str] = Query(None), iterationID: Optional[str] = Query(None), x_api_token: str = Header(...)):
+#    if x_api_token != API_ACCESS_TOKEN:
+#        raise HTTPException(status_code=401, detail="Invalid API token")
+#    if not benchmarkExecutionID and not iterationID:
+#        raise HTTPException(status_code=400, detail="Provide benchmarkExecutionID or iterationID")
+#
+#    if iterationID:
+#        try:
+#            mapping = get_from_vault_by_iteration(iterationID)
+#            return {"source": "vault", "mapping": mapping}
+#        except HTTPException:
+#            rec = did_vault_col.find_one({"iterationID": iterationID})
+#            if rec:
+#                return {"source": "mongo", "mapping": clean_mongo_doc(rec)}
+#            raise
+#
+#    if benchmarkExecutionID:
+#        try:
+#            master = get_from_vault_by_benchmark(benchmarkExecutionID)
+#            return {"source": "vault", "mapping": master}
+#        except HTTPException:
+#            recs = list(did_vault_col.find({"benchmarkExecutionID": benchmarkExecutionID}, {"_id": 0}))
+#            if recs:
+#                return {"source": "mongo", "mappings": clean_mongo_doc(recs)}
+#            raise HTTPException(status_code=404, detail="No mapping found for provided benchmark/iteration")
 
 # -------------------------
 # Health
