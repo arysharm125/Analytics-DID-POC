@@ -19,6 +19,7 @@ from pydantic import BaseModel
 import io
 from utils import get_vault_config, init_vault_client
 from utils import diff, checksum, merkle_root
+import pymongo
 
 #  Import constants (environment configs, collection names)
 from constants import (
@@ -77,8 +78,11 @@ from utils import (
     get_from_vault_by_did,
     _create_child_did_for_iteration,
     create_and_store_mappings,
-    normalize_vault_object
-)
+    normalize_vault_object,
+    compute_diff,
+    now_timestamp,
+    compute_merkle
+    )
 
 # Initialize FastAPI app
 
@@ -204,11 +208,12 @@ app.include_router(policy_router)
 from access_gateway import app as access_gateway_app
 app.mount("/access", access_gateway_app)
 
+import pymongo
+
 @app.on_event("startup")
 async def startup():
     # init vault client and issuer
     try:
-        # ensure vault client is usable
         if not vault_client.is_authenticated():
             logger.warning("Vault client not authenticated (token may be missing/invalid)")
         else:
@@ -216,27 +221,67 @@ async def startup():
     except Exception:
         logger.exception("Vault initialization check failed during startup")
 
+    # ensure issuer did
     try:
         ensure_issuer_did()
     except Exception:
         logger.exception("Failed to ensure issuer DID during startup")
 
-    # index for token cleanup
+    # create TTL index for vc tokens (if permitted)
     try:
-        db.get_collection(VC_TOKEN_COLLECTION).create_index("expires_at", expireAfterSeconds=0)
+        vc_col = db.get_collection(VC_TOKEN_COLLECTION)
+        existing_vc_indexes = {idx["name"]: idx for idx in vc_col.list_indexes()}
+
+        if "expires_at_1" not in existing_vc_indexes:
+            logger.info("Creating TTL index on vc_tokens.expires_at ...")
+            vc_col.create_index(
+                [("expires_at", 1)],
+                expireAfterSeconds=0,
+                name="expires_at_1"
+            )
+        else:
+            logger.info("TTL index for vc tokens already exists")
+
+    except pymongo.errors.OperationFailure as e:
+        if e.code == 13:  # Unauthorized
+            logger.warning("Skipping TTL index creation — insufficient MongoDB permissions")
+        else:
+            logger.exception("Mongo OperationFailure during TTL index creation")
     except Exception:
-        logger.exception("Failed to create TTL index for vc tokens")
+        logger.exception("Unexpected error while creating TTL index for vc tokens")
 
     # ensure mongo indexes for did_vault and audit_log
     try:
-        #did_vault_col.create_index([("did", 1)], unique=True)
-        did_vault_col.create_index([("benchmarkExecutionID", 1), ("iterationID", 1)], unique=False)
-        did_vault_col.create_index([("createdAt", -1)])
-        audit_log.create_index([("timestamp", -1)])
-    except Exception:
-        logger.exception("Failed to ensure Mongo indexes on startup")
+        existing_dv_indexes = list(did_vault_col.list_indexes())
+        required_key = {"benchmarkExecutionID": 1, "iterationID": 1}
 
-# -------------------------
+        composite_exists = any(
+            idx.get("key") == required_key
+            for idx in existing_dv_indexes
+        )
+
+        if composite_exists:
+            logger.info("Composite index (benchmarkExecutionID, iterationID) already exists")
+        else:
+            logger.info("Creating composite index benchmark_iter_idx ...")
+            did_vault_col.create_index(
+                list(required_key.items()),
+                name="benchmark_iter_idx"
+            )
+
+        did_vault_col.create_index([("createdAt", -1)], name="createdAt_desc_idx")
+        audit_log.create_index([("timestamp", -1)], name="audit_ts_desc_idx")
+
+        logger.info("MongoDB indexes ensured successfully")
+
+    except pymongo.errors.OperationFailure as e:
+        if e.code == 85:  # Index exists but name conflict
+            logger.warning("Composite index exists with a different name — skipping creation")
+        else:
+            logger.exception(f"Mongo OperationFailure ensuring DID/Audit indexes: {e}")
+    except Exception:
+        logger.exception("Unexpected error ensuring Mongo indexes on startup")
+
 # Combined /create-sut-did endpoint (writes only to did_vault/vault)
 # -------------------------
 @app.post("/create-sut-did", tags=["sut"])
@@ -491,71 +536,61 @@ def resolve_did(request: dict):
             "benchmark_doc": full_doc
         }))
 
-@app.post("/append-did")
-def append_did(payload: dict):
 
-    benchmarkExecutionID = payload.get("benchmarkExecutionID")
-    iterationID = payload.get("iterationID")
+from pydantic import BaseModel
+from typing import Dict, Any, Optional
+
+class DIDAppendRequest(BaseModel):
+    benchmarkExecutionID: str
+    iterationID: str
+    data: Dict[str, Any]
+
+from fastapi import HTTPException, Query, Request
+from utils import validate_amd_email
+
+
+@app.post("/append-did", tags=["sut"])
+async def append_did(
+    body: DIDAppendRequest,
+    update_message: str = Query(...),
+    updated_by: str = Query(...)
+):
+
+    # ---------------- EMAIL VALIDATION ---------------------
+    validate_amd_email(updated_by)
+
+    benchmarkExecutionID = body.benchmarkExecutionID
+    iterationID = body.iterationID
+    incoming_data = body.data or {}
 
     if not benchmarkExecutionID:
         raise HTTPException(400, "benchmarkExecutionID is required")
 
-    # ✅ CASE 1: iterationID PROVIDED → update ONLY that record
-    if iterationID:
-        record = did_vault_col.find_one({
-            "benchmarkExecutionID": benchmarkExecutionID,
-            "iterationID": iterationID
-        })
+    # ---------------- FETCH RECORD -------------------------
+    record = did_vault_col.find_one({
+        "benchmarkExecutionID": benchmarkExecutionID,
+        "iterationID": iterationID
+    })
 
-        if not record:
-            raise HTTPException(
-                404,
-                f"No record found for benchmarkExecutionID={benchmarkExecutionID} and iterationID={iterationID}"
-            )
+    if not record:
+        raise HTTPException(404, "Record not found for provided benchmarkExecutionID and iterationID")
 
-    # ✅ CASE 2: iterationID NOT PROVIDED → detect single vs multi
-    else:
-        matches = list(did_vault_col.find(
-            {"benchmarkExecutionID": benchmarkExecutionID},
-            {"_id": 0, "iterationID": 1}
-        ))
-
-        iteration_ids = list({m.get("iterationID") for m in matches if m.get("iterationID")})
-
-        if len(iteration_ids) == 0:
-            raise HTTPException(404, f"No iterations found for {benchmarkExecutionID}")
-
-        elif len(iteration_ids) == 1:
-            iterationID = iteration_ids[0]
-
-            record = did_vault_col.find_one({
-                "benchmarkExecutionID": benchmarkExecutionID,
-                "iterationID": iterationID
-            })
-
-        else:
-            raise HTTPException(
-                400,
-                f"Multiple iterations found — specify iterationID"
-            )
-
-    # ✅ At this point we have a guaranteed record
     old_data = record.get("data") or {}
     old_did = record.get("did")
-    incoming_data = payload.get("data") or {}
 
-    # ✅ merge
+    # ---------------- MERGE OLD + NEW DATA ------------------
     new_data = {**old_data, **incoming_data}
 
-    # ✅ generate new DID
-    new_did = generate_did()
-    diff_log = diff(old_data, new_data)
+    # ---------------- NEW DID FROM VERAMO -------------------
+    new_did = generate_did()  # << your original Veramo call
 
-    # ✅ read chain SAFELY
+    # ---------------- COMPUTE DIFF --------------------------
+    diff_log = compute_diff(old_data, new_data)
+
+    # ---------------- READ CHAIN ----------------------------
     chain_path = f"{iterationID}/chain"
     raw_chain = vault_read(VAULT_MOUNT, chain_path)
 
-    # ✅ normalize ANY returned value
     if raw_chain is None:
         chain_list = []
     elif isinstance(raw_chain, list):
@@ -563,34 +598,47 @@ def append_did(payload: dict):
     elif isinstance(raw_chain, dict):
         chain_list = raw_chain.get("chain", []) or []
     else:
-        chain_list = []  # fallback
+        chain_list = []
 
-    # ✅ append new DID
+    # ---------------- APPEND NEW DID TO CHAIN --------------
     chain_list.append(new_did)
 
-    # ✅ compute merkle
+    # ---------------- COMPUTE MERKLE ROOT -------------------
     merkle = merkle_root(chain_list)
 
-    # ✅ write normalized chain
+    # ---------------- WRITE CHAIN BACK TO VAULT -------------
     vault_write(VAULT_MOUNT, chain_path, {"chain": chain_list})
 
-    # ✅ store snapshot
+    # ---------------- STORE VERSION SNAPSHOT ----------------
+    snapshot_payload = {
+        "did": new_did,
+        "previous_did": old_did,
+        "timestamp": now_timestamp(),
+        "benchmarkExecutionID": benchmarkExecutionID,
+        "iterationID": iterationID,
+
+        # FULL CURRENT DATA
+        "data": new_data,
+
+        # FULL PREVIOUS DATA
+        "previous_data": old_data,
+
+        # DIFF BETWEEN THEM
+        "diff": diff_log,
+
+        "updated_by": updated_by,
+        "update_message": update_message,
+
+        "merkle_root": merkle
+    }
+
     vault_write(
         VAULT_MOUNT,
         f"{iterationID}/{new_did}",
-        {
-            "did": new_did,
-            "previous_did": old_did,
-            "timestamp": now_iso(),
-            "benchmarkExecutionID": benchmarkExecutionID,
-            "iterationID": iterationID,
-            "data": new_data,
-            "diff": diff_log,
-            "merkle_root": merkle
-        }
+        {"data": snapshot_payload}  # KV v2 format required
     )
 
-    # ✅ update existing Mongo only
+    # ---------------- UPDATE MONGO (LATEST VERSION ONLY) ----
     did_vault_col.update_one(
         {
             "benchmarkExecutionID": benchmarkExecutionID,
@@ -602,11 +650,14 @@ def append_did(payload: dict):
                 "data": new_data,
                 "previous_did": old_did,
                 "merkle_root": merkle,
-                "last_updated": now_iso()
+                "last_updated": now_timestamp(),
+                "updated_by": updated_by,
+                "update_message": update_message
             }
         }
     )
 
+    # ---------------- RESPONSE ------------------------------
     return {
         "status": "updated",
         "benchmarkExecutionID": benchmarkExecutionID,
@@ -614,147 +665,144 @@ def append_did(payload: dict):
         "new_did": new_did,
         "previous_did": old_did,
         "merkle_root": merkle,
+        "chain_length": len(chain_list),
         "diff": diff_log
     }
 
-@app.post("/update-entitlement-level", tags=["sut"])
-def update_level(req: UpdateLevelRequest):
-    """
-    Update iteration-level metadata (L1, L2, L3, etc.) for a given benchmark.
-    Writes ONLY to did_vault (no writes to benchmark_executions).
-    """
-    benchmarkExecutionID = req.benchmarkExecutionID
-    iterationID = req.iterationID
-    new_level = req.level
 
-    # Ensure the iteration exists (read only from QA collection if needed)
-    doc = qa_col.find_one({"benchmarkExecutionID": benchmarkExecutionID})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Benchmark not found")
-
-    # verify iteration exists in benchmark (READ)
-    found = False
-    def check_iter(obj):
-        nonlocal found
-        if isinstance(obj, dict):
-            if obj.get("iterationID") == iterationID:
-                found = True
-                return
-            for v in obj.values():
-                check_iter(v)
-        elif isinstance(obj, list):
-            for i in obj:
-                check_iter(i)
-    check_iter(doc)
-    if not found:
-        raise HTTPException(status_code=404, detail=f"Iteration {iterationID} not found in benchmark")
-
-    # UPDATE only in did_vault collection
-    try:
-        res = did_vault_col.update_one(
-            {"benchmarkExecutionID": benchmarkExecutionID, "iterationID": iterationID},
-            {"$set": {"level": new_level, "last_updated": now_iso()}},
-            upsert=True
-        )
-        # Also update Vault per-iteration path for consistency
-        try:
-            iter_path = _vault_key_for_iteration(iterationID)
-            existing = {}
-            try:
-                existing = vault_read(VAULT_MOUNT, iter_path)
-            except Exception:
-                existing = {}
-            merged = {**existing, "iterationID": iterationID, "benchmarkExecutionID": benchmarkExecutionID, "level": new_level, "last_updated": now_iso()}
-            vault_write(VAULT_MOUNT, iter_path, merged)
-        except Exception:
-            logger.exception("Failed to sync iteration level to Vault (non-blocking)")
-    except Exception as e:
-        logger.exception("Failed to update level in did_vault: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to update entitlement level")
-
-    return {
-        "benchmarkExecutionID": benchmarkExecutionID,
-        "iterationID": iterationID,
-        "new_level": new_level,
-        "status": "updated"
-    }
-
-# -------------------------
-# Issue VC (kept as previous logic)
-# -------------------------
-@app.post("/bulk-entitlement-update", tags=["sut"])
-def bulk_entitlement_update(req: BulkEntitlementUpdateRequest):
-    """
-    Bulk entitlement update based only on benchmarkExecutionID.
-    - Applies the entitlement update to all iterations inside the benchmark.
-    - Writes ONLY to did_vault (no writes to benchmark_executions).
-    """
-
-    benchmarkExecutionID = req.benchmarkExecutionID
-
-    # Combine all entitlement updates into one merged object
-    combined_entitlement = {}
-    for item in req.updates:
-        combined_entitlement.update(item.entitlement)
-
-    # Fetch existing benchmark record (READ only)
-    doc = qa_col.find_one({"benchmarkExecutionID": benchmarkExecutionID})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Benchmark not found")
-
-    # Determine which iterationIDs exist in benchmark (READ)
-    iteration_ids = []
-    def gather_iter(obj):
-        if isinstance(obj, dict):
-            if "iterationID" in obj:
-                iteration_ids.append(obj["iterationID"])
-            for v in obj.values():
-                gather_iter(v)
-        elif isinstance(obj, list):
-            for i in obj:
-                gather_iter(i)
-    gather_iter(doc)
-
-    if not iteration_ids:
-        raise HTTPException(status_code=404, detail="No iterations found for entitlement update")
-
-    updated_iterations = []
-    # Apply entitlement updates to did_vault entries for each iterationID
-    for it in iteration_ids:
-        try:
-            did_vault_col.update_one(
-                {"benchmarkExecutionID": benchmarkExecutionID, "iterationID": it},
-                {"$set": {"entitlement": combined_entitlement, "entitlement_updated_at": now_iso()}},
-                upsert=True
-            )
-            # also sync to per-iteration Vault path
-            try:
-                iter_path = _vault_key_for_iteration(it)
-                existing = {}
-                try:
-                    existing = vault_read(VAULT_MOUNT, iter_path)
-                except Exception:
-                    existing = {}
-                merged = {**existing, "iterationID": it, "benchmarkExecutionID": benchmarkExecutionID, "entitlement": combined_entitlement, "entitlement_updated_at": now_iso()}
-                vault_write(VAULT_MOUNT, iter_path, merged)
-            except Exception:
-                logger.exception("Failed to sync entitlement to Vault for iteration %s (non-blocking)", it)
-
-            updated_iterations.append(it)
-        except Exception as e:
-            logger.exception("Failed to update entitlement for iteration %s: %s", it, e)
-
-    if not updated_iterations:
-        raise HTTPException(status_code=500, detail="Failed to update any iterations")
-
-    return {
-        "benchmarkExecutionID": benchmarkExecutionID,
-        "applied_entitlement": combined_entitlement,
-        "updated_iterations": updated_iterations,
-        "total_iterations_updated": len(updated_iterations),
-        "status": "success"
-    }
-
+#    """
+#    benchmarkExecutionID = req.benchmarkExecutionID
+#    iterationID = req.iterationID
+#    new_level = req.level
+#
+#    # Ensure the iteration exists (read only from QA collection if needed)
+#    doc = qa_col.find_one({"benchmarkExecutionID": benchmarkExecutionID})
+#    if not doc:
+#        raise HTTPException(status_code=404, detail="Benchmark not found")
+#
+#    # verify iteration exists in benchmark (READ)
+#    found = False
+#    def check_iter(obj):
+#        nonlocal found
+#        if isinstance(obj, dict):
+#            if obj.get("iterationID") == iterationID:
+#                found = True
+#                return
+#            for v in obj.values():
+#                check_iter(v)
+#        elif isinstance(obj, list):
+#            for i in obj:
+#                check_iter(i)
+#    check_iter(doc)
+#    if not found:
+#        raise HTTPException(status_code=404, detail=f"Iteration {iterationID} not found in benchmark")
+#
+#    # UPDATE only in did_vault collection
+#    try:
+#        res = did_vault_col.update_one(
+#            {"benchmarkExecutionID": benchmarkExecutionID, "iterationID": iterationID},
+#            {"$set": {"level": new_level, "last_updated": now_iso()}},
+#            upsert=True
+#        )
+#        # Also update Vault per-iteration path for consistency
+#        try:
+#            iter_path = _vault_key_for_iteration(iterationID)
+#            existing = {}
+#            try:
+#                existing = vault_read(VAULT_MOUNT, iter_path)
+#            except Exception:
+#                existing = {}
+#            merged = {**existing, "iterationID": iterationID, "benchmarkExecutionID": benchmarkExecutionID, "level": new_level, "last_updated": now_iso()}
+#            vault_write(VAULT_MOUNT, iter_path, merged)
+#        except Exception:
+#            logger.exception("Failed to sync iteration level to Vault (non-blocking)")
+#    except Exception as e:
+#        logger.exception("Failed to update level in did_vault: %s", e)
+#        raise HTTPException(status_code=500, detail="Failed to update entitlement level")
+#
+#    return {
+#        "benchmarkExecutionID": benchmarkExecutionID,
+#        "iterationID": iterationID,
+#        "new_level": new_level,
+#        "status": "updated"
+#    }
+#
+## -------------------------
+## Issue VC (kept as previous logic)
+## -------------------------
+#@app.post("/bulk-entitlement-update", tags=["sut"])
+#def bulk_entitlement_update(req: BulkEntitlementUpdateRequest):
+#    """
+#    Bulk entitlement update based only on benchmarkExecutionID.
+#    - Applies the entitlement update to all iterations inside the benchmark.
+#    - Writes ONLY to did_vault (no writes to benchmark_executions).
+#    """
+#
+#    benchmarkExecutionID = req.benchmarkExecutionID
+#
+#    # Combine all entitlement updates into one merged object
+#    combined_entitlement = {}
+#    for item in req.updates:
+#        combined_entitlement.update(item.entitlement)
+#
+#    # Fetch existing benchmark record (READ only)
+#    doc = qa_col.find_one({"benchmarkExecutionID": benchmarkExecutionID})
+#    if not doc:
+#        raise HTTPException(status_code=404, detail="Benchmark not found")
+#
+#    # Determine which iterationIDs exist in benchmark (READ)
+#    iteration_ids = []
+#    def gather_iter(obj):
+#        if isinstance(obj, dict):
+#            if "iterationID" in obj:
+#                iteration_ids.append(obj["iterationID"])
+#            for v in obj.values():
+#                gather_iter(v)
+#        elif isinstance(obj, list):
+#            for i in obj:
+#                gather_iter(i)
+#    gather_iter(doc)
+#
+#    if not iteration_ids:
+#        raise HTTPException(status_code=404, detail="No iterations found for entitlement update")
+#
+#    updated_iterations = []
+#    # Apply entitlement updates to did_vault entries for each iterationID
+#    for it in iteration_ids:
+#        try:
+#            did_vault_col.update_one(
+#                {"benchmarkExecutionID": benchmarkExecutionID, "iterationID": it},
+#                {"$set": {"entitlement": combined_entitlement, "entitlement_updated_at": now_iso()}},
+#                upsert=True
+#            )
+#            # also sync to per-iteration Vault path
+#            try:
+#                iter_path = _vault_key_for_iteration(it)
+#                existing = {}
+#                try:
+#                    existing = vault_read(VAULT_MOUNT, iter_path)
+#                except Exception:
+#                    existing = {}
+#                merged = {**existing, "iterationID": it, "benchmarkExecutionID": benchmarkExecutionID, "entitlement": combined_entitlement, "entitlement_updated_at": now_iso()}
+#                vault_write(VAULT_MOUNT, iter_path, merged)
+#            except Exception:
+#                logger.exception("Failed to sync entitlement to Vault for iteration %s (non-blocking)", it)
+#
+#            updated_iterations.append(it)
+#        except Exception as e:
+#            logger.exception("Failed to update entitlement for iteration %s: %s", it, e)
+#
+#    if not updated_iterations:
+#        raise HTTPException(status_code=500, detail="Failed to update any iterations")
+#
+#    return {
+#        "benchmarkExecutionID": benchmarkExecutionID,
+#        "applied_entitlement": combined_entitlement,
+#        "updated_iterations": updated_iterations,
+#        "total_iterations_updated": len(updated_iterations),
+#        "status": "success"
+#    }
+#
 
 @app.post("/issue-vc/{did}")
 def issue_vc_for_did(did: str, token_lifespan: int = 10):
@@ -1080,131 +1128,248 @@ def normalize_vault_object(obj):
 
 from typing import Optional, List, Dict, Any
 from fastapi import Query
-
+def vault_read_raw(path: str):
+    """
+    Direct raw Vault GET for KV2: no key mapping performed.
+    """
+    try:
+        result = client.secrets.kv.v2.read_secret_version(
+            path=path.replace("secret/", ""),
+            mount_point="secret"
+        )
+        return result
+    except Exception:
+        return {}
 @app.get("/did-history", tags=["sut"])
 def get_did_history(
     benchmarkExecutionID: str = Query(...),
     iterationID: Optional[str] = Query(None)
 ):
     """
-    Return full DID history + change log for a given benchmark/iteration.
-    Uses:
-      - Mongo: latest state (did_vault_col)
-      - Vault: chain + per-DID snapshots
+    Return full DID history using Vault DID snapshots 
+    following `previous_did` chain.
     """
 
-    # ---------- Resolve iterationID (same logic as append_did) ----------
-    record = None
-
+    # ---------- Find correct iteration ----------
     if iterationID:
         record = did_vault_col.find_one({
             "benchmarkExecutionID": benchmarkExecutionID,
             "iterationID": iterationID
         })
-        if not record:
-            raise HTTPException(
-                404,
-                f"No record found for benchmarkExecutionID={benchmarkExecutionID} and iterationID={iterationID}"
-            )
     else:
-        matches = list(did_vault_col.find(
-            {"benchmarkExecutionID": benchmarkExecutionID},
-            {"_id": 0, "iterationID": 1}
-        ))
-        iteration_ids = list({m.get("iterationID") for m in matches if m.get("iterationID")})
+        matches = list(did_vault_col.find({"benchmarkExecutionID": benchmarkExecutionID}, {"iterationID": 1}))
+        ids = [m["iterationID"] for m in matches if m.get("iterationID")]
+        ids = list(dict.fromkeys(ids))
 
-        if len(iteration_ids) == 0:
-            raise HTTPException(404, f"No iterations found for {benchmarkExecutionID}")
-        elif len(iteration_ids) == 1:
-            iterationID = iteration_ids[0]
-            record = did_vault_col.find_one({
-                "benchmarkExecutionID": benchmarkExecutionID,
-                "iterationID": iterationID
-            })
-        else:
-            raise HTTPException(
-                400,
-                f"Multiple iterations found for {benchmarkExecutionID} — specify iterationID"
-            )
+        if not ids:
+            raise HTTPException(404, "No iterations found")
+        if len(ids) > 1:
+            raise HTTPException(400, "Multiple iterations found — specify iterationID")
+
+        iterationID = ids[0]
+        record = did_vault_col.find_one({
+            "benchmarkExecutionID": benchmarkExecutionID,
+            "iterationID": iterationID
+        })
 
     if not record:
-        raise HTTPException(
-            404,
-            f"No did_vault record found for benchmarkExecutionID={benchmarkExecutionID} and iterationID={iterationID}"
-        )
+        raise HTTPException(404, "Record not found")
 
-    # ---------- Read chain from Vault ----------
-    chain_path = f"{iterationID}/chain"
-    raw_chain_obj = vault_read(VAULT_MOUNT, chain_path) or {}
+    # ---------- Traverse DID chain backwards ----------
+    chain = []
+    current_did = record.get("did")
 
-    if isinstance(raw_chain_obj, list):
-        chain_list = raw_chain_obj
-    elif isinstance(raw_chain_obj, dict):
-        chain_obj = normalize_vault_object(raw_chain_obj)
-        if isinstance(chain_obj, list):
-            chain_list = chain_obj
-        elif isinstance(chain_obj, dict):
-            chain_list = chain_obj.get("chain", [])
-        else:
-            chain_list = []
-    else:
-        chain_list = []
+    while current_did:
+        chain.append(current_did)
 
-    if not isinstance(chain_list, list):
-        chain_list = []
-
-    # ---------- Read snapshots for each DID in chain ----------
-    history: List[Dict[str, Any]] = []
-
-    for did in chain_list:
         try:
-            snap_raw = vault_read(VAULT_MOUNT, f"{iterationID}/{did}") or {}
-            snap = normalize_vault_object(snap_raw) if snap_raw else {}
+            result = vault_client.secrets.kv.v2.read_secret_version(
+                path=f"{iterationID}/{current_did}",
+                mount_point="secret"
+            )
+            data_obj = result.get("data", {}).get("data", {})
+            previous_did = data_obj.get("previous_did")
+        except Exception:
+            previous_did = None
 
-            # Ensure at least did + timestamp are present in the response
+        if not previous_did or previous_did in chain:
+            break
+        current_did = previous_did
+
+    # Remove duplicates, keep correct order
+    chain = list(dict.fromkeys(chain))
+
+    # ---------- Fetch snapshot for each DID ----------
+    history = []
+
+    for did in chain:
+        try:
+            secret_path = f"{iterationID}/{did}"
+            snap_raw = vault_client.secrets.kv.v2.read_secret_version(
+                path=secret_path,
+                mount_point="secret"
+            )
+
+            data_obj = snap_raw.get("data", {}).get("data", {}) if snap_raw else {}
+
             history.append({
-                "did": snap.get("did", did),
-                "previous_did": snap.get("previous_did"),
-                "timestamp": snap.get("timestamp"),
-                "benchmarkExecutionID": snap.get("benchmarkExecutionID", benchmarkExecutionID),
-                "iterationID": snap.get("iterationID", iterationID),
-                "data": snap.get("data"),
-                "diff": snap.get("diff"),
-                "merkle_root": snap.get("merkle_root")
+                "did": data_obj.get("did", did),
+                "previous_did": data_obj.get("previous_did"),
+                "timestamp": data_obj.get("timestamp"),
+                "benchmarkExecutionID": data_obj.get("benchmarkExecutionID", benchmarkExecutionID),
+                "iterationID": data_obj.get("iterationID", iterationID),
+                "data": data_obj.get("data"),
+                "diff": data_obj.get("diff"),
+                "merkle_root": data_obj.get("merkle_root"),
+                "update_message": data_obj.get("update_message"),
+                "updated_by": data_obj.get("updated_by"),
             })
+
         except Exception as e:
-            # Don't break whole history if one snapshot is bad
-            history.append({
-                "did": did,
-                "error": f"Failed to read snapshot for DID {did}: {e}"
-            })
+            history.append({"did": did, "error": str(e)})
 
-    # Sort by timestamp if available
-    def _ts_key(entry: Dict[str, Any]):
-        ts = entry.get("timestamp")
-        return ts or ""
+    # Sort versions oldest → newest
+    history_sorted = sorted(history, key=lambda x: x.get("timestamp") or "")
 
-    history_sorted = sorted(history, key=_ts_key)
-
-    # ---------- Build response ----------
-    latest_did = record.get("did")
-    latest_data = record.get("data")
-    latest_merkle = record.get("merkle_root")
-    last_updated = record.get("last_updated")
-
+    # ---------- Response ----------
     return {
         "benchmarkExecutionID": benchmarkExecutionID,
         "iterationID": iterationID,
         "current": {
-            "did": latest_did,
-            "data": latest_data,
-            "merkle_root": latest_merkle,
-            "last_updated": last_updated,
+            "did": record.get("did"),
+            "data": record.get("data"),
+            "merkle_root": record.get("merkle_root"),
+            "last_updated": record.get("last_updated"),
         },
-        "chain": chain_list,
+        "chain": chain,
         "versions": history_sorted,
-        "total_versions": len(chain_list)
+        "total_versions": len(history_sorted)
     }
+
+#@app.get("/did-history", tags=["sut"])
+#def get_did_history(
+#    benchmarkExecutionID: str = Query(...),
+#    iterationID: Optional[str] = Query(None)
+#):
+#    """
+#    Return full DID history + change log for a given benchmark/iteration.
+#    Uses:
+#      - Mongo: latest state (did_vault_col)
+#      - Vault: chain + per-DID snapshots
+#    """
+#
+#    # ---------- Resolve iterationID (same logic as append_did) ----------
+#    record = None
+#
+#    if iterationID:
+#        record = did_vault_col.find_one({
+#            "benchmarkExecutionID": benchmarkExecutionID,
+#            "iterationID": iterationID
+#        })
+#        if not record:
+#            raise HTTPException(
+#                404,
+#                f"No record found for benchmarkExecutionID={benchmarkExecutionID} and iterationID={iterationID}"
+#            )
+#    else:
+#        matches = list(did_vault_col.find(
+#            {"benchmarkExecutionID": benchmarkExecutionID},
+#            {"_id": 0, "iterationID": 1}
+#        ))
+#        iteration_ids = list({m.get("iterationID") for m in matches if m.get("iterationID")})
+#
+#        if len(iteration_ids) == 0:
+#            raise HTTPException(404, f"No iterations found for {benchmarkExecutionID}")
+#        elif len(iteration_ids) == 1:
+#            iterationID = iteration_ids[0]
+#            record = did_vault_col.find_one({
+#                "benchmarkExecutionID": benchmarkExecutionID,
+#                "iterationID": iterationID
+#            })
+#        else:
+#            raise HTTPException(
+#                400,
+#                f"Multiple iterations found for {benchmarkExecutionID} — specify iterationID"
+#            )
+#
+#    if not record:
+#        raise HTTPException(
+#            404,
+#            f"No did_vault record found for benchmarkExecutionID={benchmarkExecutionID} and iterationID={iterationID}"
+#        )
+#
+#    # ---------- Read chain from Vault ----------
+#    chain_path = f"{iterationID}/chain"
+#    raw_chain_obj = vault_read(VAULT_MOUNT, chain_path) or {}
+#
+#    if isinstance(raw_chain_obj, list):
+#        chain_list = raw_chain_obj
+#    elif isinstance(raw_chain_obj, dict):
+#        chain_obj = normalize_vault_object(raw_chain_obj)
+#        if isinstance(chain_obj, list):
+#            chain_list = chain_obj
+#        elif isinstance(chain_obj, dict):
+#            chain_list = chain_obj.get("chain", [])
+#        else:
+#            chain_list = []
+#    else:
+#        chain_list = []
+#
+#    if not isinstance(chain_list, list):
+#        chain_list = []
+#
+#    # ---------- Read snapshots for each DID in chain ----------
+#    history: List[Dict[str, Any]] = []
+#
+#    for did in chain_list:
+#        try:
+#            snap_raw = vault_read(VAULT_MOUNT, f"{iterationID}/{did}") or {}
+#            snap = normalize_vault_object(snap_raw) if snap_raw else {}
+#
+#            # Ensure at least did + timestamp are present in the response
+#            history.append({
+#                "did": snap.get("did", did),
+#                "previous_did": snap.get("previous_did"),
+#                "timestamp": snap.get("timestamp"),
+#                "benchmarkExecutionID": snap.get("benchmarkExecutionID", benchmarkExecutionID),
+#                "iterationID": snap.get("iterationID", iterationID),
+#                "data": snap.get("data"),
+#                "diff": snap.get("diff"),
+#                "merkle_root": snap.get("merkle_root")
+#            })
+#        except Exception as e:
+#            # Don't break whole history if one snapshot is bad
+#            history.append({
+#                "did": did,
+#                "error": f"Failed to read snapshot for DID {did}: {e}"
+#            })
+#
+#    # Sort by timestamp if available
+#    def _ts_key(entry: Dict[str, Any]):
+#        ts = entry.get("timestamp")
+#        return ts or ""
+#
+#    history_sorted = sorted(history, key=_ts_key)
+#
+#    # ---------- Build response ----------
+#    latest_did = record.get("did")
+#    latest_data = record.get("data")
+#    latest_merkle = record.get("merkle_root")
+#    last_updated = record.get("last_updated")
+#
+#    return {
+#        "benchmarkExecutionID": benchmarkExecutionID,
+#        "iterationID": iterationID,
+#        "current": {
+#            "did": latest_did,
+#            "data": latest_data,
+#            "merkle_root": latest_merkle,
+#            "last_updated": last_updated,
+#        },
+#        "chain": chain_list,
+#        "versions": history_sorted,
+#        "total_versions": len(chain_list)
+#    }
 
 # -------------------------
 # Search SUT endpoint (benchmark/iteration)

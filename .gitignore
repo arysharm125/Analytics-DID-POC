@@ -1,7 +1,7 @@
 # Ignore Docker and environment files
 .dockerignore
 .env
-
+constants.py
 # Ignore Python cache directories
 __pycache__/
 

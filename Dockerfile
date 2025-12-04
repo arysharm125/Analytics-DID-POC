@@ -22,6 +22,8 @@ COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --upgrade pip setuptools wheel \
  && pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels
 
+
+
 # Runtime stage
 FROM python:3.11-slim
 
