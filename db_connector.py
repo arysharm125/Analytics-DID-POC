@@ -27,7 +27,7 @@ def _vault_read_mongo():
         secret → mount
         mongo  → key
     """
-    vault_addr = os.getenv("VAULT_ADDR", "http://10.159.20.87:8200")
+    vault_addr = os.getenv("VAULT_ADDR", "http://10.159.22.95:8200")
     vault_token = os.getenv("VAULT_TOKEN")
 
     if not vault_token:

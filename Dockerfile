@@ -1,63 +1,75 @@
-# Dockerfile - multi-stage for FastAPI + Celery
+# =========================
 # Build stage
+# =========================
 FROM python:3.11-slim AS build
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
-
-# install build deps for cryptography / hvac
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     build-essential \
     gcc \
     libffi-dev \
     libssl-dev \
     cargo \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# copy requirements first for caching
-COPY requirements.txt /app/requirements.txt
+# Create virtual environment
+RUN python -m venv /opt/did-venv
+ENV PATH="/opt/did-venv/bin:$PATH"
 
-# Install dependencies into wheelhouse (no user site)
-RUN python -m pip install --upgrade pip setuptools wheel \
- && pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels
+# Upgrade tooling
+RUN pip install --upgrade pip==25.3 setuptools wheel
+
+# Copy requirements
+COPY requirements.txt .
+
+# Build wheels
+RUN pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels \
+ && rm -f /wheels/ecdsa-*.whl || true
 
 
-
+# =========================
 # Runtime stage
+# =========================
 FROM python:3.11-slim
 
-# create non-root user
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
-
-# runtime deps for cryptography if needed (libssl etc)
+# Install runtime libs only
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl-dev \
-    libffi-dev \
-    && rm -rf /var/lib/apt/lists/*
+    libssl3 \
+    libffi8 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN addgroup --system appgroup \
+ && adduser --system --ingroup appgroup appuser
 
 WORKDIR /app
 
-# copy wheels and install (faster, offline-friendly)
-COPY --from=build /wheels /wheels
-RUN pip install --no-cache /wheels/*
+# Copy virtual environment
+COPY --from=build /opt/did-venv /opt/did-venv
+ENV PATH="/opt/did-venv/bin:$PATH"
 
-# copy source
+# Install dependencies from wheels ONLY
+COPY --from=build /wheels /wheels
+RUN pip install --no-cache-dir /wheels/* \
+ && pip uninstall -y ecdsa || true \
+ && rm -rf /wheels
+
+# Copy application code
 COPY . /app
 
-# set environment variables (defaults can be overridden by docker-compose/.env)
+# Fix ownership
+RUN chown -R appuser:appgroup /app /opt/did-venv
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8009
-
-# ensure app files are owned by non-root
-RUN chown -R appuser:appgroup /app
+    PORT=45601
 
 USER appuser
 
-EXPOSE 8009
+EXPOSE 45601
 
-# Default command runs uvicorn for the FastAPI app 'test:app' on port 8007
-# We run a single process here; docker-compose or swarm should run multiple replicas if needed.
-CMD ["uvicorn", "test:app", "--host", "0.0.0.0", "--port", "8009", "--log-level", "info", "--access-log"]
+CMD ["uvicorn", "test:app", "--host", "0.0.0.0", "--port", "45601", "--log-level", "info", "--access-log"]
 

@@ -8,18 +8,10 @@ celery
 certifi
 redis
 python-multipart
-#uvicorn[standard]==0.30.6
-#pymongo==4.9.1
 motor==3.5.1  # optional: for async MongoDB (if you go async later)
-#hvac==2.3.0
-#cryptography==43.0.1
-#celery==5.4.0
-#redis==5.0.8
-#requests==2.32.3
-urllib3==2.2.3
+urllib3==2.6.0
 pydantic==2.9.2
-#python-multipart==0.0.9  # for file uploads
-python-jose[cryptography]==3.3.0  # for JWT handling (used in utils)
+python-jose[cryptography]==3.4.0  # for JWT handling (used in utils)
 pyjwt==2.9.0
 structlog==24.4.0  # optional, but recommended
 aiohttp

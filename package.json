@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@veramo/did-provider-ethr": "^6.0.0",
+    "ethers": "^6.16.0",
+    "ethr-did": "^3.0.38",
+    "ethr-did-resolver": "^11.0.5"
+  }
+}
