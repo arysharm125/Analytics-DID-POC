@@ -8,8 +8,8 @@ from datetime import datetime
 from bson import json_util
 
 # Import your DecisionEngine and MongoConnector
-from decision_engine import DecisionEngine, Rule
-from db_connector import MongoConnector
+from app.services.decision_engine import DecisionEngine, Rule
+from app.database import MongoConnector
 
 logger = logging.getLogger("policy_orchestrator")
 logger.setLevel(logging.INFO)
@@ -153,7 +153,7 @@ def create_rule(r: RuleIn, orchestrator: PolicyOrchestrator = Depends(get_orches
     # Basic validation: Try a dry-run safe eval of condition using empty facts
     try:
         # attempt to evaluate as boolean with empty facts to find syntax errors
-        from decision_engine import safe_eval
+        from app.services.decision_engine import safe_eval
         safe_eval(data["condition"], facts={})
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid condition expression: {e}")

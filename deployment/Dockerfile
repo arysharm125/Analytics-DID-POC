@@ -71,5 +71,5 @@ USER appuser
 
 EXPOSE 45601
 
-CMD ["uvicorn", "test:app", "--host", "0.0.0.0", "--port", "45601", "--log-level", "info", "--access-log"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "45601", "--log-level", "info", "--access-log"]
 

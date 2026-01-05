@@ -1,4 +1,4 @@
-from constants import COLLECTION_NAME
+from app.constants import COLLECTION_NAME
 # did_vault_api_sut_updated.py
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Query, Header, Body, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -6,10 +6,10 @@ from bson import ObjectId
 from datetime import datetime, timedelta
 import os, requests, uuid, json, secrets, base64, hvac
 from cryptography.fernet import Fernet, InvalidToken
-from db_connector import MongoConnector
+from app.database import MongoConnector
 import threading, time, asyncio
 import logging
-from utils import generate_did
+from app.utils import generate_did
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -17,8 +17,8 @@ from functools import wraps
 from typing import List, Optional, Any, Dict
 from pydantic import BaseModel
 import io
-from utils import get_vault_config, init_vault_client
-from utils import diff, checksum, merkle_root
+from app.utils import get_vault_config, init_vault_client
+from app.utils import diff, checksum, merkle_root
 import pymongo
 from fastapi.responses import HTMLResponse
 #  Import constants (environment configs, collection names)
@@ -37,8 +37,8 @@ from constants import (
     FERNET_KEY_FILE,
 )
 
-# 🔹 Import utility functions from utils.py
-from utils import (
+# 🔹 Import utility functions from app.utils.py
+from app.utils import (
     get_vault_config,
     init_vault_client,
     now_iso,
@@ -123,7 +123,7 @@ DID_SERVICE_URL = os.getenv("DID_SERVICE_URL", "http://10.159.22.95:4000")
 VERAMO_BASE = os.getenv("VERAMO_URL", "http://172.17.0.1:4000")
 QA_COLLECTION = os.getenv("QA_BENCHMARK_COLLECTION", "benchmark_executions")
 
-# ✅ Fetch from utils
+# ✅ Fetch from app.utils
 VAULT_ADDR, VAULT_TOKEN, VAULT_MOUNT = get_vault_config()
 vault_client = init_vault_client()
 
@@ -231,12 +231,12 @@ async def api_documentation(request: Request):
 </html>""")
 
 import logging.config
-logging.config.fileConfig("logging.ini", disable_existing_loggers=False)
+logging.config.fileConfig("deployment/logging.ini", disable_existing_loggers=False)
 
-from policy_orchestrator import router as policy_router
+from app.routers.policy import router as policy_router
 app.include_router(policy_router)
 
-from access_gateway import app as access_gateway_app
+from app.routers.access import app as access_gateway_app
 app.mount("/access", access_gateway_app)
 
 import pymongo
@@ -525,7 +525,7 @@ def resolve_did(request: dict):
         try:
             # This returns decrypted full payload that was stored in Vault
             # using store_encrypted_in_vault (full benchmark_executions JSON).
-            from utils import get_encrypted_payload_from_vault, decrypt_data
+            from app.utils import get_encrypted_payload_from_vault, decrypt_data
             enc = get_encrypted_payload_from_vault(did)
             full_payload = decrypt_data(enc)
             # emulate rec shape
@@ -577,7 +577,7 @@ class DIDAppendRequest(BaseModel):
     data: Dict[str, Any]
 
 from fastapi import HTTPException, Query, Request
-from utils import validate_amd_email
+from app.utils import validate_amd_email
 
 def deep_merge(old: dict, new: dict) -> dict:
     merged = old.copy()

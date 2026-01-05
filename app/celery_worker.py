@@ -10,7 +10,7 @@ celery_app = Celery(
     'tasks', # Default name for tasks module
     broker=REDIS_URL,
     backend=RESULT_BACKEND_URL, # Use Redis to store task results
-    include=['tasks'] # Explicitly include the tasks module
+    include=['app.tasks'] # Explicitly include the tasks module
 )
 
 celery_app.conf.update(

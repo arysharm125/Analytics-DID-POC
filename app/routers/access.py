@@ -10,7 +10,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 import jwt  # PyJWT
 
-from utils import init_vault_client, vault_read
+from app.utils import init_vault_client, vault_read
 
 logger = logging.getLogger("access_gateway")
 logging.basicConfig(level=logging.INFO)

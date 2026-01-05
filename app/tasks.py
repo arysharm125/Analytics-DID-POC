@@ -6,11 +6,11 @@ from bson import ObjectId
 import logging
 from pymongo.errors import OperationFailure
 
-from celery_worker import celery_app
-from db_connector import MongoConnector
+from app.celery_worker import celery_app
+from app.database import MongoConnector
 
 # All helpers are now in utils.py (same as the API)
-from utils import (
+from app.utils import (
     call_veramo_create_did, get_or_create_issuer_did,
     call_veramo_issue_vc,
     vault_store_secret, encrypt_data, clean_for_json,
