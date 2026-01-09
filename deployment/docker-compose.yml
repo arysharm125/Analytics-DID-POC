@@ -1,33 +1,48 @@
-# version attribute removed as it's obsolete
+version: "3.9"
 
 services:
   app:
-    build: .
-    image: did-microservice:latest # Use a consistent image name
+    container_name: did-app
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    image: did-microservice:latest
     restart: always
-    env_file: .env
-    # expose: # 'expose' is only for internal network, use 'ports' for host access
-    #   - 8080
-    ports: # *** ADD THIS SECTION ***
-      - "8081:8080" # Map host port 8081 to container port 8080
-    # No 'depends_on: redis' needed if Redis is external
+    env_file:
+      - ../.env
+    expose:
+      - "45603"
+    networks:
+      - private_net
 
   worker:
-    build: . # Use the same image
+    container_name: did-worker
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
     image: did-microservice:latest
     restart: always
     command: celery -A celery_worker.celery_app worker --loglevel=info
-    env_file: .env
-    # No 'depends_on: redis' needed
+    env_file:
+      - ../.env
+    networks:
+      - private_net
 
-# nginx: # *** REMOVE THIS ENTIRE SERVICE ***
-#   image: nginx:1.25-alpine
-#   restart: always
-#   ports:
-#     - "80:80" # This was the conflict
-#   volumes:
-#     - ./nginx.conf:/etc/nginx/conf.d/default.conf
-#   depends_on:
-#     - app
+  nginx:
+    container_name: did-nginx
+    build:
+      context: ./nginx
+    restart: always
+    ports:
+      - "443:443"
+    volumes:
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    networks:
+      - private_net
 
-# No 'volumes' needed for Redis if it's external
+networks:
+  private_net:
+    driver: bridge
+

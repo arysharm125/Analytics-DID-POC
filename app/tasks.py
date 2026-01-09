@@ -1,4 +1,4 @@
-from constants import COLLECTION_NAME
+from app.constants import COLLECTION_NAME
 # tasks.py
 import uuid
 from datetime import datetime

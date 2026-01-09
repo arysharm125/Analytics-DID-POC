@@ -22,7 +22,7 @@ from app.utils import diff, checksum, merkle_root
 import pymongo
 from fastapi.responses import HTMLResponse
 #  Import constants (environment configs, collection names)
-from constants import (
+from app.constants import (
     VAULT_ADDR,
     VAULT_TOKEN,
     VAULT_MOUNT,
@@ -118,9 +118,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("did_vault_api_sut")
 logger.setLevel(logging.INFO)
 
-DID_SERVICE_URL = os.getenv("DID_SERVICE_URL", "http://10.159.22.95:4000")
+DID_SERVICE_URL = os.getenv("DID_SERVICE_URL", "https://stage-did.amd.com/veramo")
 
-VERAMO_BASE = os.getenv("VERAMO_URL", "http://172.17.0.1:4000")
+VERAMO_BASE = os.getenv("VERAMO_URL", "https://stage-did.amd.com/veramo")
 QA_COLLECTION = os.getenv("QA_BENCHMARK_COLLECTION", "benchmark_executions")
 
 # ✅ Fetch from app.utils

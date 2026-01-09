@@ -65,11 +65,11 @@ RUN chown -R appuser:appgroup /app /opt/did-venv
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=45601
+    PORT=45603
 
 USER appuser
 
-EXPOSE 45601
+EXPOSE 45603
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "45601", "--log-level", "info", "--access-log"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "45603", "--log-level", "info", "--access-log"]
 
