@@ -118,10 +118,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("did_vault_api_sut")
 logger.setLevel(logging.INFO)
 
-DID_SERVICE_URL = os.getenv("DID_SERVICE_URL", "https://stage-did.amd.com/veramo")
+DID_SERVICE_URL = os.getenv("DID_SERVICE_URL", "http://10.159.22.95:4000/veramo")
 
-VERAMO_BASE = os.getenv("VERAMO_URL", "https://stage-did.amd.com/veramo")
-QA_COLLECTION = os.getenv("QA_BENCHMARK_COLLECTION", "benchmark_executions")
+VERAMO_BASE = os.getenv("VERAMO_URL", "http://10.159.22.95:4000/veramo")
+QA_COLLECTION = os.getenv("QA_BENCHMARK_COLLECTION", "qa_benchmark_executions")
 
 # ✅ Fetch from app.utils
 VAULT_ADDR, VAULT_TOKEN, VAULT_MOUNT = get_vault_config()
@@ -1018,7 +1018,7 @@ def verify_vc(req: VCVerifyRequest):
     subject_matches_db = None
     if req.benchmarkExecutionID and subject:
         try:
-            coll = db.get_collection("benchmark_executions")
+            coll = db.get_collection("qa_benchmark_executions")
             q = {
                 "benchmarkExecutionID": req.benchmarkExecutionID,
                 "$or": [
