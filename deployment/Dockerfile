@@ -1,3 +1,5 @@
+# deployment/Dockerfile
+
 # =========================
 # Build stage
 # =========================
@@ -24,21 +26,23 @@ RUN pip install --upgrade pip==25.3 setuptools wheel
 
 # Copy requirements
 COPY requirements.txt .
-
 # Build wheels
 RUN pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels \
  && rm -f /wheels/ecdsa-*.whl || true
-
 
 # =========================
 # Runtime stage
 # =========================
 FROM python:3.11-slim
 
-# Install runtime libs only
+# Install runtime libs AND Audit Tool Dependencies (sshpass, ssh)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
     libssl3 \
     libffi8 \
+    sshpass \
+    openssh-client \
+    iputils-ping \
  && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -72,4 +76,3 @@ USER appuser
 EXPOSE 45603
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "45603", "--log-level", "info", "--access-log"]
-

@@ -1,0 +1,8 @@
+{
+  "legacy_profile_map": {
+    "Database_Analytics_AI_ML_RDBMS_Optimized": "Database_Analytics_RDBMS_Optimized",
+    "Database_Analytics_AI_ML_Big_Data_Analytics_Optimized": "Database_Analytics_Big_Data_Analytics_Optimized",
+    "HPC_Telco_EDA_HPC": "HPC_Telco_HPC",
+    "General_Purpose_CPI_Intensive": "General_Purpose_SPEC_CPI_2017"
+  }
+}

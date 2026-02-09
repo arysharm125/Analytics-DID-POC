@@ -21,6 +21,7 @@ from app.utils import get_vault_config, init_vault_client
 from app.utils import diff, checksum, merkle_root
 import pymongo
 from fastapi.responses import HTMLResponse
+from app.routers import audit
 #  Import constants (environment configs, collection names)
 from app.constants import (
     VAULT_ADDR,
@@ -117,11 +118,13 @@ import secrets
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("did_vault_api_sut")
 logger.setLevel(logging.INFO)
+logging.getLogger("pymongo").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-DID_SERVICE_URL = os.getenv("DID_SERVICE_URL", "http://10.159.22.95:4000/veramo")
+DID_SERVICE_URL = os.getenv("DID_SERVICE_URL", "http://10.159.20.87:4000/veramo")
 
-VERAMO_BASE = os.getenv("VERAMO_URL", "http://10.159.22.95:4000/veramo")
-QA_COLLECTION = os.getenv("QA_BENCHMARK_COLLECTION", "qa_benchmark_executions")
+VERAMO_BASE = os.getenv("VERAMO_URL", "http://10.159.20.87:4000/veramo")
+QA_COLLECTION = os.getenv("QA_BENCHMARK_COLLECTION", "benchmark_executions")
 
 # ✅ Fetch from app.utils
 VAULT_ADDR, VAULT_TOKEN, VAULT_MOUNT = get_vault_config()
@@ -203,9 +206,21 @@ class VCVerifyResponse(BaseModel):
     
 #)
 
-app = FastAPI(
-    docs_url=None, redoc_url=None
-)
+# ==========================
+# FastAPI App
+# ==========================
+app = FastAPI(docs_url=None, redoc_url=None)
+
+# ==========================
+# Register Routers
+# ==========================
+from app.routers.policy import router as policy_router
+from app.routers.audit import router as audit_router
+from app.routers.access import app as access_gateway_app
+
+app.include_router(policy_router)
+app.include_router(audit_router)
+app.mount("/access", access_gateway_app)
 
 @app.get("/docs", include_in_schema=False)
 async def api_documentation(request: Request):
@@ -1018,7 +1033,7 @@ def verify_vc(req: VCVerifyRequest):
     subject_matches_db = None
     if req.benchmarkExecutionID and subject:
         try:
-            coll = db.get_collection("qa_benchmark_executions")
+            coll = db.get_collection("benchmark_executions")
             q = {
                 "benchmarkExecutionID": req.benchmarkExecutionID,
                 "$or": [
