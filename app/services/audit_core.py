@@ -115,7 +115,7 @@ chmod +x $SCRIPT_PATH
         ]
 
         try:
-            result = subprocess.run(local_command, capture_output=True, text=True, check=False, timeout=300)
+            result = subprocess.run(local_command, capture_output=True, text=True, check=False, timeout=600)
             if result.returncode != 0:
                 logger.error(f"SSH command returned {result.returncode}")
             return {"stdout": result.stdout, "stderr": result.stderr}
@@ -123,7 +123,7 @@ chmod +x $SCRIPT_PATH
         except FileNotFoundError:
             raise EnvironmentError("`sshpass` not installed locally.")
         except subprocess.TimeoutExpired:
-            raise TimeoutError("SSH connection timed out (possibly during installation).")
+            raise TimeoutError("SSH connection or script execution timed out.")
         except Exception as e:
             raise ConnectionError(f"Unexpected SSH error: {e}")
 
