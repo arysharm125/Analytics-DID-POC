@@ -146,7 +146,7 @@ rm -f $SCRIPT_PATH
 """
         local_command = [
             "sshpass", "-p", password,
-            "ssh", "-tt", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+            "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
             f"{user}@{host}", remote_command_block
         ]
 
