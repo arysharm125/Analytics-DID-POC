@@ -151,7 +151,7 @@ rm -f $SCRIPT_PATH
         ]
 
         try:
-            result = subprocess.run(local_command, capture_output=True, text=True, check=False, timeout=300) # Increased timeout for installation
+            result = subprocess.run(local_command, capture_output=True, text=True, check=False, timeout=600) # Increased timeout for installation
             if result.returncode != 0:
                 logger.error(f"SSH command returned {result.returncode}")
             return {"stdout": result.stdout, "stderr": result.stderr}
