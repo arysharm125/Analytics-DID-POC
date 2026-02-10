@@ -44,6 +44,8 @@ async def start_audit(request: AuditRequest):
             args=[request.host, request.username, request.password, request.benchmark_name]
         )
         return {"task_id": task.id, "status": "QUEUED"}
+    except Exception as e:
+        logger.error(f"Queue failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/network_audit_direct", response_model=TaskResponse, status_code=202)
