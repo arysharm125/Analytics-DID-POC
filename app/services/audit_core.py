@@ -302,6 +302,7 @@ rm -f $SCRIPT_PATH
         }
 
     def run_full_audit(self, host: str, username: str, password: str, benchmark_name: str):
+        # 1. Basic Connectivity Check
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
@@ -310,35 +311,53 @@ rm -f $SCRIPT_PATH
         finally:
             sock.close()
 
-        verification = self._verify_resources(host, username, password)
-        if not verification:
-            raise ConnectionRefusedError("Verification API returned no data.")
-        
-        ver_data = verification.get("Data") or {}
-        ver_details = ver_data.get("verification_details") or {}
-        sut = ver_details.get("sut") or {}
-        
-        if not sut.get("verified"):
-            error_msg = sut.get("error", "API check failed.")
-            raise ConnectionRefusedError(f"Authentication Failed. API Error: {error_msg}")
+        # 2. Try BIOS/GRUB compliance (requires external APIs)
+        fallback_mode = False
+        fallback_reason = ""
+        verification = {}
+        metadata = {}
+        config_report = {"status": "SKIPPED", "summary": {"profile_key": "N/A"}}
 
-        metadata = self._get_combined_metadata(host, username, password)
-        if not metadata:
-            raise ValueError("Failed to fetch server metadata.")
+        try:
+            verification = self._verify_resources(host, username, password)
+            if not verification:
+                raise ValueError("Verification API returned no data.")
+            
+            ver_data = verification.get("Data") or {}
+            ver_details = ver_data.get("verification_details") or {}
+            sut = ver_details.get("sut") or {}
+            
+            if not sut.get("verified"):
+                error_msg = sut.get("error", "API check failed.")
+                raise ValueError(f"Authentication Failed. API Error: {error_msg}")
 
-        config_report = self._generate_reports(benchmark_name, metadata, verification)
-        
+            metadata = self._get_combined_metadata(host, username, password)
+            if not metadata:
+                raise ValueError("Failed to fetch server metadata.")
+
+            config_report = self._generate_reports(benchmark_name, metadata, verification)
+            
+        except Exception as e:
+            logger.warning(f"BIOS/GRUB compliance check failed for {host}: {e}. Falling back to Network Audit.")
+            fallback_mode = True
+            fallback_reason = str(e)
+
+        # 3. Network Audit Logic
         tuning_profile = config_report.get("summary", {}).get("profile_key", "").lower()
+        
+        # In fallback mode, we ALWAYS run network audit to be safe. 
+        # Otherwise, check if the profile requires it.
         run_network_audit = False
-        if "nic" in tuning_profile or "telco" in tuning_profile or "vran" in tuning_profile:
+        if fallback_mode:
+            run_network_audit = True
+        elif "nic" in tuning_profile or "telco" in tuning_profile or "vran" in tuning_profile:
             run_network_audit = True
             
         network_audit_json = {"status": "SKIPPED", "reason": "Benchmark does not require network audit."}
         raw_network_output = "--- SKIPPED ---"
 
         if run_network_audit:
-            logger.info(f"Running network audit for profile: {tuning_profile}")
-            # This call now performs auto-installation
+            logger.info(f"Executing network audit (SSH mode). Target: {host}, Fallback: {fallback_mode}")
             network_output = self._execute_network_audit_remotely(host, username, password)
             stdout = network_output.get("stdout", "")
             stderr = network_output.get("stderr", "")
@@ -355,10 +374,12 @@ rm -f $SCRIPT_PATH
                 network_audit_json = {"error": error_detail}
         
         overall_status = "SUCCESS"
-        if "error" in network_audit_json and run_network_audit:
+        if fallback_mode:
+            overall_status = "WARNING"
+        elif "error" in network_audit_json and run_network_audit:
             overall_status = "WARNING" 
 
-        return {
+        result = {
             "status": overall_status,
             "host": host,
             "config_report": config_report,
@@ -367,6 +388,11 @@ rm -f $SCRIPT_PATH
                 "raw_output": raw_network_output
             }
         }
+        
+        if fallback_mode:
+            result["note"] = f"Bypassed metadata APIs due to error: {fallback_reason}. Only Network Audit was performed."
+            
+        return result
 
     def run_direct_network_audit(self, host: str, user: str, password: str) -> Dict[str, Any]:
         """
