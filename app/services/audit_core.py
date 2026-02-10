@@ -64,7 +64,7 @@ class ServerAuditEngine:
 
     def _execute_curl_command(self, curl_cmd_list: list, cmd_description: str) -> Optional[str]:
         try:
-            result = subprocess.run(curl_cmd_list, capture_output=True, text=True, check=True, timeout=90)
+            result = subprocess.run(curl_cmd_list, capture_output=True, text=True, check=True, timeout=5)
             return result.stdout
         except subprocess.CalledProcessError as e:
             logger.error(f"{cmd_description} failed: {e.stderr.strip()}")
@@ -101,49 +101,13 @@ EOF
 
 chmod +x $SCRIPT_PATH
 
-# 2. Execute with SUDO: Install Dependencies & Run Script
-# We pipe the password to sudo. The bash script inside checks and installs tools.
-echo "{password}" | sudo -S -p "" bash -c '
-    # Function to check if a command exists
-    command_exists() {{
-        command -v "$1" >/dev/null 2>&1
-    }}
-
-    # Check for required tools
-    NEEDS_INSTALL=0
-    if ! command_exists lldpctl; then NEEDS_INSTALL=1; fi
-    if ! command_exists ethtool; then NEEDS_INSTALL=1; fi
-    if ! command_exists lshw; then NEEDS_INSTALL=1; fi
-
-    if [ $NEEDS_INSTALL -eq 1 ]; then
-        echo "Installing missing dependencies (lldpd, ethtool, lshw)..." >&2
+        # 2. Execute with SUDO: Run Script
+        # We pipe the password to sudo. 
+        echo "{password}" | sudo -S -p "" python3 $SCRIPT_PATH
         
-        if command_exists apt-get; then
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update -qq >/dev/null
-            apt-get install -y -qq lldpd ethtool lshw >/dev/null
-            service lldpd start >/dev/null 2>&1 || true
-        elif command_exists dnf; then
-            dnf install -y -q lldpad ethtool lshw >/dev/null
-            systemctl start lldpad >/dev/null 2>&1 || true
-        elif command_exists yum; then
-            yum install -y -q lldpad ethtool lshw >/dev/null
-            systemctl start lldpad >/dev/null 2>&1 || true
-        else
-            echo "Warning: Could not detect package manager to install dependencies." >&2
-        fi
-        
-        # Give LLDPD a moment to start and collect neighbor info
-        sleep 5
-    fi
-
-    # Run the Python Audit Script
-    python3 {script_path}
-'
-
-# 3. Cleanup
-rm -f $SCRIPT_PATH
-"""
+        # 3. Cleanup
+        rm -f $SCRIPT_PATH
+        """
         local_command = [
             "sshpass", "-p", password,
             "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
@@ -151,7 +115,7 @@ rm -f $SCRIPT_PATH
         ]
 
         try:
-            result = subprocess.run(local_command, capture_output=True, text=True, check=False, timeout=600) # Increased timeout for installation
+            result = subprocess.run(local_command, capture_output=True, text=True, check=False, timeout=300)
             if result.returncode != 0:
                 logger.error(f"SSH command returned {result.returncode}")
             return {"stdout": result.stdout, "stderr": result.stderr}
@@ -305,94 +269,75 @@ rm -f $SCRIPT_PATH
         # 1. Basic Connectivity Check
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5)
+            sock.settimeout(10)
             if sock.connect_ex((host, 22)) != 0:
                 raise ConnectionRefusedError(f"Server '{host}' unreachable on port 22.")
         finally:
             sock.close()
 
-        # 2. Try BIOS/GRUB compliance (requires external APIs)
-        fallback_mode = False
-        fallback_reason = ""
-        verification = {}
-        metadata = {}
-        config_report = {"status": "SKIPPED", "summary": {"profile_key": "N/A"}}
+        # 2. Execute Remote SSH Script (Fetches both metadata and network data)
+        logger.info(f"Executing remote audit script on {host} (Full Mode)...")
+        ssh_result = self._execute_network_audit_remotely(host, username, password)
+        stdout = ssh_result.get("stdout", "")
+        stderr = ssh_result.get("stderr", "")
+        
+        # 3. Parse JSON Output
+        json_match = re.search(r'(\{.*\}|\[.*\])', stdout, re.DOTALL)
+        if not json_match:
+            error_detail = "Audit script failed to return JSON output."
+            logger.error(f"{error_detail}\nStdout: {stdout}\nStderr: {stderr}")
+            raise RuntimeError(error_detail)
 
         try:
-            verification = self._verify_resources(host, username, password)
-            if not verification:
-                raise ValueError("Verification API returned no data.")
-            
-            ver_data = verification.get("Data") or {}
-            ver_details = ver_data.get("verification_details") or {}
-            sut = ver_details.get("sut") or {}
-            
-            if not sut.get("verified"):
-                error_msg = sut.get("error", "API check failed.")
-                raise ValueError(f"Authentication Failed. API Error: {error_msg}")
+            full_data = json.loads(json_match.group(1))
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse audit JSON: {e}")
+            raise RuntimeError("Invalid JSON returned from remote script.")
 
-            metadata = self._get_combined_metadata(host, username, password)
-            if not metadata:
-                raise ValueError("Failed to fetch server metadata.")
+        remote_metadata = full_data.get("metadata", {})
+        network_data = full_data.get("network_data", {})
 
-            config_report = self._generate_reports(benchmark_name, metadata, verification)
-            
-        except Exception as e:
-            logger.warning(f"BIOS/GRUB compliance check failed for {host}: {e}. Falling back to Network Audit.")
-            fallback_mode = True
-            fallback_reason = str(e)
+        # 4. Simulate API Records for Compatibility
+        # This allows us to keep using _generate_reports without modification
+        simulated_verification = {
+            "Data": {
+                "verification_details": {
+                    "sut": {
+                        "model": remote_metadata.get("cpu_model", "N/A"),
+                        "verified": True
+                    }
+                },
+                "turbo_status": remote_metadata.get("turbo_status", "N/A"),
+                "Thread_per_core": remote_metadata.get("threads_per_core", "1")
+            }
+        }
 
-        # 3. Network Audit Logic
-        tuning_profile = config_report.get("summary", {}).get("profile_key", "").lower()
+        simulated_metadata = {
+            "Data": {
+                "bios_settings": remote_metadata.get("bios_info", {}),
+                "fileTunings": [f'GRUB_CMDLINE_LINUX_DEFAULT="{remote_metadata.get("grub_cmdline", "")}"']
+            }
+        }
+
+        # 5. Generate Compliance Report
+        logger.info(f"Generating compliance report using SSH-collected metadata...")
+        config_report = self._generate_reports(benchmark_name, simulated_metadata, simulated_verification)
         
-        # In fallback mode, we ALWAYS run network audit to be safe. 
-        # Otherwise, check if the profile requires it.
-        run_network_audit = False
-        if fallback_mode:
-            run_network_audit = True
-        elif "nic" in tuning_profile or "telco" in tuning_profile or "vran" in tuning_profile:
-            run_network_audit = True
-            
-        network_audit_json = {"status": "SKIPPED", "reason": "Benchmark does not require network audit."}
-        raw_network_output = "--- SKIPPED ---"
-
-        if run_network_audit:
-            logger.info(f"Executing network audit (SSH mode). Target: {host}, Fallback: {fallback_mode}")
-            network_output = self._execute_network_audit_remotely(host, username, password)
-            stdout = network_output.get("stdout", "")
-            stderr = network_output.get("stderr", "")
-            raw_network_output = f"--- STDOUT ---\n{stdout}\n\n--- STDERR ---\n{stderr}"
-
-            json_match = re.search(r'(\{.*\}|\[.*\])', stdout, re.DOTALL)
-            if json_match:
-                try:
-                    network_audit_json = json.loads(json_match.group(1))
-                except json.JSONDecodeError:
-                    network_audit_json = {"error": "Failed to parse JSON", "raw_stdout": stdout}
-            else:
-                error_detail = "Network audit returned no output to stdout."
-                network_audit_json = {"error": error_detail}
-        
+        # 6. Final Formatting
         overall_status = "SUCCESS"
-        if fallback_mode:
+        if "error" in network_data:
             overall_status = "WARNING"
-        elif "error" in network_audit_json and run_network_audit:
-            overall_status = "WARNING" 
 
-        result = {
+        return {
             "status": overall_status,
             "host": host,
             "config_report": config_report,
             "network_audit": {
-                "json_report": network_audit_json,
-                "raw_output": raw_network_output
-            }
+                "json_report": network_data,
+                "raw_output": f"--- STDOUT ---\n{stdout}\n\n--- STDERR ---\n{stderr}"
+            },
+            "note": "Audit performed entirely via SSH (API bypassed)."
         }
-        
-        if fallback_mode:
-            result["note"] = f"Bypassed metadata APIs due to error: {fallback_reason}. Only Network Audit was performed."
-            
-        return result
 
     def run_direct_network_audit(self, host: str, user: str, password: str) -> Dict[str, Any]:
         """
@@ -403,22 +348,26 @@ rm -f $SCRIPT_PATH
         try:
             # Connectivity check
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5)
+            sock.settimeout(10)
             result = sock.connect_ex((host, 22))
             sock.close()
             if result != 0:
                  raise ConnectionRefusedError(f"Server '{host}' unreachable on port 22.")
                  
             # Run the audit
-            network_output = self._execute_network_audit_remotely(host, user, password)
-            stdout = network_output.get("stdout", "")
-            stderr = network_output.get("stderr", "")
+            ssh_result = self._execute_network_audit_remotely(host, user, password)
+            stdout = ssh_result.get("stdout", "")
+            stderr = ssh_result.get("stderr", "")
             
             json_match = re.search(r'(\{.*\}|\[.*\])', stdout, re.DOTALL)
             network_audit_json = {}
+            remote_metadata = {}
+            
             if json_match:
                 try:
-                    network_audit_json = json.loads(json_match.group(1))
+                    full_data = json.loads(json_match.group(1))
+                    network_audit_json = full_data.get("network_data", {})
+                    remote_metadata = full_data.get("metadata", {})
                 except json.JSONDecodeError:
                     network_audit_json = {"error": "Failed to parse JSON", "raw_stdout": stdout}
             else:
@@ -431,6 +380,7 @@ rm -f $SCRIPT_PATH
                     "json_report": network_audit_json,
                     "raw_output": stdout
                 },
+                "metadata": remote_metadata,
                 "note": "Direct mode: BIOS/GRUB compliance skipped due to API bypass."
             }
 

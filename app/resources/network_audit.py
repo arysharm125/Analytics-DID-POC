@@ -78,6 +78,44 @@ def get_nic_data():
     
     return physical_nics
 
+def get_metadata():
+    print("Gathering system metadata (CPU, BIOS, GRUB, etc.)...", file=sys.stderr)
+    metadata = {}
+    
+    # 1. CPU Model
+    lscpu_out = run_command(['lscpu'])
+    model_match = re.search(r'Model name:\s*(.*)', lscpu_out)
+    metadata['cpu_model'] = model_match.group(1).strip() if model_match else "N/A"
+    
+    # 2. SMT / Thread per core
+    thread_match = re.search(r'Thread\(s\) per core:\s*(\d+)', lscpu_out)
+    metadata['threads_per_core'] = thread_match.group(1) if thread_match else "1"
+    
+    # 3. Turbo / CPB status (AMD specific)
+    turbo_path = "/sys/devices/system/cpu/cpufreq/boost"
+    if os.path.exists(turbo_path):
+        with open(turbo_path, 'r') as f:
+            metadata['turbo_status'] = "Enabled" if f.read().strip() == "1" else "Disabled"
+    else:
+        metadata['turbo_status'] = "N/A"
+        
+    # 4. System Model (Product Name)
+    with open('/sys/class/dmi/id/product_name', 'r') as f:
+        metadata['system_model'] = f.read().strip()
+        
+    # 5. GRUB Parameters
+    with open('/proc/cmdline', 'r') as f:
+        metadata['grub_cmdline'] = f.read().strip()
+        
+    # 6. BIOS Info (Basic)
+    metadata['bios_info'] = {
+        'vendor': run_command(['dmidecode', '-s', 'bios-vendor']).strip(),
+        'version': run_command(['dmidecode', '-s', 'bios-version']).strip(),
+        'release_date': run_command(['dmidecode', '-s', 'bios-release-date']).strip(),
+    }
+    
+    return metadata
+
 def main():
     # Root check (Linux/Unix only)
     if hasattr(os, "geteuid"):
@@ -85,18 +123,19 @@ def main():
             print("This script must be run as root.", file=sys.stderr)
             print(json.dumps({"error": "Script not run as root"}))
             sys.exit(1)
-    else:
-        # On Windows, we can't easily check for 'root', but this script is likely intended for Linux.
-        # We'll warn but proceed, though subsequent commands (unknown to Windows) may fail.
-        print(f"{colors.WARNING}Warning: Not running on a POSIX system. 'lshw', 'ethtool' may be missing.{colors.ENDC}", file=sys.stderr)
     
     try:
         check_dependencies()
         nic_data = get_nic_data()
-        if nic_data is not None:
-            print(json.dumps(nic_data, indent=2))
-        else:
-            print(json.dumps({"error": "Failed to retrieve NIC data"}))
+        metadata = get_metadata()
+        
+        output = {
+            "network_data": nic_data,
+            "metadata": metadata
+        }
+        
+        print(json.dumps(output, indent=2))
+        
     except Exception as e:
         print(json.dumps({"error": str(e)}))
         sys.exit(1)
