@@ -367,3 +367,47 @@ rm -f $SCRIPT_PATH
                 "raw_output": raw_network_output
             }
         }
+
+    def run_direct_network_audit(self, host: str, user: str, password: str) -> Dict[str, Any]:
+        """
+        Runs ONLY the network audit via SSH, bypassing the external metadata API.
+        """
+        logger.info(f"Running DIRECT network audit for {host} (bypassing metadata API)")
+        
+        try:
+            # Connectivity check
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            result = sock.connect_ex((host, 22))
+            sock.close()
+            if result != 0:
+                 raise ConnectionRefusedError(f"Server '{host}' unreachable on port 22.")
+                 
+            # Run the audit
+            network_output = self._execute_network_audit_remotely(host, user, password)
+            stdout = network_output.get("stdout", "")
+            stderr = network_output.get("stderr", "")
+            
+            json_match = re.search(r'(\{.*\}|\[.*\])', stdout, re.DOTALL)
+            network_audit_json = {}
+            if json_match:
+                try:
+                    network_audit_json = json.loads(json_match.group(1))
+                except json.JSONDecodeError:
+                    network_audit_json = {"error": "Failed to parse JSON", "raw_stdout": stdout}
+            else:
+                network_audit_json = {"error": "No JSON output found", "raw_stdout": stdout, "stderr": stderr}
+
+            return {
+                "status": "SUCCESS" if "error" not in network_audit_json else "WARNING",
+                "host": host,
+                "network_audit": {
+                    "json_report": network_audit_json,
+                    "raw_output": stdout
+                },
+                "note": "Direct mode: BIOS/GRUB compliance skipped due to API bypass."
+            }
+
+        except Exception as e:
+            logger.error(f"Direct audit failed: {e}")
+            raise e

@@ -25,6 +25,11 @@ class AuditRequest(BaseModel):
     password: str = Field(..., example="amd123")
     benchmark_name: str = Field(..., example="SPECCPU")
 
+class DirectAuditRequest(BaseModel):
+    host: str = Field(..., example="10.86.27.69")
+    username: str = Field(..., example="amd")
+    password: str = Field(..., example="amd123")
+
 class TaskResponse(BaseModel):
     task_id: str
     status: str
@@ -37,6 +42,17 @@ async def start_audit(request: AuditRequest):
         task = celery_app.send_task(
             "audit.run_audit_task",
             args=[request.host, request.username, request.password, request.benchmark_name]
+        )
+        return {"task_id": task.id, "status": "QUEUED"}
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/network_audit_direct", response_model=TaskResponse, status_code=202)
+async def start_direct_network_audit(request: DirectAuditRequest):
+    """Trigger the DIRECT network audit (bypasses metadata API) via Celery."""
+    try:
+        task = celery_app.send_task(
+            "audit.run_direct_network_audit",
+            args=[request.host, request.username, request.password]
         )
         return {"task_id": task.id, "status": "QUEUED"}
     except Exception as e:
