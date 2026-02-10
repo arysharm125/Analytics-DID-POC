@@ -16,124 +16,26 @@ logger = logging.getLogger("audit_core")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESOURCES_DIR = os.path.join(BASE_DIR, "resources")
 
-# Embedded remote network audit script
-NETWORK_EVALUATOR_SCRIPT_CONTENT = """
-#!/usr/bin/env python3
-import os
-import sys
-import subprocess
-import re
-import shutil
-import json
-
-class colors:
-    WARNING = '\\033[91m'
-    INFO = '\\033[94m'
-    HEADER = '\\033[95m'
-    OKGREEN = '\\033[92m'
-    ENDC = '\\033[0m'
-    BOLD = '\\033[1m'
-
-def check_dependencies():
-    required_tools = ['ethtool', 'lldpctl', 'lshw']
-    missing_tools = [tool for tool in required_tools if not shutil.which(tool)]
-    if missing_tools:
-        # This shouldn't happen if the wrapper bash script did its job
-        print(f"{colors.WARNING}Error: Missing required tools: {', '.join(missing_tools)}.{colors.ENDC}", file=sys.stderr)
-        sys.exit(1)
-
-def run_command(command):
-    try:
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-        return result.stdout
-    except FileNotFoundError:
-        return ""
-
-def get_nic_data():
-    print("Gathering hardware, link, and neighbor information...", file=sys.stderr)
-    lshw_json_output = run_command(['lshw', '-c', 'network', '-json'])
-    if not lshw_json_output:
-        return None
-    
-    try:
-        lshw_data = json.loads(lshw_json_output)
-        if not isinstance(lshw_data, list):
-            lshw_data = [lshw_data]
-    except json.JSONDecodeError:
-        print(f"{colors.WARNING}Error: Could not parse lshw JSON output.{colors.ENDC}", file=sys.stderr)
-        return None
-
-    physical_nics = {}
-    for nic in lshw_data:
-        if 'logicalname' in nic and nic.get('configuration', {}).get('driver'):
-            bus_info = nic.get('businfo', nic['logicalname'])
-            if bus_info not in physical_nics:
-                max_speed_val = nic.get('capacity')
-                max_speed_str = f"{int(max_speed_val) / 1e9:.0f} Gbit/s" if isinstance(max_speed_val, int) and max_speed_val > 0 else "N/A"
-                physical_nics[bus_info] = {
-                    'oem': nic.get('vendor', 'N/A'),
-                    'model': nic.get('product', 'N/A'),
-                    'max_speed': max_speed_str,
-                    'ports': []
-                }
-            physical_nics[bus_info]['ports'].append({'name': nic['logicalname']})
-    
-    for bus_info in physical_nics:
-        for port in physical_nics[bus_info]['ports']:
-            interface = port['name']
-            ethtool_out = run_command(['ethtool', interface])
-            lldp_out = run_command(['lldpctl', interface, '-f', 'keyvalue'])
-            
-            speed_match = re.search(r'Speed:\\s*(\\S+)', ethtool_out)
-            port['negotiated_speed'] = speed_match.group(1) if speed_match else 'Down'
-            
-            advertised_match = re.search(r'Advertised link modes:(.*?)Supported ports:', ethtool_out, re.DOTALL)
-            port['advertised_speeds'] = advertised_match.group(1).lower().strip() if advertised_match else ""
-            
-            lldp_dict = dict(re.findall(r'([^=]+)=(.*)', lldp_out))
-            port['mau_type'] = lldp_dict.get('lldp.eth.mau_type', '').strip()
-            sysname = lldp_dict.get(f'lldp.eth.chassis.name', 'N/A').strip()
-            portid = lldp_dict.get(f'lldp.eth.port.id.value', 'N/A').strip()
-            port['connected_to'] = f"{sysname} (Port: {portid})" if sysname != 'N/A' else 'N/A'
-    
-    return physical_nics
-
-def main():
-    if os.geteuid() != 0:
-        print("This script must be run as root.", file=sys.stderr)
-        print(json.dumps({"error": "Script not run as root"}))
-        sys.exit(1)
-    
-    try:
-        check_dependencies()
-        nic_data = get_nic_data()
-        if nic_data is not None:
-            print(json.dumps(nic_data, indent=2))
-        else:
-            print(json.dumps({"error": "Failed to retrieve NIC data"}))
-    except Exception as e:
-        print(json.dumps({"error": str(e)}))
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-"""
-
 class ServerAuditEngine:
     def __init__(self, 
                  tuning_guide_file: str = "AMD_EPYC_Series_BIOS_Tuning_Guide.json",
                  benchmark_map_file: str = "benchmark_tuning_map.json",
-                 compatibility_map_file: str = "profile_compatibility_map.json"):
+                 compatibility_map_file: str = "profile_compatibility_map.json",
+                 network_audit_script_file: str = "network_audit.py"):
         
         # Auto-resolve paths to app/resources/
         self.tuning_guide_path = os.path.join(RESOURCES_DIR, tuning_guide_file)
         self.benchmark_map_path = os.path.join(RESOURCES_DIR, benchmark_map_file)
         self.compatibility_map_path = os.path.join(RESOURCES_DIR, compatibility_map_file)
+        self.network_audit_script_path = os.path.join(RESOURCES_DIR, network_audit_script_file)
         
         # Load resources
         self.tuning_guide = self._load_json_file(self.tuning_guide_path, "Tuning Guide")
         self.benchmark_map = self._load_json_file(self.benchmark_map_path, "Benchmark Map")
         self.compatibility_map = self._load_json_file(self.compatibility_map_path, "Compatibility Map")
+        
+        # Load Network Audit Script
+        self.network_audit_script_content = self._load_text_file(self.network_audit_script_path, "Network Audit Script")
         
         # Normalize keys
         raw_map = self.benchmark_map.get("benchmark_tuning_map", {})
@@ -150,6 +52,15 @@ class ServerAuditEngine:
             raise FileNotFoundError(f"{file_desc} file not found at: '{file_path}'")
         except json.JSONDecodeError as e:
             raise json.JSONDecodeError(f"Invalid JSON in '{file_desc}' file: {e}", doc=e.doc, pos=e.pos)
+
+    def _load_text_file(self, file_path: str, file_desc: str) -> str:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"{file_desc} file not found at: '{file_path}'")
+        except Exception as e:
+            raise RuntimeError(f"Failed to read '{file_desc}' file: {e}")
 
     def _execute_curl_command(self, curl_cmd_list: list, cmd_description: str) -> Optional[str]:
         try:
@@ -185,7 +96,7 @@ SCRIPT_PATH="{script_path}"
 
 # 1. Create the Python script
 cat << 'EOF' > $SCRIPT_PATH
-{NETWORK_EVALUATOR_SCRIPT_CONTENT}
+{self.network_audit_script_content}
 EOF
 
 chmod +x $SCRIPT_PATH
