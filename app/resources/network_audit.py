@@ -157,6 +157,42 @@ def get_metadata():
             metadata['grub_cmdline'] = f.read().strip()
     else:
         metadata['grub_cmdline'] = "N/A"
+
+    # 6. NPS (NUMA Nodes per Socket) - INFERRED
+    numa_nodes = [d for d in os.listdir('/sys/devices/system/node') if d.startswith('node')]
+    metadata['nps'] = str(len(numa_nodes)) if numa_nodes else "1"
+
+    # 7. Memory Speed
+    mem_out = run_command(['dmidecode', '-t', 'memory'], timeout=10)
+    speed_match = re.search(r'Configured Memory Speed:\s*(\d+\s*MT/s)', mem_out)
+    metadata['memory_speed'] = speed_match.group(1) if speed_match else "N/A"
+
+    # 8. IOMMU Status
+    metadata['iommu_status'] = "Enabled" if os.path.exists('/sys/class/iommu') and os.listdir('/sys/class/iommu') else "Disabled"
+
+    # 9. Virtualization / SVM
+    with open('/proc/cpuinfo', 'r') as f:
+        cpu_info_content = f.read()
+        metadata['virtualization'] = "Enabled" if 'svm' in cpu_info_content or 'vmx' in cpu_info_content else "Disabled"
+
+    # 10. Idle States (C-States)
+    metadata['cstates_info'] = "Enabled" if os.path.exists('/sys/devices/system/cpu/cpuidle') else "Disabled"
+
+    # 11. Scaling Governor (Infers Power Profile)
+    gov_path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+    if os.path.exists(gov_path):
+        with open(gov_path, 'r') as f:
+            metadata['scaling_governor'] = f.read().strip()
+    else:
+        metadata['scaling_governor'] = "N/A"
+
+    # 12. Energy Performance Preference (EPP)
+    epp_path = "/sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference"
+    if os.path.exists(epp_path):
+        with open(epp_path, 'r') as f:
+            metadata['epp'] = f.read().strip()
+    else:
+        metadata['epp'] = "N/A"
     
     return metadata
 

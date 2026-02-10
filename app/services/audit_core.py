@@ -312,9 +312,37 @@ chmod +x $SCRIPT_PATH
             }
         }
 
+        # Map inferred BIOS settings from local command outputs
+        bios_findings = remote_metadata.get("bios_info", {}).copy()
+        
+        # Power Profile Mapping
+        governor = remote_metadata.get("scaling_governor", "").lower()
+        epp = remote_metadata.get("epp", "").lower()
+        
+        power_profile = "N/A"
+        if governor == "performance":
+            power_profile = "High Performance"
+        elif governor == "powersave":
+            power_profile = "Efficiency Mode"
+            
+        determinism = "N/A"
+        if epp == "performance":
+            determinism = "Enabled"
+            
+        bios_findings.update({
+            'NUMA Nodes per Socket (NPS)': remote_metadata.get("nps", "N/A"),
+            'Memory Target Speed': remote_metadata.get("memory_speed", "N/A"),
+            'IOMMU': remote_metadata.get("iommu_status", "N/A"),
+            'SVM Mode': remote_metadata.get("virtualization", "N/A"),
+            'DF C-States': remote_metadata.get("cstates_info", "N/A"),
+            'Power Profile Selection': power_profile,
+            'Determinism Control': determinism,
+            'Determinism Enable': "Performance" if epp == "performance" else "N/A"
+        })
+
         simulated_metadata = {
             "Data": {
-                "bios_settings": remote_metadata.get("bios_info", {}),
+                "bios_settings": bios_findings,
                 "fileTunings": [f'GRUB_CMDLINE_LINUX_DEFAULT="{remote_metadata.get("grub_cmdline", "")}"']
             }
         }
