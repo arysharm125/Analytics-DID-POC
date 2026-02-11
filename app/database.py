@@ -2,11 +2,9 @@
 from pymongo import MongoClient
 import logging, sys, time
 from datetime import datetime
-import hvac
 
-from app.constants import (
-    VAULT_ADDR,
-    VAULT_TOKEN
+from app.services.vault import (
+    vault_fetch_secret
 )
 
 # -----------------------------------------------------------
@@ -39,19 +37,13 @@ def _vault_read_mongo() -> _MongoDBConfig:
         secret → mount
         mongo  → key
     """
-    if not VAULT_TOKEN:
-        raise RuntimeError("VAULT_TOKEN missing — cannot read Vault")
-
-    client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
-
     try:
         logger.info("Reading Mongo config from Vault KV v2 → secret/data/mongo")
-        secret = client.secrets.kv.v2.read_secret_version(path="mongo")
-        data = secret.get("data", {}).get("data", {})
+        data = vault_fetch_secret("mongo")
         if not data:
             raise RuntimeError("Vault secret 'mongo' is empty.")
 
-        cfg = _MongoDBConfig(data.get("connection_string"), data.get("database_name"))
+        cfg = _MongoDBConfig(data["connection_string"], data["database_name"])
 
         if not cfg.conn_string:
             raise RuntimeError("Vault missing key: connection_string")

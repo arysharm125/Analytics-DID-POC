@@ -2,7 +2,7 @@ import os
 
 VAULT_ADDR = os.getenv("VAULT_ADDR", "")
 VAULT_TOKEN = os.getenv("VAULT_TOKEN", "")
-VAULT_MOUNT = os.getenv("VAULT_MOUNT", "")
+VAULT_MOUNT = os.getenv("VAULT_MOUNT", "secret")
 
 DID_VAULT_PATH_PREFIX = os.getenv("DID_VAULT_PATH_PREFIX", "dids")
 VERAMO_URL = os.getenv("VERAMO_URL", "")

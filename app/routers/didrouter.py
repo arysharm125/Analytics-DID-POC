@@ -1,5 +1,6 @@
 from fastapi import HTTPException, UploadFile, File, Query, Header, APIRouter
 from fastapi.responses import StreamingResponse, JSONResponse
+from datetime import datetime
 import json
 import logging
 from app.utils import generate_did
@@ -8,18 +9,24 @@ from pydantic import BaseModel
 import io
 from app.utils import  merkle_root
 import pymongo
+from bson import json_util
 
 #  Import constants (environment configs, collection names)
 from app.constants import (
     VAULT_MOUNT,
     API_ACCESS_TOKEN,
     VC_TOKEN_COLLECTION,
-    QA_COLLECTION,
+)
+
+from app.services.vault import (
+    vault_store_secret,
+    vault_list,
+    vault_read_dict,
+    vault_is_authenticated,
 )
 
 # 🔹 Import utility functions from app.utils.py
 from app.utils import (
-    init_vault_client,
     now_iso,
     vault_write,
     vault_read,
@@ -29,7 +36,6 @@ from app.utils import (
     extract_jwt_from_vc,
     extract_subject_did,
     create_short_lived_token,
-    vault_store_secret,
     vault_fetch_secret,
     decrypt_data,
     get_from_vault_by_did,
@@ -38,15 +44,14 @@ from app.utils import (
     compute_diff,
     now_timestamp,
     apply_global_updates,
+    get_vault_stored_vc_for_did,
+    is_issuer_allowed,
 
     # DB (initialized automatically in utils.py)
     db,
     qa_col,
     did_vault_col,
     audit_log,
-
-    # Vault client (initialized automatically in utils.py)
-    vault_client,
 )
 
 
@@ -102,7 +107,7 @@ class VCVerifyResponse(BaseModel):
 async def startup_did_router():
         # init vault client and issuer
     try:
-        if vault_client == None or not vault_client.is_authenticated():
+        if vault_is_authenticated():
             logger.warning("Vault client not authenticated (token may be missing/invalid)")
         else:
             logger.info("Vault connected and authenticated.")
@@ -431,20 +436,6 @@ class DIDAppendRequest(BaseModel):
 
 from fastapi import HTTPException, Query, Request
 from app.utils import validate_amd_email
-
-def deep_merge(old: dict, new: dict) -> dict:
-    merged = old.copy()
-    for key, val in new.items():
-        if (
-            key in merged
-            and isinstance(merged[key], dict)
-            and isinstance(val, dict)
-        ):
-            merged[key] = deep_merge(merged[key], val)
-        else:
-            merged[key] = val
-    return merged
-
 
 def deep_merge(old: dict, new: dict) -> dict:
     merged = old.copy()
@@ -907,33 +898,6 @@ def verify_vc(req: VCVerifyRequest):
     return json.loads(json_util.dumps(resp))
 
 
-def normalize_vault_object(obj):
-    # Handles KV v1, KV v2, lists, None
-    if not obj:
-        return {}
-    if isinstance(obj, list) and len(obj) > 0:
-        obj = obj[0]
-    if "data" in obj:
-        inner = obj.get("data")
-        if isinstance(inner, dict) and "data" in inner:
-            return inner["data"]
-        return inner
-    return obj
-
-
-def vault_read_raw(path: str):
-    """
-    Direct raw Vault GET for KV2: no key mapping performed.
-    """
-    try:
-        result = client.secrets.kv.v2.read_secret_version(
-            path=path.replace("secret/", ""),
-            mount_point="secret"
-        )
-        return result
-    except Exception:
-        return {}
-
 @app.get("/did-history", tags=["sut"])
 def get_did_history(
     benchmarkExecutionID: str = Query(...),
@@ -978,20 +942,14 @@ def get_did_history(
         seen.add(did)
         chain.append(did)
         try:
-            vault_object = vault_client.secrets.kv.v2.read_secret_version(
-                path=f"{iterationID}/{did}", mount_point="secret"
-            )
-            data = vault_object.get("data", {}).get("data", {}) or {}
+            data = vault_read_dict(mount_point="secret", path=f"{iterationID}/{did}")
             did = data.get("previous_did")
         except Exception:
             break
 
     # 3️⃣ Fallback — include any orphan snapshots in Vault
     try:
-        folder = vault_client.secrets.kv.v2.list_secrets(
-            path=iterationID, mount_point="secret"
-        )
-        extra_dids = [k.rstrip("/") for k in folder.get("data", {}).get("keys", [])]
+        extra_dids = vault_list(mount_point="secret", path=iterationID)
         chain = list(dict.fromkeys(chain + extra_dids))
     except Exception:
         pass
@@ -1000,10 +958,7 @@ def get_did_history(
     history = []
     for did in chain:
         try:
-            snap = vault_client.secrets.kv.v2.read_secret_version(
-                path=f"{iterationID}/{did}", mount_point="secret"
-            )
-            data = (snap.get("data") or {}).get("data") or {}
+            data = vault_read_dict(mount_point="secret", path=f"{iterationID}/{did}")
 
             history.append({
                 "did": did,
@@ -1080,10 +1035,7 @@ def fetch_by_iteration(iterationID: str):
     """
     try:
         # List folder
-        keys_resp = client.secrets.kv.v2.list_secrets(
-            path=iterationID, mount_point="secret"
-        )
-        keys = keys_resp.get("data", {}).get("keys", [])
+        keys = vault_list(mount_point="secret", path=iterationID)
 
         did_records = []
 
@@ -1091,10 +1043,7 @@ def fetch_by_iteration(iterationID: str):
             if key.endswith("/"):  # Skip inner folders if any
                 continue
 
-            result = client.secrets.kv.v2.read_secret_version(
-                path=f"{iterationID}/{key}", mount_point="secret"
-            )
-            data = result.get("data", {}).get("data", {})
+            data = vault_read_dict(mount_point="secret", path=f"{iterationID}/{key}")
             did_records.append(data)
 
         if did_records:

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 import logging
 from fastapi.responses import HTMLResponse
-
+from app.services.vault import vault_is_authenticated
 
 # ==========================
 # Logging
@@ -24,7 +24,7 @@ app = FastAPI(docs_url=None, redoc_url=None)
 from app.routers.policy import router as policy_router
 from app.routers.audit import router as audit_router
 from app.routers.access import app as access_gateway_app
-from app.routers.didrouter import app as did_router, startup_did_router, vault_client
+from app.routers.didrouter import app as did_router, startup_did_router
 
 app.include_router(policy_router)
 app.include_router(audit_router)
@@ -67,7 +67,7 @@ async def startup():
 @app.get("/health", tags=["health"])
 def health():
     try:
-        vault_ok = vault_client != None and vault_client.is_authenticated()
+        vault_ok = vault_is_authenticated()
     except Exception:
         vault_ok = False
     return {"status": "ok", "vault_authenticated": vault_ok}
