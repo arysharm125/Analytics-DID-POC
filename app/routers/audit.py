@@ -1,10 +1,9 @@
 # app/routers/audit.py
-from fastapi import APIRouter, HTTPException, status, Path
+from fastapi import APIRouter, HTTPException, status, Path, Body
 from pydantic import BaseModel, Field
 from celery.result import AsyncResult
 from typing import Optional, Dict, Any
 import os
-import requests
 import logging
 
 # Import the celery app to send tasks
@@ -13,10 +12,6 @@ from app.services.scoring import validate_and_score_benchmark_data
 
 router = APIRouter(tags=["Analytics & Audit"])
 logger = logging.getLogger("audit_api")
-
-# Config
-EPDW_API_URL = os.getenv("EPDW_API_URL", "http://epdw.dev.amd.com:8001/public/getBenchmarkResult")
-EPDW_TOKEN = os.getenv("EPDW_TOKEN")
 
 # Models
 class AuditRequest(BaseModel):
@@ -69,24 +64,36 @@ async def get_audit_result(task_id: str):
     return {"task_id": task_id, "status": res.state, "result": res.result if res.ready() else None}
 
 @router.post("/post_flight_check/{benchmark_execution_id}")
-async def post_flight_check(benchmark_execution_id: str):
-    headers = {"accept": "application/json"}
-
-    # OPTIONAL token logic
-    if EPDW_TOKEN:
-        headers["Authorization"] = f"Bearer {EPDW_TOKEN}"
-    else:
-        logger.warning("EPDW_TOKEN not set, calling EPDW API without auth")
-
+async def post_flight_check(benchmark_execution_id: str, data: Optional[Dict[str, Any]] = Body(None)):
+    """
+    Performs post-flight verification and scoring.
+    - If 'data' is provided, it uses it for scoring.
+    - If 'data' is missing, it fetches the record from the local MongoDB using benchmark_execution_id.
+    """
     try:
-        resp = requests.get(
-            EPDW_API_URL,
-            headers=headers,
-            params={"benchmarkExecutionID": benchmark_execution_id},
-            timeout=30
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        if not data:
+            logger.info(f"Checking local database for benchmark_execution_id: {benchmark_execution_id}")
+            from app.database import MongoConnector
+            from bson import ObjectId
+
+            db = MongoConnector()
+            # Based on app/utils.py, the collection for executions is 'qa_benchmark_executions'
+            col = db.get_collection("qa_benchmark_executions")
+            
+            # Try to find by benchmarkExecutionID string first
+            record = col.find_one({"benchmarkExecutionID": benchmark_execution_id})
+            
+            if not record:
+                # Try finding by MongoDB _id
+                try:
+                    record = col.find_one({"_id": ObjectId(benchmark_execution_id)})
+                except:
+                    pass
+            
+            if not record:
+                raise HTTPException(status_code=404, detail=f"Benchmark record '{benchmark_execution_id}' not found in local database.")
+            
+            data = record
 
         passed, msg, score, details = validate_and_score_benchmark_data(data)
 
@@ -98,6 +105,8 @@ async def post_flight_check(benchmark_execution_id: str):
             "details": details
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Post-flight check failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
