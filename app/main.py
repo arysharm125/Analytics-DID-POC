@@ -25,10 +25,12 @@ from app.routers.policy import router as policy_router
 from app.routers.audit import router as audit_router
 from app.routers.access import app as access_gateway_app
 from app.routers.didrouter import app as did_router, startup_did_router
+from app.routers.advisoryrouter import router as advisory_router
 
 app.include_router(policy_router)
 app.include_router(audit_router)
 app.include_router(did_router)
+app.include_router(advisory_router)
 app.mount("/access", access_gateway_app)
 
 @app.get("/docs", include_in_schema=False)

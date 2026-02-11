@@ -1,5 +1,7 @@
 import os
 
+EXAMPLE_API_TOKEN = "example-api-token-123"
+
 VAULT_ADDR = os.getenv("VAULT_ADDR", "")
 VAULT_TOKEN = os.getenv("VAULT_TOKEN", "")
 VAULT_MOUNT = os.getenv("VAULT_MOUNT", "secret")
@@ -10,7 +12,7 @@ VERAMO_URL = os.getenv("VERAMO_URL", "")
 VERAMO_API_KEY = os.getenv("VERAMO_API_KEY", "")
 DID_SERVICE_URL = os.getenv("DID_SERVICE_URL", "")
 
-API_ACCESS_TOKEN = os.getenv("API_ACCESS_TOKEN", "")
+API_ACCESS_TOKEN = os.getenv("API_ACCESS_TOKEN", EXAMPLE_API_TOKEN)
 VC_ISSUER_SAFE_LIST = os.getenv("VC_ISSUER_SAFE_LIST", "")  # comma-separated allowed issuers (optional)
 
 # collections / names reused in VC flow
