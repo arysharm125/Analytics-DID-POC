@@ -107,7 +107,7 @@ class VCVerifyResponse(BaseModel):
 async def startup_did_router():
         # init vault client and issuer
     try:
-        if vault_is_authenticated():
+        if not vault_is_authenticated():
             logger.warning("Vault client not authenticated (token may be missing/invalid)")
         else:
             logger.info("Vault connected and authenticated.")

@@ -13,6 +13,7 @@ from app.constants import (
     VAULT_ADDR,
     VAULT_TOKEN,
     VAULT_MOUNT,
+    VAULT_LOCAL_MOCK,
 )
 
 class InvalidPathException(Exception):
@@ -35,7 +36,13 @@ def get_vault_config():
     return VAULT_ADDR, VAULT_TOKEN, VAULT_MOUNT
 
 def init_vault_client():
-    """Initialize and return an authenticated hvac Vault client."""
+    """Initialize and return an authenticated hvac Vault client (or mock if VAULT_LOCAL_MOCK is set)."""
+    # Check if we should use the local mock instead of real Vault
+    if VAULT_LOCAL_MOCK:
+        from app.services.vault_mock import MockVaultClient
+        logging.info(f"[INFO] Using local mock Vault at: {VAULT_LOCAL_MOCK}")
+        return MockVaultClient(root_dir=VAULT_LOCAL_MOCK, default_mount=VAULT_MOUNT)
+
     VAULT_ADDR, VAULT_TOKEN, _ = get_vault_config()
     try:
         client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
