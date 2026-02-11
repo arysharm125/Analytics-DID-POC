@@ -1,10 +1,8 @@
 # db_connector.py
 from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, OperationFailure, InvalidURI
-import os, logging, sys, time
+import logging, sys, time
 from datetime import datetime
 import hvac
-import pymongo
 
 from app.constants import (
     VAULT_ADDR,
@@ -25,7 +23,16 @@ logger = logging.getLogger("db_connector")
 # Vault KV v2 Reader (ONLY)
 # ===========================================================
 
-def _vault_read_mongo():
+class _MongoDBConfig:
+    """Config parameters for MongoDB connection."""
+    conn_string : str
+    db_name : str
+    def __init__(self, conn_str : str, db_name : str):
+        self.conn_string = conn_str
+        self.db_name = db_name
+
+
+def _vault_read_mongo() -> _MongoDBConfig:
     """
     Reads KV v2 secret stored at: secret/data/mongo
     Your Vault path is:
@@ -43,36 +50,22 @@ def _vault_read_mongo():
         data = secret.get("data", {}).get("data", {})
         if not data:
             raise RuntimeError("Vault secret 'mongo' is empty.")
-        return data
+
+        cfg = _MongoDBConfig(data.get("connection_string"), data.get("database_name"))
+
+        if not cfg.conn_string:
+            raise RuntimeError("Vault missing key: connection_string")
+
+        if not cfg.db_name:
+            raise RuntimeError("Vault missing key: database_name")
+
+        return cfg
+
     except Exception as e:
         raise RuntimeError(
             f"Failed to read Vault KV v2 secret at secret/data/mongo → {e}"
         )
 
-# ===========================================================
-# Extract fields
-# ===========================================================
-
-def get_mongo_connection_string():
-    data = _vault_read_mongo()
-    conn = data.get("connection_string")
-    if not conn:
-        raise RuntimeError("Vault missing key: connection_string")
-    return conn
-
-def get_mongo_database_name():
-    data = _vault_read_mongo()
-    db = data.get("database_name")
-    if not db:
-        raise RuntimeError("Vault missing key: database_name")
-    return db
-
-def get_mongo_collection_name():
-    data = _vault_read_mongo()
-    coll = data.get("collection_name")
-    if not coll:
-        raise RuntimeError("Vault missing key: collection_name")
-    return coll
 
 # ===========================================================
 # MongoConnector Class
@@ -82,26 +75,24 @@ class MongoConnector:
     """MongoDB connector using Vault KV v2 secrets only."""
 
     def __init__(self):
-        self.uri = get_mongo_connection_string()
-        self.db_name = get_mongo_database_name()
-        self.collection_name = get_mongo_collection_name()
+        cfg = _vault_read_mongo()
 
-        logger.info(f"Mongo target DB: {self.db_name}, Collection: {self.collection_name}")
-        logger.info(f"Connecting to MongoDB at {self.uri}")
+        logger.info(f"Mongo target DB: {cfg.db_name}")
+        logger.info(f"Connecting to MongoDB at {cfg.conn_string}")
 
         self.client = None
         self.db = None
 
         use_tls = (
-            self.uri.startswith("mongodb+srv://")
-            or "mongodb.net" in self.uri
+            cfg.conn_string.startswith("mongodb+srv://")
+            or "mongodb.net" in cfg.conn_string
         )
 
         # Retry logic
         for attempt in range(3):
             try:
-                self.client = pymongo.MongoClient(
-                    self.uri,
+                self.client = MongoClient(
+                    cfg.conn_string,
                     tls=use_tls,
                     tlsAllowInvalidCertificates=True,
                     tlsAllowInvalidHostnames=True,
@@ -111,8 +102,8 @@ class MongoConnector:
                 # Force connection test
                 self.client.admin.command("ping")
 
-                self.db = self.client[self.db_name]
-                logger.info(f"✅ Connected to MongoDB: {self.db_name}")
+                self.db = self.client[cfg.db_name]
+                logger.info(f"✅ Connected to MongoDB: {cfg.db_name}")
                 break
             except Exception as e:
                 logger.error(f"[Attempt {attempt+1}/3] Mongo connection failed → {e}")
