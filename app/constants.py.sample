@@ -1,0 +1,27 @@
+import os
+
+VAULT_ADDR = os.getenv("VAULT_ADDR", "")
+VAULT_TOKEN = os.getenv("VAULT_TOKEN", "")
+VAULT_MOUNT = os.getenv("VAULT_MOUNT", "")
+
+DID_VAULT_PATH_PREFIX = os.getenv("DID_VAULT_PATH_PREFIX", "dids")
+VERAMO_URL = os.getenv("VERAMO_URL", "")
+VERAMO_API_KEY = os.getenv("VERAMO_API_KEY", "")
+DID_SERVICE_URL = os.getenv("DID_SERVICE_URL", "")
+
+API_ACCESS_TOKEN = os.getenv("API_ACCESS_TOKEN", "")
+VC_ISSUER_SAFE_LIST = os.getenv("VC_ISSUER_SAFE_LIST", "")  # comma-separated allowed issuers (optional)
+
+# collections / names reused in VC flow
+VC_TOKEN_COLLECTION = os.getenv("VC_TOKEN_COLLECTION", "vc_tokens")
+QA_COLLECTION = os.getenv("QA_BENCHMARK_COLLECTION", "benchmark_executions")
+
+
+FERNET_KEY_FILE = os.getenv("FERNET_KEY_FILE", "fernet.key")
+FERNET_KEY = os.getenv("FERNET_KEY", "")
+
+
+
+# Celery Configuration (Point to your LOCAL Redis)
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "")

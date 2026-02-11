@@ -1,13 +1,11 @@
 from fastapi import HTTPException, UploadFile, File, Query, Header, APIRouter
 from fastapi.responses import StreamingResponse, JSONResponse
-import os, json
-from app.database import MongoConnector
+import json
 import logging
 from app.utils import generate_did
 from typing import List, Optional, Any, Dict
 from pydantic import BaseModel
 import io
-from app.utils import init_vault_client
 from app.utils import  merkle_root
 import pymongo
 
@@ -16,6 +14,7 @@ from app.constants import (
     VAULT_MOUNT,
     API_ACCESS_TOKEN,
     VC_TOKEN_COLLECTION,
+    QA_COLLECTION,
 )
 
 # 🔹 Import utility functions from app.utils.py
@@ -38,25 +37,17 @@ from app.utils import (
     normalize_vault_object,
     compute_diff,
     now_timestamp,
-    apply_global_updates
-    )
+    apply_global_updates,
 
+    # DB (initialized automatically in utils.py)
+    db,
+    qa_col,
+    did_vault_col,
+    audit_log,
 
-# ==========================
-# Config/Environment
-# ==========================
-DID_SERVICE_URL = os.getenv("DID_SERVICE_URL", "http://10.159.20.87:4000/veramo")
-
-VERAMO_BASE = os.getenv("VERAMO_URL", "http://10.159.20.87:4000/veramo")
-QA_COLLECTION = os.getenv("QA_BENCHMARK_COLLECTION", "benchmark_executions")
-
-DID_VAULT_PATH_PREFIX = os.getenv("DID_VAULT_PATH_PREFIX", "dids")
-API_ACCESS_TOKEN = os.getenv("API_ACCESS_TOKEN")
-JWT_SECRET = os.getenv("JWT_SECRET")
-MAX_DID_CREATION_WORKERS = int(os.getenv("MAX_DID_CREATION_WORKERS", "6"))
-VC_ISSUER_SAFE_LIST = os.getenv("VC_ISSUER_SAFE_LIST", "")
-VC_COLLECTION = os.getenv("VC_COLLECTION", "vc_records")
-ENCRYPTED_COLLECTION = os.getenv("ENCRYPTED_COLLECTION", "encrypted_docs")
+    # Vault client (initialized automatically in utils.py)
+    vault_client,
+)
 
 
 # ==========================
@@ -64,16 +55,6 @@ ENCRYPTED_COLLECTION = os.getenv("ENCRYPTED_COLLECTION", "encrypted_docs")
 # ==========================
 logger = logging.getLogger("did_vault_api_sut")
 logger.setLevel(logging.INFO)
-
-
-# ==========================
-# DB + Vault init
-# ==========================
-db = MongoConnector()
-qa_col = db.get_collection(QA_COLLECTION)
-did_vault_col = db.get_collection("did_vault")     # metadata only
-audit_log = db.get_collection("did_audit_log")
-vault_client = init_vault_client()
 
 
 app = APIRouter()
@@ -121,7 +102,7 @@ class VCVerifyResponse(BaseModel):
 async def startup_did_router():
         # init vault client and issuer
     try:
-        if not vault_client.is_authenticated():
+        if vault_client == None or not vault_client.is_authenticated():
             logger.warning("Vault client not authenticated (token may be missing/invalid)")
         else:
             logger.info("Vault connected and authenticated.")
@@ -531,7 +512,7 @@ async def append_did(
     if not any(diff_log.values()):
         raise HTTPException(400, "No changes detected in payload")
 
-    new_did = generate_did()
+    new_did = generate_did(None)
 
     # =========================
     # 🔗 VAULT CHAIN HANDLING

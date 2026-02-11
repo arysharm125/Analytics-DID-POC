@@ -6,6 +6,11 @@ from datetime import datetime
 import hvac
 import pymongo
 
+from app.constants import (
+    VAULT_ADDR,
+    VAULT_TOKEN
+)
+
 # -----------------------------------------------------------
 # Logging
 # -----------------------------------------------------------
@@ -27,13 +32,10 @@ def _vault_read_mongo():
         secret → mount
         mongo  → key
     """
-    vault_addr = os.getenv("VAULT_ADDR", "http://10.159.22.95:8200")
-    vault_token = os.getenv("VAULT_TOKEN")
-
-    if not vault_token:
+    if not VAULT_TOKEN:
         raise RuntimeError("VAULT_TOKEN missing — cannot read Vault")
 
-    client = hvac.Client(url=vault_addr, token=vault_token)
+    client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
 
     try:
         logger.info("Reading Mongo config from Vault KV v2 → secret/data/mongo")

@@ -67,7 +67,7 @@ async def startup():
 @app.get("/health", tags=["health"])
 def health():
     try:
-        vault_ok = vault_client.is_authenticated()
+        vault_ok = vault_client != None and vault_client.is_authenticated()
     except Exception:
         vault_ok = False
     return {"status": "ok", "vault_authenticated": vault_ok}

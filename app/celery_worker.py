@@ -2,14 +2,15 @@
 from celery import Celery
 import os
 
-# Use environment variables for Redis URL, default to localhost
-REDIS_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
-RESULT_BACKEND_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+from app.constants import (
+    CELERY_BROKER_URL,
+    CELERY_RESULT_BACKEND
+)
 
 celery_app = Celery(
     'tasks', # Default name for tasks module
-    broker=REDIS_URL,
-    backend=RESULT_BACKEND_URL, # Use Redis to store task results
+    broker=CELERY_BROKER_URL,
+    backend=CELERY_RESULT_BACKEND, # Use Redis to store task results
     include=['app.tasks'] # Explicitly include the tasks module
 )
 
@@ -20,7 +21,7 @@ celery_app.conf.update(
     timezone='UTC',
     enable_utc=True,
     # Optional: Add settings for task retries, rate limits, etc.
-    # task_track_started=True, 
+    # task_track_started=True,
 )
 
 if __name__ == '__main__':
