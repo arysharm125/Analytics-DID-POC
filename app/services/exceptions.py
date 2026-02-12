@@ -1,0 +1,95 @@
+"""Exceptions for DID service and related operations."""
+
+_DID_PREFIX = "did:amd:com"
+
+
+class DIDServiceError(Exception):
+    """Base exception for DID service errors."""
+    pass
+
+
+class ValidationError(DIDServiceError, ValueError):
+    """Base exception for validation errors (invalid identifiers, fields, etc.).
+
+    These errors should typically result in HTTP 400 Bad Request responses.
+
+    Note: This class also inherits from ValueError so that Pydantic validators
+    (which expect ValueError or TypeError) properly catch these exceptions and
+    return 422/400 responses instead of 500 errors.
+    """
+    pass
+
+
+class InvalidIdentifierError(ValidationError):
+    """Raised when an identifier is neither a valid UUID nor a valid DID."""
+
+    def __init__(self, identifier: str):
+        self.identifier = identifier
+        super().__init__(
+            f"Invalid identifier: '{identifier}'. Must be a valid UUID "
+            f"(xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) or DID ({_DID_PREFIX}:uuid)"
+        )
+
+
+class DuplicateProvenanceError(DIDServiceError):
+    """Raised when duplicate identifiers are found in provenance after canonicalization."""
+
+    def __init__(self):
+        super().__init__(
+            "Duplicate identifiers found after canonicalization. "
+            "Each provenance item must be unique."
+        )
+
+
+class DivisionMismatchError(DIDServiceError):
+    """Raised when attempting to change an artefact's division."""
+
+    def __init__(self, external_uid: str, existing_division: str, new_division: str):
+        self.external_uid = external_uid
+        self.existing_division = existing_division
+        self.new_division = new_division
+        super().__init__(
+            f"Division mismatch for artefact '{external_uid}': "
+            f"existing division is '{existing_division}', "
+            f"but attempted to set '{new_division}'. Division cannot be changed."
+        )
+
+
+class VersionConflictError(DIDServiceError):
+    """Raised when a concurrent update creates a version conflict."""
+
+    def __init__(self, external_uid: str, version: int):
+        self.external_uid = external_uid
+        self.version = version
+        super().__init__(
+            f"Version conflict for artefact '{external_uid}': "
+            f"version {version} already exists. This may indicate a concurrent update."
+        )
+
+
+class ProvenanceNotFoundError(DIDServiceError):
+    """Raised when a provenance item references a non-existent artefact."""
+
+    def __init__(self, identifier: str):
+        self.identifier = identifier
+        super().__init__(
+            f"Provenance item '{identifier}' does not exist in did_artefacts."
+        )
+
+
+class InvalidMultihashError(ValidationError):
+    """Raised when a multihash format is invalid."""
+
+    def __init__(self, multihash: str, reason: str):
+        self.multihash = multihash
+        self.reason = reason
+        super().__init__(f"Invalid multihash '{multihash}': {reason}")
+
+
+class InvalidDivisionError(ValidationError):
+    """Raised when a division identifier is invalid."""
+
+    def __init__(self, division: str, reason: str):
+        self.division = division
+        self.reason = reason
+        super().__init__(f"Invalid division '{division}': {reason}")

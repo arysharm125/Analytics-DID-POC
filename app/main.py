@@ -1,7 +1,12 @@
+from contextlib import AsyncExitStack, asynccontextmanager
+from typing import AsyncGenerator
 from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 import logging
-from fastapi.responses import HTMLResponse
+import logging.config
+from app.services.did_service import did_service_lifespan
 from app.services.vault import vault_is_authenticated
+from app.services.exceptions import ValidationError
 
 # ==========================
 # Logging
@@ -16,7 +21,19 @@ logger = logging.getLogger("deployment")
 # ==========================
 # FastAPI App
 # ==========================
-app = FastAPI(docs_url=None, redoc_url=None)
+
+@asynccontextmanager
+async def _app_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+  """App lifespan generator. Controls the lifetime of global/singleton objects."""
+  async with AsyncExitStack() as stack:
+    await startup_did_router()
+    await stack.enter_async_context(did_service_lifespan())
+
+    # Add additional lifespans above this point.
+    yield
+
+
+app = FastAPI(docs_url=None, redoc_url=None, lifespan=_app_lifespan)
 
 # ==========================
 # Register Routers
@@ -25,7 +42,7 @@ from app.routers.policy import router as policy_router
 from app.routers.audit import router as audit_router
 from app.routers.access import app as access_gateway_app
 from app.routers.didrouter import app as did_router, startup_did_router
-from app.routers.advisoryrouter import router as advisory_router
+from app.routers.advisory_router import router as advisory_router
 
 app.include_router(policy_router)
 app.include_router(audit_router)
@@ -56,12 +73,6 @@ async def api_documentation(request: Request):
   </body>
 </html>""")
 
-import logging.config
-
-@app.on_event("startup")
-async def startup():
-    await startup_did_router()
-
 
 # -------------------------
 # Health
@@ -75,4 +86,3 @@ def health():
     return {"status": "ok", "vault_authenticated": vault_ok}
 
 # EOF
-
