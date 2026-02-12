@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Any
 import logging, uuid
 from app.routers.basetypes import UUIDString, DIDString
-from app.routers.dependencies import APITokenDep
+from app.routers.dependencies import APITokenDep, APITokenDep401Response
 
 
 router = APIRouter(tags=["Advisory API"], prefix="/advisory")
@@ -44,7 +44,7 @@ class RecordReportResponse(BaseModel):
     )
 
 
-@router.post("/record_report")
+@router.post("/record_report", responses={**APITokenDep401Response})
 async def record_report(request: RecordReportRequest, api_token: APITokenDep) -> RecordReportResponse:
     """Record an advisory report as a DID."""
 
