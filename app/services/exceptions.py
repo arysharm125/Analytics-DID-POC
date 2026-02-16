@@ -1,5 +1,9 @@
 """Exceptions for DID service and related operations."""
 
+from fastapi import HTTPException
+from requests import HTTPError
+
+
 _DID_PREFIX = "did:amd:com"
 
 
@@ -93,3 +97,23 @@ class InvalidDivisionError(ValidationError):
         self.division = division
         self.reason = reason
         super().__init__(f"Invalid division '{division}': {reason}")
+
+class ArtefactNotFoundError(DIDServiceError, HTTPException):
+    """Raised when a DID/UUID fails to be fetched for a specified division."""
+    def __init__(self, division: str | None, uid: str):
+        self.division = division
+        self.uid = uid
+        detail = ""
+        if division is None:
+            detail = f"Artefact with uid '{uid}' not found in any division"
+        else:
+            f"Artefact with uid '{uid}' not found in division '{division}."
+
+        super().__init__(status_code=404, detail=detail)
+
+
+class DivisionKeysNotFound(DIDServiceError, HTTPException):
+    """Raised when a division key is not found."""
+    def __init__(self, division: str):
+        self.division = division
+        super().__init__(status_code=404, detail=f"Division keys for '{division}' not found.")

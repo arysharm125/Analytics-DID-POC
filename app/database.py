@@ -204,6 +204,7 @@ class MongoConnector:
                     tlsAllowInvalidHostnames=True,
                     serverSelectionTimeoutMS=10000,
                     connectTimeoutMS=10000,
+                    tz_aware=True,
                 )
                 # Force connection test
                 self.client.admin.command("ping")

@@ -1,9 +1,9 @@
 from uuid import uuid4
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel, Field
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 import logging
-from app.routers.basetypes import AMDWebDID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid
+from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid, multihash_from_str
 from app.routers.dependencies import APITokenDep, APITokenDep401Response
 from app.services.did_service import DIDServiceDep, ArtefactInput
 from app.services.exceptions import (
@@ -24,6 +24,7 @@ class RecordReportRequest(BaseModel):
         ...,  # Required
         description="Globally unique ID of this object (must be a valid UUID)",
         json_schema_extra={"example": _example_random_uuid},
+        examples=[_example_random_uuid],
     )
     artefact_hash: Optional[Multihash] = Field(
         default=None,
@@ -126,3 +127,28 @@ async def record_report(request: RecordReportRequest, api_token: APITokenDep, di
         version_did=did_from_uuid(record.version_uid),
         version=record.version,
     )
+
+@router.get("/did.json")
+async def advisory_DID(did_svc: DIDServiceDep):
+    """Return the DID document that corresponds to the advisory division.
+
+    This DID document contains the keys that are used to verify digital artefacts
+    associated with the advisory division.
+
+    Returns:
+        JSON-LD DID Document.
+    """
+    return did_svc.division_did_doc(_ADVISORY_DIVISION)
+
+PathUUID = Annotated[CanonicalizedUUID, Path(
+    description="The UID or DID of the artefact to retrieve the Verifiable Credential for",
+    example=_example_random_uuid,
+)]
+
+@router.get("/{uid}/vc.json", responses={**APITokenDep401Response})
+async def artefact_vc(
+    uid: PathUUID,
+    api_token: APITokenDep,
+    did_svc: DIDServiceDep,):
+    """Return a Verifiable Credential with proofs for a Digital Artefact."""
+    return did_svc.artefact_vc(division=_ADVISORY_DIVISION, uid=uid)

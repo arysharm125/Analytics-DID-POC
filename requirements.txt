@@ -16,3 +16,4 @@ pyjwt==2.9.0
 structlog==24.4.0  # optional, but recommended
 aiohttp
 python-dotenv
+pyld>=2.0.4
