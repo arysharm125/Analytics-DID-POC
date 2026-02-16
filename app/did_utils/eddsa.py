@@ -185,20 +185,21 @@ def verify_signature(
         return False
 
 
-def _sodium_memzero(buffer: bytes) -> None:
+def sodium_memzero(buffer: bytes | bytearray) -> None:
     """Securely zero memory using libsodium's sodium_memzero.
 
     This function uses libsodium's secure memory zeroing, which is designed
     to prevent compiler optimization from skipping the memory clearing.
 
     Args:
-        buffer: The bytes object whose underlying memory should be zeroed.
-                WARNING: The buffer should not be used after this call.
+        buffer: The bytes or bytearray object whose underlying memory should
+                be zeroed. WARNING: The buffer should not be used after this call.
 
     Note:
-        This operates on the bytes object's internal buffer via cffi.
+        This operates on the buffer's internal memory via cffi.
         Due to Python's memory model, the bytes object may have been
         copied elsewhere, but this ensures the primary buffer is cleared.
+        For bytearray, this is more effective since bytearray is mutable.
     """
     if len(buffer) == 0:
         return
@@ -210,7 +211,11 @@ def _sodium_memzero(buffer: bytes) -> None:
         pass
 
 
-def secure_clear_signing_key(signing_key: SigningKey) -> None:
+# Alias for backward compatibility
+_sodium_memzero = sodium_memzero
+
+
+def secure_clear_signing_key(signing_key: SigningKey, trigger_gc: bool = True) -> None:
     """Attempt to securely clear a SigningKey's secret material from memory.
 
     This function uses libsodium's sodium_memzero to zero out the key material
@@ -259,7 +264,8 @@ def secure_clear_signing_key(signing_key: SigningKey) -> None:
         pass
     finally:
         # Force garbage collection to clean up any remaining references
-        gc.collect()
+        if trigger_gc:
+            gc.collect()
 
 
 @contextmanager

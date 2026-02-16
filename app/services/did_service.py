@@ -2,11 +2,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional
 
-from attr import dataclass
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
-from nacl.signing import SigningKey
 
 from app.database import MigrationSet, MongoConnector, get_global_db
 from app.did_utils.jsonld import DigitalArtefactVCInput, generate_digital_artefact_vc
@@ -26,11 +24,14 @@ from app.services.exceptions import (
     ProvenanceNotFoundError,
     VersionConflictError,
 )
-from app.did_utils.eddsa import (
-    create_keypair_from_hex,
-    get_public_key_multibase,
-    secure_signing_context,
-    sign_vc,
+from app.did_utils.eddsa import sign_vc
+from app.services.vault import (
+    vault_get_division_public_keys,
+    vault_list_division_signing_key_fragments,
+    vault_signing_key_context,
+    vault_ensure_division_signing_key,
+    DivisionPublicKeysNotFoundError,
+    SigningKeyNotFoundError,
 )
 
 
@@ -195,11 +196,11 @@ def _artefact_to_da_vc_input(artefact : dict[str, Any]) -> DigitalArtefactVCInpu
             uid=artefact["external_uid"],
             version=artefact["version"],
             version_uid=artefact["version_uid"],
-            hash=artefact["artefact_hash"],
-            metadata=artefact["artefact_metadata"],
+            hash=artefact.get("artefact_hash"),
+            metadata=artefact.get("artefact_metadata"),
             created_at=artefact["created_at"],
             division=artefact["division"],
-            provenance=artefact["provenance"],
+            provenance=artefact.get("provenance"),
         )
 
 # =============================================================================
@@ -221,9 +222,18 @@ class DIDService:
 
     db: MongoConnector
 
+    # List of divisions that must have signing keys provisioned. Currently
+    # hardcoded, in the future we will have a management API endpoint to create
+    # these.
+    _required_divisions: ClassVar[list[str]] = ["advisory", "epdw"]
+
     def __init__(self, db: MongoConnector):
         self.db = db
         self.db.run_migrations(_did_service_migrations)
+
+        # Ensure required divisions have at least one signing key in vault
+        for division in self._required_divisions:
+            vault_ensure_division_signing_key(division)
 
 
     def _validate_id_list_exists(
@@ -388,55 +398,48 @@ class DIDService:
 
         return list(cursor)
 
-    def _fetch_division_pub_keys(self, division: str) -> list[dict]:
-        """Fetch the public keys for a division.
+    def _fetch_division_pub_keys(self, division: DivisionStr) -> list[dict]:
+        """Fetch the public keys for a division from vault.
 
-        TODO: Fetch the list from DB. For now, just use a hardcoded key.
+        Retrieves public key information from vault at path:
+        divisions/{division}/public_keys
 
         Args:
             division: The division identifier.
 
         Returns:
             List of key information dictionaries, each containing:
-                - secret_key_hex: The Ed25519 seed as hex string (32 bytes)
                 - fragment: The key fragment identifier
-                - signing_key: The Ed25519 SigningKey derived from the seed
                 - public_key_multibase: The public key in multibase format
 
         Raises:
-            DivisionKeyNotFound: If not keys are found registered for the division.
+            DivisionKeysNotFound: If no keys are found registered for the division.
         """
-
-        if division != "advisory":
+        try:
+            return vault_get_division_public_keys(division)
+        except DivisionPublicKeysNotFoundError:
             raise DivisionKeysNotFound(division=division)
 
-        # Hardcoded Ed25519 key for now - in production this would be fetched from a secure store
-        # Generated using: secrets.token_hex(32)
-        secret_key_hex = "a2c4e6f8b0d1c3e5a7f9b1d3c5e7a9f0b2d4c6e8a0f1b3d5c7e9a1f3b5d7c9e1"
-        fragment = "key20260204"
+    def _get_active_signing_key_fragment(self, division: DivisionStr) -> str:
+        """Get the fragment identifier of the active (latest) signing key.
 
-        signing_key = create_keypair_from_hex(secret_key_hex)
-        public_key_multibase = get_public_key_multibase(signing_key)
+        The active key is determined by sorting available fragments
+        alphabetically and returning the last one (latest by convention).
 
-        return [
-            {
-                "secret_key_hex": secret_key_hex,
-                "fragment": fragment,
-                "public_key_multibase": public_key_multibase,
-            }
-        ]
+        Args:
+            division: The division identifier.
 
-    @dataclass
-    class _PrivateKeyInfo:
-        fragment : str
-        key : SigningKey
+        Returns:
+            The fragment identifier of the active signing key.
 
-    def _fetch_division_priv_key(self, division: DivisionStr) -> _PrivateKeyInfo:
-        # Hardcoded Ed25519 key for now - in production this would be fetched from a secure store
-        # Generated using: secrets.token_hex(32)
-        secret_key_hex = "a2c4e6f8b0d1c3e5a7f9b1d3c5e7a9f0b2d4c6e8a0f1b3d5c7e9a1f3b5d7c9e1"
-        fragment = "key20260204"
-        return DIDService._PrivateKeyInfo(fragment, create_keypair_from_hex(secret_key_hex))
+        Raises:
+            DivisionKeysNotFound: If no signing keys exist for the division.
+        """
+        fragments = vault_list_division_signing_key_fragments(division)
+        if not fragments:
+            raise DivisionKeysNotFound(division=division)
+        # Return the latest fragment (by convention, sorted alphabetically)
+        return sorted(fragments)[-1]
 
     def division_did_doc(self, division: str) -> dict:
         """Generates the DID document in JSON-LD format for a given division.
@@ -478,7 +481,7 @@ class DIDService:
 
     # TODO: Add unit tests for this.
     def artefact_vc(self, division: DivisionStr | None, uid: UUIDString) -> dict:
-        """Generates a Verifiable Credential  with proofs for a Digital Artefact.
+        """Generates a Verifiable Credential with proofs for a Digital Artefact.
 
         This method creates a signed Verifiable Credential for the specified
         digital artefact. The VC is signed using EdDSA (Ed25519) Data Integrity
@@ -489,10 +492,12 @@ class DIDService:
             uid: The UUID of the artefact.
 
         Returns:
-            A signed Verifiable Credential  document with eddsa-rdfc-2022 proofs.
+            A signed Verifiable Credential document with eddsa-rdfc-2022 proofs.
 
         Raises:
-            HTTPException: If the artefact is not found or signing fails.
+            ArtefactNotFoundError: If the artefact is not found.
+            DivisionKeysNotFound: If no signing keys exist for the division.
+            HTTPException: If signing fails.
         """
         collection = self.db.get_collection(self._artefacts_col_name)
 
@@ -509,40 +514,50 @@ class DIDService:
             # Any division acceptable. Use the one in the artefact.
             division = division_from_str(artefact["division"])
         elif artefact["division"] != division:
+            # MUST be ArtefactNotFoundError to avoid leaking that the artefact
+            # exists under a different division.
             raise ArtefactNotFoundError(uid=uid, division=division)
 
-        # Build the DID for this artefact
+        # Build the DID for division.
         division_did = division_did_from_division(division)
 
+        # Get the active signing key fragment for this division
+        try:
+            fragment = self._get_active_signing_key_fragment(division)
+        except SigningKeyNotFoundError:
+            raise DivisionKeysNotFound(division=division)
+
+
         # Create the unsigned VC for this DA.
+        now = self.db.now()
         unsigned_vc = generate_digital_artefact_vc(
             format=artefact["format_version"],
             da=_artefact_to_da_vc_input(artefact),
-            issuance_date=self.db.now(),
+            issuance_date=now,
         )
 
-        # Use the latest available key for signing
-        sign_key = self._fetch_division_priv_key(division)
+        # Fetch and use the signing key with secure cleanup
+        # The vault_signing_key_context ensures the key material is:
+        # 1. Fetched from vault
+        # 2. Converted to a SigningKey
+        # 3. Cleared from memory after use via sodium_memzero
+        try:
+            with vault_signing_key_context(division, fragment) as (signing_key, frag):
+                verification_method = f"{division_did}#{frag}"
 
-        # Sign the VC with EdDSA using secure context to ensure key cleanup
-        # The secure_signing_context guarantees the key material is cleared
-        # from memory after signing, regardless of success or failure
-        with secure_signing_context(sign_key.key) as secret_key:
-            # Build verification method URL
-            # TODO: build this earlier, when determining the public key.
-            verification_method = f"{division_did}#{sign_key.fragment}"
-
-            try:
                 return sign_vc(
                     vc=unsigned_vc,
-                    secret_key=secret_key,
+                    secret_key=signing_key,
                     verification_method=verification_method,
+                    created=now,
                 )
-            except Exception as e:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to sign VC for DA ${uid} version ${artefact['version']} division ${division}: {e}",
-                ) from e
+        except SigningKeyNotFoundError:
+            raise DivisionKeysNotFound(division=division)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to sign VC for DA {uid} version {artefact['version']} division {division}: {e}",
+            ) from e
 
 
 
