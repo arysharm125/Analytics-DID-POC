@@ -18,7 +18,7 @@ VC_ISSUER_SAFE_LIST = os.getenv("VC_ISSUER_SAFE_LIST", "")  # comma-separated al
 # collections / names reused in VC flow
 VC_TOKEN_COLLECTION = os.getenv("VC_TOKEN_COLLECTION", "vc_tokens")
 QA_COLLECTION = os.getenv("QA_BENCHMARK_COLLECTION", "benchmark_executions")
-
+QA_COLLECTION_ITER = os.getenv("QA_BENCHMARK_COLLECTION", "benchmark_iterations")
 
 FERNET_KEY_FILE = os.getenv("FERNET_KEY_FILE", "fernet.key")
 FERNET_KEY = os.getenv("FERNET_KEY", "")

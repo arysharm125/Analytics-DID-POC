@@ -1,1060 +1,654 @@
-from fastapi import HTTPException, UploadFile, File, Query, Header, APIRouter
-from fastapi.responses import StreamingResponse, JSONResponse
-from datetime import datetime
-import json
+"""DID Router for SUT (System Under Test) DID operations.
+
+This module provides endpoints for creating and managing DIDs for benchmark
+executions and their iterations using the DIDService.
+"""
+from fastapi import APIRouter, Path, Query
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from typing import Annotated, Any, Dict, List, Optional
 import logging
-from app.utils import generate_did
-from typing import List, Optional, Any, Dict
-from pydantic import BaseModel
-import io
-from app.utils import  merkle_root
-import pymongo
-from bson import json_util
 
-#  Import constants (environment configs, collection names)
-from app.constants import (
-    VAULT_MOUNT,
-    API_ACCESS_TOKEN,
-    VC_TOKEN_COLLECTION,
+from app.constants import QA_COLLECTION, QA_COLLECTION_ITER
+from app.database import MongoConnector, get_global_db
+from app.routers.basetypes import CanonicalizedUUID, UUIDString, did_from_uuid
+from app.routers.dependencies import APITokenDep, APITokenDep401Response
+from app.services.did_service import DIDServiceDep, ArtefactInput
+from app.services.exceptions import (
+    BenchmarkNotFoundError,
+    IterationNotFoundError,
+    NoIterationsFoundError,
+    BlockedKeyUpdateError,
+    NoChangesDetectedError,
+    InvalidUpdaterEmailError,
+    SUTRecordNotFoundError,
+    DivisionMismatchError,
+    VersionConflictError,
+    ProvenanceNotFoundError,
 )
+from app.utils import clean_mongo_doc
 
-from app.services.vault import (
-    vault_store_secret,
-    vault_list,
-    vault_read_dict,
-    vault_is_authenticated,
-)
 
-# 🔹 Import utility functions from app.utils.py
-from app.utils import (
-    now_iso,
-    vault_write,
-    vault_read,
-    ensure_issuer_did,
-    call_veramo_issue_vc,
-    call_veramo_verify_vc,
-    extract_jwt_from_vc,
-    extract_subject_did,
-    create_short_lived_token,
-    vault_fetch_secret,
-    decrypt_data,
-    get_from_vault_by_did,
-    create_and_store_mappings,
-    normalize_vault_object,
-    compute_diff,
-    now_timestamp,
-    apply_global_updates,
-    get_vault_stored_vc_for_did,
-    is_issuer_allowed,
-
-    # DB (initialized automatically in utils.py)
-    db,
-    qa_col,
-    did_vault_col,
-    audit_log,
-)
-
+# ==========================
+# Constants
+# ==========================
+_EPDW_DIVISION = "epdw"
 
 # ==========================
 # Logging
 # ==========================
-logger = logging.getLogger("did_vault_api_sut")
+logger = logging.getLogger("did_router")
 logger.setLevel(logging.INFO)
 
 
-app = APIRouter()
+# ==========================
+# Router
+# ==========================
+app = APIRouter(tags=["EPDW APIs"])
+
+
+async def startup_did_router():
+    """
+    Startup hook for the DID router.
+
+    Note: Most initialization is now handled by DIDService migrations.
+    This function is kept for backward compatibility with main.py.
+    """
+    logger.info("DID router startup - initialization handled by DIDService")
+
 
 # ==========================
 # API Models
 # ==========================
 class CreateSutRequest(BaseModel):
-    benchmarkExecutionID: str
-    iterationID: Optional[str] = None
+    """Request model for creating SUT DIDs."""
+    benchmarkExecutionID: UUIDString = Field(
+        ...,
+        description="Unique identifier for the benchmark execution",
+        examples=["95da4dd5-6e48-4c5b-bb91-935983c16d9c"]
+    )
+    # EPDW is currently hooked to just send the BenchmarkExecutionId, *not* iterationID.
+    # iterationID: Optional[UUIDString] = Field(
+    #     default=None,
+    #     description="Optional: Target a specific iteration (single-SUT mode)",
+    #     json_schema_extra={"example": "43f418f6-3808-4e81-bf42-6e8d11def355"},
+    # )
 
-class UpdateLevelRequest(BaseModel):
-    benchmarkExecutionID: str
+
+class IterationDIDInfo(BaseModel):
+    """Information about a created iteration DID."""
     iterationID: str
-    level: str
+    did: str
 
-class EntitlementUpdateItem(BaseModel):
-    iterationID: str
-    entitlement: Dict[str, Any]  # flexible structure, supports nested keys
 
-class BulkEntitlementUpdateRequest(BaseModel):
+class CreateSutResponse(BaseModel):
+    """Response model for create-sut-did endpoint."""
+    status: str = Field(description="'created' or 'exists'")
     benchmarkExecutionID: str
-    updates: List[EntitlementUpdateItem]
-
-class VCVerifyRequest(BaseModel):
-    # Accept either a raw JWT string or the full VC JSON
-    vc_jwt: Optional[str] = None
-    vc_obj: Optional[Dict[str, Any]] = None
-    # Optional: pass benchmarkExecutionID if you want to check subject mapping
-    benchmarkExecutionID: Optional[str] = None
-    # Optional: check against a specific DID instead of lookup
-    subject_did: Optional[str] = None
-
-class VCVerifyResponse(BaseModel):
-    verified_signature: bool
-    matches_vault_token: Optional[bool]
-    issuer_allowed: Optional[bool]
-    subject_matches_db: Optional[bool]
-    not_expired: Optional[bool]
-    issuer: Optional[str]
-    subject: Optional[str]
-    details: Dict[str, Any]
+    mode: str = Field(description="'single' or 'multi'")
+    master_did: str
+    iterations: List[IterationDIDInfo]
+    vc_status: str = Field(default="separate_endpoint")
 
 
-async def startup_did_router():
-        # init vault client and issuer
-    try:
-        if not vault_is_authenticated():
-            logger.warning("Vault client not authenticated (token may be missing/invalid)")
-        else:
-            logger.info("Vault connected and authenticated.")
-    except Exception:
-        logger.exception("Vault initialization check failed during startup")
-
-    # ensure issuer did
-    try:
-        ensure_issuer_did()
-    except Exception:
-        logger.exception("Failed to ensure issuer DID during startup")
-
-    # create TTL index for vc tokens (if permitted)
-    try:
-        vc_col = db.get_collection(VC_TOKEN_COLLECTION)
-        existing_vc_indexes = {idx["name"]: idx for idx in vc_col.list_indexes()}
-
-        if "expires_at_1" not in existing_vc_indexes:
-            logger.info("Creating TTL index on vc_tokens.expires_at ...")
-            vc_col.create_index(
-                [("expires_at", 1)],
-                expireAfterSeconds=0,
-                name="expires_at_1"
-            )
-        else:
-            logger.info("TTL index for vc tokens already exists")
-
-    except pymongo.errors.OperationFailure as e:
-        if e.code == 13:  # Unauthorized
-            logger.warning("Skipping TTL index creation — insufficient MongoDB permissions")
-        else:
-            logger.exception("Mongo OperationFailure during TTL index creation")
-    except Exception:
-        logger.exception("Unexpected error while creating TTL index for vc tokens")
-
-    # ensure mongo indexes for did_vault and audit_log
-    try:
-        existing_dv_indexes = list(did_vault_col.list_indexes())
-        required_key = {"benchmarkExecutionID": 1, "iterationID": 1}
-
-        composite_exists = any(
-            idx.get("key") == required_key
-            for idx in existing_dv_indexes
-        )
-
-        if composite_exists:
-            logger.info("Composite index (benchmarkExecutionID, iterationID) already exists")
-        else:
-            logger.info("Creating composite index benchmark_iter_idx ...")
-            did_vault_col.create_index(
-                list(required_key.items()),
-                name="benchmark_iter_idx"
-            )
-
-        did_vault_col.create_index([("createdAt", -1)], name="createdAt_desc_idx")
-        audit_log.create_index([("timestamp", -1)], name="audit_ts_desc_idx")
-
-        logger.info("MongoDB indexes ensured successfully")
-
-    except pymongo.errors.OperationFailure as e:
-        if e.code == 85:  # Index exists but name conflict
-            logger.warning("Composite index exists with a different name — skipping creation")
-        else:
-            logger.exception(f"Mongo OperationFailure ensuring DID/Audit indexes: {e}")
-    except Exception:
-        logger.exception("Unexpected error ensuring Mongo indexes on startup")
-
-# Combined /create-sut-did endpoint (writes only to did_vault/vault)
-# -------------------------
-@app.post("/create-sut-did", tags=["sut"])
-def create_sut_did(req: CreateSutRequest, x_api_token: str = Header(...)):
-    if x_api_token != API_ACCESS_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid API token")
-
-    benchmarkExecutionID = req.benchmarkExecutionID
-    iterationID = req.iterationID
-
-    # ✅ FIRST — Check if master DID already exists (idempotent)
-    existing_master = did_vault_col.find_one({
-        "benchmarkExecutionID": benchmarkExecutionID,
-        "is_master": True
-    })
-
-    if existing_master:
-        master_did = existing_master["did"]
-
-        # ✅ fetch child iteration DIDs
-        children = list(did_vault_col.find(
-            {
-                "benchmarkExecutionID": benchmarkExecutionID,
-                "is_master": False
-            },
-            {"_id": 0, "iterationID": 1, "did": 1}
-        ))
-
-        return {
-            "status": "exists",
-            "message": "Master DID already initialized",
-            "benchmarkExecutionID": benchmarkExecutionID,
-            "master_did": master_did,
-            "iterations": children,
-            "vc_status": "unchanged"
-        }
-
-    # ✅ Continue only if DID not created before
-    doc = qa_col.find_one({"benchmarkExecutionID": benchmarkExecutionID})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Benchmark not found in MongoDB")
-
-    # --- Extract iterations ---
-    def extract_iterations(d):
-        out = []
-        if not d:
-            return out
-        for ri in d.get("resultInfo", []):
-            for run in ri.get("runs", []):
-                for it in run.get("iterations", []):
-                    iid = it.get("iterationID")
-                    if iid:
-                        out.append(iid)
-        return list(dict.fromkeys(out))
-
-    found_iterations = extract_iterations(doc)
-
-    # fallback deep search
-    if not found_iterations:
-        def deep_find(o):
-            res = []
-            if isinstance(o, dict):
-                if "iterationID" in o and isinstance(o["iterationID"], str):
-                    res.append(o["iterationID"])
-                for v in o.values():
-                    res += deep_find(v)
-            elif isinstance(o, list):
-                for item in o:
-                    res += deep_find(item)
-            return res
-        found_iterations = list(dict.fromkeys(deep_find(doc)))
-
-    if not found_iterations:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No iterations found under benchmark {benchmarkExecutionID}"
-        )
-
-    # --- Mode selection ---
-    if iterationID:
-        if iterationID not in found_iterations:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Iteration {iterationID} not found under benchmark {benchmarkExecutionID}"
-            )
-        mode = "single"
-        target_iterations = [iterationID]
-    else:
-        if len(found_iterations) == 1:
-            mode = "single"
-            target_iterations = [found_iterations[0]]
-        else:
-            mode = "multi"
-            target_iterations = found_iterations
-
-    sut_type = "Single-SUT" if mode == "single" else "Multi-SUT"
-
-    # ✅ Create master + child DIDs (first time only)
-    try:
-        result = create_and_store_mappings(
-            benchmarkExecutionID,
-            target_iterations,
-            sut_type
-        )
-    except Exception as e:
-        logger.exception("Failed to create DIDs: %s", e)
-        raise HTTPException(status_code=500, detail=f"Failed to create SUT DIDs: {e}")
-
-    master = result.get("master_did")
-
-    # ✅ store master marker in Mongo
-    did_vault_col.update_one(
-        {"benchmarkExecutionID": benchmarkExecutionID},
-        {
-            "$set": {
-                "did": master,
-                "is_master": True,
-                "sut_type": sut_type,
-                "created_at": now_iso()
-            }
-        },
-        upsert=True
+class DIDAppendRequest(BaseModel):
+    """Request model for appending data to a DID."""
+    benchmarkExecutionID: UUIDString = Field(
+        ...,
+        description="Benchmark execution ID",
+        examples=["95da4dd5-6e48-4c5b-bb91-935983c16d9c"]
+    )
+    iterationID: UUIDString = Field(
+        ...,
+        description="Iteration ID to update",
+        json_schema_extra={"example": "43f418f6-3808-4e81-bf42-6e8d11def355"},
+    )
+    data: Dict[str, Any] = Field(
+        ...,
+        description="Data to merge/update. Protected keys like '_id', 'did' are blocked.",
+        examples=[{"key": "value", "otherkey": "othervalue"}]
     )
 
-    # ✅ Issue parent + child VCs
-    issuer_did = ensure_issuer_did()
 
-    issued_parent_vc = False
-    issued_child_vcs = []
-
-    try:
-        jwt = call_veramo_issue_vc(issuer_did, master, benchmarkExecutionID)
-        vault_store_secret(f"vc_tokens/{master}", {"vc_jwt": jwt}, lifespan_minutes=10)
-        issued_parent_vc = True
-    except Exception:
-        logger.exception("Failed issuing parent VC for %s", master)
-
-    for entry in result.get("iterations", []):
-        cid = entry["did"]
-        iteration_id = entry["iterationID"]
-        try:
-            jwt = call_veramo_issue_vc(issuer_did, cid, iteration_id)
-            vault_store_secret(f"vc_tokens/{cid}", {"vc_jwt": jwt}, lifespan_minutes=10)
-            issued_child_vcs.append({
-                "iterationID": iteration_id,
-                "did": cid,
-                "vc_issued": True
-            })
-        except Exception:
-            logger.exception("Failed issuing VC for %s", cid)
-            issued_child_vcs.append({
-                "iterationID": iteration_id,
-                "did": cid,
-                "vc_issued": False
-            })
-
-    return JSONResponse({
-        "status": "created",
-        "benchmarkExecutionID": benchmarkExecutionID,
-        "mode": mode,
-        "master_did": master,
-        "iterations": result.get("iterations", []),
-        "vc_status": {
-            "parent_vc_issued": issued_parent_vc,
-            "sut_vcs": issued_child_vcs
-        }
-    })
+class AppendDIDResponse(BaseModel):
+    """Response model for append-did endpoint."""
+    status: str
+    benchmarkExecutionID: str
+    iterationID: str
+    did: str
+    previous_did: Optional[str]
+    version: int
+    diff: Dict[str, Any]
+    message: str
 
 
-def _extract_iteration_from_benchmark(doc: dict, iteration_id: str):
+# ==========================
+# Helper Functions
+# ==========================
+def _fetch_benchmark_doc(db: MongoConnector, benchmark_id: str) -> dict:
     """
-    Helper: from full benchmark_executions JSON, find specific iteration object
-    under resultInfo -> runs -> iterations.
+    Fetch the full benchmark document from the source collection.
+
+    Args:
+        benchmark_id: The benchmarkExecutionID to fetch
+
+    Returns:
+        The benchmark document
+
+    Raises:
+        BenchmarkNotFoundError: If the benchmark is not found
     """
+    qa_col = db.get_collection(QA_COLLECTION)
+    doc = qa_col.find_one({"benchmarkExecutionID": benchmark_id})
     if not doc:
-        return None
+        raise BenchmarkNotFoundError(benchmark_id)
+    return doc
+
+def _fetch_iteration_doc(db: MongoConnector, iteration_id: str) -> dict:
+    """
+    Fetch the full benchmark iteration document from the source collection.
+
+    Args:
+        iteration_id: The iterationId to fetch
+
+    Returns:
+        The iteration document
+
+    Raises:
+        IterationNotFoundError: If the iteration is not found
+    """
+    qa_col = db.get_collection(QA_COLLECTION_ITER)
+    doc = qa_col.find_one({"iterationID": iteration_id})
+    if not doc:
+        raise IterationNotFoundError(iteration_id)
+    return doc
+
+
+def _extract_iterations(doc: dict) -> List[str]:
+    """
+    Extract iteration IDs from a benchmark document.
+
+    Searches the nested structure: resultInfo -> runs -> iterations
+
+    Args:
+        doc: The benchmark document
+
+    Returns:
+        List of unique iteration IDs found
+    """
+    iterations = []
+
+    # Primary extraction path: resultInfo -> runs -> iterations
     for ri in doc.get("resultInfo", []):
         for run in ri.get("runs", []):
             for it in run.get("iterations", []):
-                if isinstance(it, dict) and it.get("iterationID") == iteration_id:
-                    return it
-    return None
+                if isinstance(it, dict) and "iterationID" in it:
+                    iterations.append(it["iterationID"])
 
-@app.post("/resolve", tags=["did"])
-def resolve_did(request: dict):
+    # Fallback: deep search if primary path yields nothing
+    if not iterations:
+        def deep_find(obj):
+            found = []
+            if isinstance(obj, dict):
+                if "iterationID" in obj and isinstance(obj["iterationID"], str):
+                    found.append(obj["iterationID"])
+                for v in obj.values():
+                    found.extend(deep_find(v))
+            elif isinstance(obj, list):
+                for item in obj:
+                    found.extend(deep_find(item))
+            return found
+        iterations = deep_find(doc)
+
+    # Return unique values preserving order
+    return list(dict.fromkeys(iterations))
+
+def _clean_special_keys(doc: dict) -> dict:
     """
-    Resolve a DID:
-
-    - If it's a master DID (iterationID is null in did_vault):
-        -> returns full benchmark_executions JSON in `benchmark_doc`.
-
-    - If it's a child DID (iterationID set in did_vault):
-        -> returns ONLY that specific iteration object in `iteration_doc`,
-           but also indicates benchmarkExecutionID and did.
+    Remove mongodb special fields from doc.
     """
-    did = request.get("did")
-    if not did:
-        raise HTTPException(status_code=400, detail="DID is required in request body")
+    _KEYS_TO_CLEAN = frozenset({"_id"})
+    for key in _KEYS_TO_CLEAN:
+        if key in doc:
+            del(doc[key])
+    return doc
 
-    # Look in main did_vault collection
-    rec = did_vault_col.find_one({"did": did})
-    source = "mongo"
+def _select_master_metadata(doc: dict):
+    """
+    Select fields from benchmark doc for master artefact metadata.
 
-    # Fallback: try Vault by DID
-    if not rec:
-        try:
-            # This returns decrypted full payload that was stored in Vault
-            # using store_encrypted_in_vault (full benchmark_executions JSON).
-            from app.utils import get_encrypted_payload_from_vault, decrypt_data
-            enc = get_encrypted_payload_from_vault(did)
-            full_payload = decrypt_data(enc)
-            # emulate rec shape
-            rec = {
-                "did": did,
-                "benchmarkExecutionID": full_payload.get("benchmarkExecutionID"),
-                "iterationID": full_payload.get("iterationID"),
-                "data": full_payload
-            }
-            source = "vault"
-        except Exception:
-            rec = None
+    Args:
+        doc: The full benchmark document
 
-    if not rec:
-        raise HTTPException(status_code=404, detail=f"DID {did} not found in did_vault or Vault")
+    Returns:
+        Selected metadata dictionary
+    """
+    return clean_mongo_doc(_clean_special_keys(doc)) # Alternative: *All* benchmark_execution data
 
-    benchmarkExecutionID = rec.get("benchmarkExecutionID")
-    iterationID = rec.get("iterationID")
-    full_doc = rec.get("data") or {}
+    # Alternative: select key fields for the master artefact
+    # return {
+    #     "benchmarkExecutionID": doc.get("benchmarkExecutionID"),
+    #     "benchmarkName": doc.get("benchmarkName"),
+    #     "benchmarkVersion": doc.get("benchmarkVersion"),
+    #     "systemInfo": doc.get("systemInfo"),
+    #     "submissionDate": doc.get("submissionDate"),
+    #     "resultInfo_count": len(doc.get("resultInfo", [])),
+    # }
 
-    if iterationID:
-        # Child DID -> extract only that iteration from full benchmark JSON
-        iteration_doc = _extract_iteration_from_benchmark(full_doc, iterationID)
-        return json.loads(json_util.dumps({
-            "did": did,
-            "source": source,
-            "mode": "child",
-            "benchmarkExecutionID": benchmarkExecutionID,
-            "iterationID": iterationID,
-            "iteration_doc": iteration_doc
-        }))
-    else:
-        # Master DID -> return full benchmark document
-        return json.loads(json_util.dumps({
-            "did": did,
-            "source": source,
-            "mode": "master",
-            "benchmarkExecutionID": benchmarkExecutionID,
-            "benchmark_doc": full_doc
-        }))
+def _select_iteration_metadata(doc: dict):
+    """
+    Selects which metadata from an iteration document to include in the Digital
+    Artefact (i.e. which fields will be locked down).
+    """
+    return clean_mongo_doc(_clean_special_keys(doc)) # All data.
+
+def _validate_amd_email(email: str) -> None:
+    """
+    Validate that an email is an AMD email address.
+
+    Args:
+        email: The email to validate
+
+    Raises:
+        InvalidUpdaterEmailError: If not an @amd.com address
+    """
+    if not isinstance(email, str) or not email.lower().endswith("@amd.com"):
+        raise InvalidUpdaterEmailError()
 
 
-from pydantic import BaseModel
-from typing import Dict, Any, Optional
+def _compute_diff(old: dict, new: dict, path: str = "") -> Dict[str, Any]:
+    """
+    Compute the difference between old and new dictionaries.
 
-class DIDAppendRequest(BaseModel):
-    benchmarkExecutionID: str
-    iterationID: str
-    data: Dict[str, Any]
+    Args:
+        old: The old dictionary
+        new: The new dictionary
+        path: Current path for nested keys
 
-from fastapi import HTTPException, Query, Request
-from app.utils import validate_amd_email
+    Returns:
+        Dictionary with 'added', 'removed', and 'modified' keys
+    """
+    diff = {"added": {}, "removed": {}, "modified": {}}
 
-def deep_merge(old: dict, new: dict) -> dict:
-    merged = old.copy()
-    for key, value in new.items():
-        if (
-            key in merged
-            and isinstance(merged[key], dict)
-            and isinstance(value, dict)
-        ):
-            merged[key] = deep_merge(merged[key], value)
-        else:
-            merged[key] = value
-    return merged
+    if old == new:
+        return diff
+
+    if isinstance(old, dict) and isinstance(new, dict):
+        old_keys = set(old.keys())
+        new_keys = set(new.keys())
+
+        for k in new_keys - old_keys:
+            p = f"{path}.{k}" if path else k
+            diff["added"][p] = {"old": None, "new": new[k]}
+
+        for k in old_keys - new_keys:
+            p = f"{path}.{k}" if path else k
+            diff["removed"][p] = {"old": old[k], "new": None}
+
+        for k in old_keys & new_keys:
+            p = f"{path}.{k}" if path else k
+            sub = _compute_diff(old[k], new[k], p)
+            for t in ("added", "removed", "modified"):
+                diff[t].update(sub[t])
+
+        return diff
+
+    if isinstance(old, list) and isinstance(new, list):
+        max_len = max(len(old), len(new))
+        for i in range(max_len):
+            p = f"{path}[{i}]"
+            if i >= len(old):
+                diff["added"][p] = {"old": None, "new": new[i]}
+            elif i >= len(new):
+                diff["removed"][p] = {"old": old[i], "new": None}
+            else:
+                sub = _compute_diff(old[i], new[i], p)
+                for t in ("added", "removed", "modified"):
+                    diff[t].update(sub[t])
+        return diff
+
+    # Primitive changed
+    diff["modified"][path] = {"old": old, "new": new}
+    return diff
 
 
-@app.post("/append-did", tags=["sut"])
-async def append_did(
-    body: DIDAppendRequest,
-    update_message: str = Query(...),
-    updated_by: str = Query(...)
-):
-    validate_amd_email(updated_by)
+def _apply_updates(old_data: dict, incoming_data: dict) -> dict:
+    """
+    Apply incoming updates to existing data (deep merge).
 
-    benchmarkExecutionID = body.benchmarkExecutionID
-    iterationID = body.iterationID
-    incoming_data = body.data or {}
+    Args:
+        old_data: The existing data
+        incoming_data: The updates to apply
 
-    if not benchmarkExecutionID or not iterationID:
-        raise HTTPException(400, "benchmarkExecutionID and iterationID are required")
+    Returns:
+        The merged data
+    """
+    from copy import deepcopy
+    result = deepcopy(old_data) if old_data else {}
+    result = result | incoming_data # Python native merge.
+    return result
 
-    # =========================
-    # 🚫 BLOCKED KEYS CHECK (ADDED HERE)
-    # =========================
-    BLOCKED_KEYS = {"_id", "did", "benchmarkExecutionID", "iterationID"}
 
-    for key in incoming_data:
-        if key in BLOCKED_KEYS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Updates not allowed for key: {key}"
-            )
-
-    # =========================
-    # 🔍 FETCH TARGET RECORD
-    # =========================
-    record = did_vault_col.find_one({
-        "benchmarkExecutionID": benchmarkExecutionID,
-        "iterationID": iterationID
-    })
-
-    if not record:
-        raise HTTPException(404, "Record not found in did_vault")
-
-    old_did = record["did"]
-    old_data = record.get("data") or {}
-    is_master = record.get("is_master", False)
-
-    # =========================
-    # 🧠 AUTHORITATIVE UPDATE
-    # =========================
-    new_data = apply_global_updates(old_data, incoming_data)
-    diff_log = compute_diff(old_data, new_data)
-
-    # Reject no-op updates
-    if not any(diff_log.values()):
-        raise HTTPException(400, "No changes detected in payload")
-
-    new_did = generate_did(None)
-
-    # =========================
-    # 🔗 VAULT CHAIN HANDLING
-    # =========================
-    folder = "master" if is_master else iterationID
-    chain_path = f"{folder}/chain"
-
-    try:
-        chain_raw = vault_read(VAULT_MOUNT, chain_path)
-    except Exception:
-        chain_raw = None
-
-    chain_list = (
-        chain_raw.get("chain", [])
-        if isinstance(chain_raw, dict)
-        else chain_raw
-        if isinstance(chain_raw, list)
-        else []
-    )
-
-    chain_list.append(new_did)
-    merkle = merkle_root(chain_list)
-
-    vault_write(VAULT_MOUNT, chain_path, {"chain": chain_list})
-
-    # =========================
-    # 🗄️ VAULT SNAPSHOT
-    # =========================
-    snapshot = {
-        "did": new_did,
-        "previous_did": old_did,
-        "timestamp": now_timestamp(),
-        "benchmarkExecutionID": benchmarkExecutionID,
-        "iterationID": iterationID,
-        "data": new_data,
-        "previous_data": old_data,
-        "diff": diff_log,
-        "updated_by": updated_by,
-        "update_message": update_message,
-        "merkle_root": merkle
-    }
-
-    vault_write(
-        VAULT_MOUNT,
-        f"{folder}/{new_did}",
-        {"data": snapshot}
-    )
-
-    # =========================
-    # 🧾 UPDATE MONGO
-    # =========================
-    did_vault_col.update_one(
-        {
-            "benchmarkExecutionID": benchmarkExecutionID,
-            "iterationID": iterationID
-        },
-        {
-            "$set": {
-                "did": new_did,
-                "data": new_data,
-                "previous_did": old_did,
-                "merkle_root": merkle,
-                "last_updated": now_timestamp(),
-                "updated_by": updated_by,
-                "update_message": update_message,
-                "is_master": is_master,
-                "diff": diff_log
+# ==========================
+# Conflict Response Documentation
+# ==========================
+ConflictResponses = {
+    409: {
+        "description": "Conflict error: Division mismatch or version conflict",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "division_mismatch": {
+                        "summary": "Division mismatch",
+                        "value": {"detail": "Division mismatch: existing division is 'epdw', but attempted to set 'other'"}
+                    },
+                    "version_conflict": {
+                        "summary": "Version conflict",
+                        "value": {"detail": "Version conflict: version 2 already exists"}
+                    },
+                    "provenance_not_found": {
+                        "summary": "Provenance item not found",
+                        "value": {"detail": "Provenance item not found: 2cacad4f-63ab-4668-9db7-7fc2538caa8c"}
+                    }
+                }
             }
         }
+    }
+}
+
+NotFoundResponses = {
+    404: {
+        "description": "Resource not found",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "benchmark_not_found": {
+                        "summary": "Benchmark not found",
+                        "value": {"detail": "Benchmark 'abc-123' not found"}
+                    },
+                    "iteration_not_found": {
+                        "summary": "Iteration not found",
+                        "value": {"detail": "Iteration 'iter-1' not found under benchmark 'abc-123'"}
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+# ==========================
+# Endpoints
+# ==========================
+@app.post("/create-sut-did", responses={**APITokenDep401Response, **NotFoundResponses, **ConflictResponses})
+def create_sut_did(
+    req: CreateSutRequest,
+    api_token: APITokenDep,
+    did_svc: DIDServiceDep
+):
+    """
+    Create DIDs for a benchmark execution and its iterations.
+
+    This endpoint creates:
+    - A master DID for the benchmark execution
+    - Child DIDs for each iteration (linked via provenance)
+
+    The operation is idempotent - if DIDs already exist for the benchmark,
+    the existing DIDs are returned.
+
+    Args:
+        req: Request containing benchmarkExecutionID and optional iterationID
+        api_token: Validated API token (injected)
+        did_svc: DID service instance (injected)
+
+    Returns:
+        JSON response with created/existing DIDs
+    """
+    benchmark_id = req.benchmarkExecutionID
+    # iteration_id = req.iterationID
+
+    # Check if master artefact already exists (idempotent)
+    existing_master = did_svc.find_by_external_uid(
+        external_uid=benchmark_id,
+        division=_EPDW_DIVISION
     )
 
-    # =========================
-    # ✅ RESPONSE
-    # =========================
+    if existing_master:
+        # Master already exists - fetch all iterations and return
+        master_did = did_from_uuid(existing_master.external_uid)
+
+        # TODO: Do we need to check if the master document changed or if new
+        # iterations have been added? Is that something that happens?
+
+        # Find all child artefacts that have this benchmark as provenance
+        children = did_svc.find_by_provenance(
+            provenance_uid=benchmark_id,
+            division=_EPDW_DIVISION
+        )
+
+        iterations = [
+            {
+                "iterationID": child.external_uid,
+                "did": did_from_uuid(child.external_uid)
+            }
+            for child in children
+        ]
+
+        return JSONResponse({
+            "status": "exists",
+            "message": "Master DID already initialized",
+            "benchmarkExecutionID": benchmark_id,
+            "mode": "single" if len(iterations) == 1 else "multi",
+            "master_did": master_did,
+            "iterations": iterations,
+        })
+
+    # Fetch benchmark document from source collection
+    doc = _fetch_benchmark_doc(did_svc.db, benchmark_id)
+
+    # Extract iterations
+    found_iterations = _extract_iterations(doc)
+    if not found_iterations:
+        raise NoIterationsFoundError(benchmark_id)
+
+    # Determine mode
+    mode = "single" if len(found_iterations) == 1 else "multi"
+
+    # Create master artefact
+    master_metadata = _select_master_metadata(doc)
+    try:
+        master_record = did_svc.upsert_artefact(ArtefactInput(
+            external_uid=benchmark_id,
+            division=_EPDW_DIVISION,
+            artefact_metadata=master_metadata,
+        ))
+    except DivisionMismatchError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail=str(e))
+    except VersionConflictError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail=str(e))
+
+    master_did = did_from_uuid(master_record.external_uid)
+
+    # Create child artefacts for each iteration
+    iterations = []
+    for iter_id in found_iterations:
+        # Fetch iteration data and select specific metadata to add.
+        iter_doc = _fetch_iteration_doc(did_svc.db, iter_id)
+        iter_metadata = _select_iteration_metadata(iter_doc)
+        try:
+            child_record = did_svc.upsert_artefact(ArtefactInput(
+                external_uid=iter_id,
+                division=_EPDW_DIVISION,
+                artefact_metadata=iter_metadata,
+                provenance=[benchmark_id],  # Link to master
+            ))
+            iterations.append({
+                "iterationID": iter_id,
+                "did": did_from_uuid(child_record.external_uid)
+            })
+        except ProvenanceNotFoundError:
+            # This shouldn't happen since we just created the master
+            logger.error(f"Provenance error for iteration {iter_id}")
+            raise
+        except DivisionMismatchError as e:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=409, detail=str(e))
+        except VersionConflictError as e:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=409, detail=str(e))
+
+    logger.info(
+        f"Created SUT DIDs: benchmark={benchmark_id}, "
+        f"master_did={master_did}, iterations={len(iterations)}"
+    )
+
+    return JSONResponse({
+        "status": "created",
+        "benchmarkExecutionID": benchmark_id,
+        "mode": mode,
+        "master_did": master_did,
+        "iterations": iterations,
+    })
+
+
+@app.post("/append-did",responses={**APITokenDep401Response, **NotFoundResponses})
+async def append_did(
+    body: DIDAppendRequest,
+    api_token: APITokenDep,
+    did_svc: DIDServiceDep,
+    update_message: str = Query(
+        ...,
+        description="Message describing the update",
+        examples=["Adding new entitlement level"],
+    ),
+    updated_by: str = Query(
+        ...,
+        description="AMD email of the updater",
+        examples=["user@amd.com"],
+    ),
+):
+    """
+    Append/update data to an existing iteration DID.
+
+    Creates a new version of the artefact with the updated metadata.
+    The diff between old and new data is computed and returned.
+
+    Args:
+        body: Request containing benchmarkExecutionID, iterationID, and data
+        update_message: Description of the update
+        updated_by: AMD email of the person making the update
+        api_token: Validated API token
+        did_svc: DID service instance
+
+    Returns:
+        JSON response with update details and diff
+    """
+    # Validate updater email
+    _validate_amd_email(updated_by)
+
+    benchmark_id = body.benchmarkExecutionID
+    iteration_id = body.iterationID
+    incoming_data = body.data or {}
+
+    # Sanity check benchmark_id and iteration_id exist in the DB and are correct.
+    # These functions raise an exception if the corresponding data item is not found.
+    _fetch_benchmark_doc(did_svc.db, benchmark_id)
+    _fetch_iteration_doc(did_svc.db, iteration_id)
+
+    # Check for blocked keys (only on first level).
+    _BLOCKED_KEYS = frozenset({"_id", "did", "benchmarkExecutionID", "iterationID"})
+    for key in incoming_data:
+        if key in _BLOCKED_KEYS:
+            raise BlockedKeyUpdateError(key)
+
+    # Find existing artefact
+    existing = did_svc.find_by_external_uid(
+        external_uid=iteration_id,
+        division=_EPDW_DIVISION
+    )
+
+    if not existing:
+        raise SUTRecordNotFoundError(benchmark_id, iteration_id)
+
+    # Get existing metadata
+    old_metadata = existing.artefact_metadata or {}
+    previous_did = did_from_uuid(existing.external_uid)
+    previous_version = existing.version
+
+    # Apply updates
+    new_metadata = _apply_updates(old_metadata, incoming_data)
+
+    # Add update tracking info
+    new_metadata["_last_update"] = {
+        "message": update_message,
+        "updated_by": updated_by,
+        "previous_version": previous_version,
+    }
+
+    # Compute diff
+    diff = _compute_diff(old_metadata, new_metadata)
+
+    # Check if there are actual changes
+    if not any(diff.values()):
+        raise NoChangesDetectedError()
+
+    # Create new version via DIDService
+    try:
+        new_record = did_svc.upsert_artefact(ArtefactInput(
+            external_uid=iteration_id,
+            division=_EPDW_DIVISION,
+            artefact_metadata=new_metadata,
+            provenance=[benchmark_id],  # Maintain provenance link
+        ))
+    except DivisionMismatchError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail=str(e))
+    except VersionConflictError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail=str(e))
+
+    new_did = did_from_uuid(new_record.external_uid)
+
+    logger.info(
+        f"Updated SUT DID: iteration={iteration_id}, "
+        f"version={new_record.version}, updated_by={updated_by}"
+    )
+
     return {
         "status": "updated",
-        "benchmarkExecutionID": benchmarkExecutionID,
-        "iterationID": iterationID,
+        "benchmarkExecutionID": benchmark_id,
+        "iterationID": iteration_id,
         "did": new_did,
-        "previous_did": old_did,
-        "chain_length": len(chain_list),
-        "diff": diff_log,
+        "previous_did": previous_did if new_record.version > 1 else None,
+        "version": new_record.version,
+        "diff": diff,
         "message": "DID updated with authoritative deep JSON overwrite"
     }
 
-@app.post("/issue-vc/{did}")
-def issue_vc_for_did(did: str, token_lifespan: int = 10):
-    issuer_did = ensure_issuer_did()
 
-    # try to find mapping in did_vault by did
-    rec = did_vault_col.find_one({"did": did}) or did_vault_col.find_one({"master_did": did})
-    if not rec:
-        # fallback: search QA collection for mapping (read-only)
-        rec = qa_col.find_one({
-            "benchmarkExecutionID": {"$exists": True},
-            "$or": [
-                {"resultInfo.runs.iterations.did": did},
-                {"resultInfo.runs.iterations.iterationID": did}
-            ]
-        })
-    if not rec:
-        raise HTTPException(404, f"DID {did} not found")
+@app.get("/epdw/did.json")
+async def epdw_DID(did_svc: DIDServiceDep):
+    """Return the DID document that corresponds to the EPDW division.
 
-    parent_id = rec.get("benchmarkExecutionID") or str(rec.get("_id"))
+    This DID document contains the keys that are used to verify digital artefacts
+    associated with the EPDW division.
 
-    # Get VC from Vault if already issued, otherwise issue a new one
-    vault_data = vault_fetch_secret(f"vc_tokens/{did}")
-    jwt_token = vault_data.get("vc_jwt") if vault_data else None
-
-    if not jwt_token:
-        # issue new VC via Veramo
-        jwt_token = call_veramo_issue_vc(issuer_did, did, parent_id)
-
-    # store / refresh VC JWT in Vault (vc_tokens/{did})
-    vault_store_secret(f"vc_tokens/{did}", {"vc_jwt": jwt_token}, lifespan_minutes=token_lifespan)
-
-    # NO MORE encrypted_doc in Mongo; encrypted data is handled by Vault at dids/by_did/<did>
-
-    # short-lived token stored in Vault (vc_tokens/{token})
-    token = create_short_lived_token(did, jwt_token, lifespan_minutes=token_lifespan)
-
-    return {
-        "did": did,
-        "token": token,
-        "expires_in_minutes": token_lifespan
-    }
-
-# -------------------------
-# Download VC
-# -------------------------
-@app.get("/vc/download/{did}")
-def download_vc(did: str, token_lifespan: int = 10):
-    vault_data = vault_fetch_secret(f"vc_tokens/{did}")
-    vc_jwt = vault_data.get("vc_jwt")
-    if not vc_jwt:
-        raise HTTPException(404, f"No VC found in Vault for DID {did}")
-
-    token = create_short_lived_token(did, vc_jwt, lifespan_minutes=token_lifespan)
-    response_data = {
-        "did": did,
-        "vc": {"format": "jwt", "jwt": vc_jwt},
-        "token": token,
-        "expires_in_minutes": token_lifespan
-    }
-
-    return StreamingResponse(
-        io.BytesIO(json.dumps(response_data, indent=2).encode("utf-8")),
-        media_type="application/json",
-        headers={"Content-Disposition": f"attachment; filename={did.replace(':','_')}_vc.json"}
-    )
-
-@app.post("/vc/upload-verify")
-def upload_and_verify_vc(file: UploadFile = File(...)):
-    # -------------------------
-    # Read + parse uploaded JSON
-    # -------------------------
-    content = file.file.read()
-    if not content:
-        raise HTTPException(400, "Uploaded file is empty")
-
-    try:
-        vc_content = json.loads(content)
-    except json.JSONDecodeError as e:
-        raise HTTPException(400, f"Invalid JSON: {str(e)}")
-    finally:
-        file.file.close()
-
-    jwt_token = extract_jwt_from_vc(vc_content)
-    if not jwt_token:
-        raise HTTPException(400, "JWT missing in uploaded VC")
-
-    # -------------------------
-    # Determine subject DID
-    # -------------------------
-    subject_did = (
-        vc_content.get("did")
-        or extract_subject_did(vc_content)
-        or vc_content.get("vc", {}).get("credentialSubject", {}).get("id")
-    )
-
-    if not subject_did:
-        raise HTTPException(404, "Cannot determine DID from VC")
-
-    # -------------------------
-    # 1) Verify VC token stored in Vault
-    # -------------------------
-    vault_data = vault_fetch_secret(f"vc_tokens/{subject_did}")
-    vault_data = normalize_vault_object(vault_data)
-
-    vault_jwt = vault_data.get("vc_jwt") if vault_data else None
-    if not vault_jwt:
-        raise HTTPException(404, f"No VC entry in Vault for DID {subject_did}")
-
-    if vault_jwt != jwt_token:
-        raise HTTPException(403, f"Uploaded VC does not match stored VC for {subject_did}")
-
-    # -------------------------
-    # 2) Cryptographic verification
-    # -------------------------
-    verification_result = call_veramo_verify_vc(jwt_token)
-    if not verification_result.get("verified", False):
-        raise HTTPException(400, "VC verification failed")
-
-    # -------------------------
-    # 3) Fetch FULL DID RECORD from Vault
-    # -------------------------
-    try:
-        did_obj = get_from_vault_by_did(subject_did)
-    except HTTPException:
-        raise HTTPException(404, f"No DID record found in Vault for {subject_did}")
-    except Exception as e:
-        raise HTTPException(500, f"Error reading Vault for DID {subject_did}: {e}")
-
-    did_obj = normalize_vault_object(did_obj)
-
-    # -------------------------
-    # 4) Fetch chain history
-    # -------------------------
-    chain_path = did_obj.get("iterationID")
-    chain_data = {}
-
-    if chain_path:
-        try:
-            raw = vault_read(VAULT_MOUNT, f"{chain_path}/chain") or {}
-            raw = normalize_vault_object(raw)
-            chain_data = raw.get("chain", [])
-        except Exception:
-            chain_data = []
-
-    # -------------------------
-    # 5) Fetch full Mongo stored record
-    # -------------------------
-    mongo_record = did_vault_col.find_one(
-        {"did": subject_did},
-        {"_id": 0}
-    )
-
-    # -------------------------
-    # 6) If encrypted exists → decrypt
-    # -------------------------
-    decrypted = None
-    encrypted_payload = did_obj.get("encrypted")
-
-    if encrypted_payload:
-        try:
-            decrypted = decrypt_data(encrypted_payload)
-        except Exception as e:
-            raise HTTPException(500, f"Failed to decrypt stored data: {e}")
-
-    return {
-        "did": subject_did,
-        "verified": True,
-        "full_record": {
-            "vault_record": did_obj,
-            "chain": chain_data,
-            "mongo_record": mongo_record,
-            "decrypted_data": decrypted
-        },
-        "vault_check": "VC matched with Vault and verified successfully",
-        "message": "Full DID record retrieved successfully"
-    }
-
-
-# -------------------------
-# Upload & Verify VC file
-# -------------------------
-
-@app.post("/vc/verify", tags=["vc"], response_model=VCVerifyResponse)
-def verify_vc(req: VCVerifyRequest):
+    Returns:
+        JSON-LD DID Document.
     """
-    Verify VC signature and basic integrity checks:
-     - cryptographic signature via Veramo
-     - matches stored VC token in Vault (if present)
-     - issuer allowed (VC_ISSUER_SAFE_LIST)
-     - subject mapping exists in DB (optional)
-     - expiration check
-    """
-    # Validate input
-    if not req.vc_jwt and not req.vc_obj:
-        raise HTTPException(status_code=400, detail="Either vc_jwt or vc_obj must be provided")
+    return did_svc.division_did_doc(_EPDW_DIVISION)
 
-    # ✅ FIX: Extract jwt_token properly from request
-    jwt_token = req.vc_jwt
-    if not jwt_token:
-        # fallback if only vc_obj was provided and it includes JWT
-        jwt_token = extract_jwt_from_vc(req.vc_obj)
-        if not jwt_token:
-            raise HTTPException(status_code=400, detail="Could not determine JWT from request")
+PathUUID = Annotated[CanonicalizedUUID, Path(
+    description="The UID or DID of the artefact to retrieve the Verifiable Credential for",
+    example="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+)]
 
-    # 1) Cryptographic verification via Veramo
-    try:
-        veramo_resp = call_veramo_verify_vc(jwt_token)
-    except Exception as e:
-        logger.exception("Veramo verify error: %s", e)
-        raise HTTPException(status_code=500, detail=f"Veramo verification failed: {e}")
-
-    # Interpret veramo_resp — expected structure depends on your Veramo setup.
-    verified_signature = False
-    try:
-        if isinstance(veramo_resp, dict):
-            if veramo_resp.get("verified") is True:
-                verified_signature = True
-            elif isinstance(veramo_resp.get("results"), list):
-                verified_signature = any(r.get("verified") or r.get("ok") for r in veramo_resp["results"])
-    except Exception:
-        verified_signature = False
-
-    # 2) Extract issuer & subject from the VC (from jwt or vc_obj)
-    issuer = None
-    subject = None
-    exp_ok = None
-    try:
-        payload = veramo_resp.get("payload") if isinstance(veramo_resp, dict) else None
-
-        if payload:
-            issuer = payload.get("iss") or (payload.get("vc") or {}).get("issuer")
-            subject = payload.get("sub")
-            exp = payload.get("exp")
-
-            import time
-            if exp:
-                exp_ok = (int(exp) > int(time.time()))
-            else:
-                vc = payload.get("vc") or {}
-                expirationDate = vc.get("expirationDate") or (vc.get("credentialSubject") or {}).get("expirationDate")
-                if expirationDate:
-                    from dateutil import parser
-                    exp_ok = parser.parse(expirationDate) > datetime.utcnow()
-        elif req.vc_obj:
-            vc = req.vc_obj
-            issuer = vc.get("issuer") or (vc.get("vc") or {}).get("issuer")
-            subj = vc.get("credentialSubject") or vc.get("vc", {}).get("credentialSubject")
-            if isinstance(subj, dict):
-                subject = subj.get("id") or subj.get("did")
-            expirationDate = vc.get("expirationDate") or (vc.get("vc") or {}).get("expirationDate")
-            if expirationDate:
-                from dateutil import parser
-                exp_ok = parser.parse(expirationDate) > datetime.utcnow()
-    except Exception as e:
-        logger.debug("Failed to extract payload info: %s", e)
-
-    # 3) Compare to stored token in Vault (if subject/did present)
-    matches_vault_token = None
-    if subject:
-        try:
-            stored = get_vault_stored_vc_for_did(subject)
-            if stored:
-                matches_vault_token = (stored == jwt_token)
-        except Exception as e:
-            logger.debug("Vault compare failed: %s", e)
-
-    # 4) Issuer whitelist check
-    issuer_allowed = is_issuer_allowed(issuer) if issuer else None
-
-    # 5) Subject mapping check (optional)
-    subject_matches_db = None
-    if req.benchmarkExecutionID and subject:
-        try:
-            coll = db.get_collection("benchmark_executions")
-            q = {
-                "benchmarkExecutionID": req.benchmarkExecutionID,
-                "$or": [
-                    {"master_did": subject},
-                    {"resultInfo.runs.iterations.did": subject},
-                    {"resultInfo.runs.iterations.iterationID": subject}
-                ],
-            }
-            found = coll.find_one(q)
-            subject_matches_db = bool(found)
-        except Exception as e:
-            logger.debug("DB subject mapping check failed: %s", e)
-
-    # 6) Build and return
-    details = {
-        "veramo_raw_response": veramo_resp,
-        "extracted_issuer": issuer,
-        "extracted_subject": subject,
-        "expiration_ok": exp_ok
-    }
-
-    resp = {
-        "verified_signature": bool(verified_signature),
-        "matches_vault_token": matches_vault_token,
-        "issuer_allowed": issuer_allowed,
-        "subject_matches_db": subject_matches_db,
-        "not_expired": exp_ok,
-        "issuer": issuer,
-        "subject": subject,
-        "details": details
-    }
-
-    return json.loads(json_util.dumps(resp))
-
-
-@app.get("/did-history", tags=["sut"])
-def get_did_history(
-    benchmarkExecutionID: str = Query(...),
-    iterationID: Optional[str] = Query(None)
-):
-    """
-    DID Version History (Read-Only)
-
-    Returns complete version lineage with:
-    ✓ DID Chain (Merkle protected)
-    ✓ Full snapshots from Vault
-    ✓ Diff logs (audit)
-    ✓ Who updated + Why
-    ✓ When updated
-    """
-
-    # 1️⃣ Identify correct record from did_vault
-    if not iterationID:
-        records = list(did_vault_col.find({"benchmarkExecutionID": benchmarkExecutionID}))
-        if not records:
-            raise HTTPException(404, "No matching benchmarkExecutionID found")
-        iter_ids = list({r.get("iterationID") for r in records if r.get("iterationID")})
-        if len(iter_ids) != 1:
-            raise HTTPException(400, "Specify iterationID explicitly")
-        iterationID = iter_ids[0]
-
-    record = did_vault_col.find_one({
-        "benchmarkExecutionID": benchmarkExecutionID,
-        "iterationID": iterationID
-    })
-
-    if not record:
-        raise HTTPException(404, f"No record for {benchmarkExecutionID}/{iterationID}")
-
-    current_did = record.get("did")
-    seen = set()
-    chain = []
-    did = current_did
-
-    # 2️⃣ Walk DID chain using previous_did reference
-    while did and did not in seen:
-        seen.add(did)
-        chain.append(did)
-        try:
-            data = vault_read_dict(mount_point="secret", path=f"{iterationID}/{did}")
-            did = data.get("previous_did")
-        except Exception:
-            break
-
-    # 3️⃣ Fallback — include any orphan snapshots in Vault
-    try:
-        extra_dids = vault_list(mount_point="secret", path=iterationID)
-        chain = list(dict.fromkeys(chain + extra_dids))
-    except Exception:
-        pass
-
-    # 4️⃣ Retrieve ALL snapshots from Vault (READ ONLY)
-    history = []
-    for did in chain:
-        try:
-            data = vault_read_dict(mount_point="secret", path=f"{iterationID}/{did}")
-
-            history.append({
-                "did": did,
-                "timestamp": data.get("timestamp"),
-                "data": data.get("data"),  # full updated JSON
-                "previous_data": data.get("previous_data"),  # 👈 full old JSON
-                "diff": data.get("diff"),  # 👈 what changed
-                "updated_by": data.get("updated_by"),
-                "update_message": data.get("update_message"),
-                "previous_did": data.get("previous_did"),
-                "merkle_root": data.get("merkle_root"),
-                "iterationID": iterationID,
-                "benchmarkExecutionID": benchmarkExecutionID
-            })
-        except Exception:
-            history.append({"did": did, "error": "missing or unreadable"})
-
-    # 5️⃣ Sort by actual version timestamp
-    history_sorted = sorted(history, key=lambda h: h.get("timestamp") or "")
-
-    # Find current snapshot for diff + audit details
-    current_snapshot = next((h for h in history_sorted if h.get("did") == current_did), None)
-
-    return {
-        "benchmarkExecutionID": benchmarkExecutionID,
-        "iterationID": iterationID,
-        "chain": [h["did"] for h in history_sorted],
-        "versions": history_sorted,
-        "total_versions": len(history_sorted),
-        "current": {
-            "did": current_did,
-            "data": record.get("data"),
-            "merkle_root": record.get("merkle_root"),
-            "last_updated": record.get("last_updated"),
-            "updated_by": record.get("updated_by"),
-            "update_message": record.get("update_message"),
-            "diff": current_snapshot.get("diff") if current_snapshot else None,
-            "previous_did": current_snapshot.get("previous_did") if current_snapshot else None
-        }
-    }
-
-
-
-@app.get("/search-sut", tags=["sut"])
-def search_sut(
-    benchmarkExecutionID: Optional[str] = Query(None),
-    iterationID: Optional[str] = Query(None),
-    x_api_token: str = Header(...)
-):
-    if x_api_token != API_ACCESS_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid API token")
-
-    if not benchmarkExecutionID and not iterationID:
-        raise HTTPException(status_code=400, detail="Provide benchmarkExecutionID or iterationID")
-
-    if iterationID:
-        return fetch_by_iteration(iterationID)
-
-    if benchmarkExecutionID:
-        match = did_vault_col.find_one(
-            {"benchmarkExecutionID": benchmarkExecutionID},
-            {"iterationID": 1, "_id": 0}
-        )
-        if not match:
-            raise HTTPException(404, "No mapping found")
-
-        iterationID = match["iterationID"]
-        return fetch_by_iteration(iterationID)
-
-
-def fetch_by_iteration(iterationID: str):
-    """
-    Fetch all DID records from Vault under secret/<iterationID>/…
-    """
-    try:
-        # List folder
-        keys = vault_list(mount_point="secret", path=iterationID)
-
-        did_records = []
-
-        for key in keys:
-            if key.endswith("/"):  # Skip inner folders if any
-                continue
-
-            data = vault_read_dict(mount_point="secret", path=f"{iterationID}/{key}")
-            did_records.append(data)
-
-        if did_records:
-            return {"source": "vault", "records": did_records}
-
-    except Exception:
-        pass  # fallback below
-
-    # Fallback: Mongo
-    recs = list(did_vault_col.find({"iterationID": iterationID}, {"_id": 0}))
-    if recs:
-        return {"source": "mongo", "records": recs}
-
-    raise HTTPException(404, "No records found")
+@app.get("/epdw/{uid}/vc.json", responses={**APITokenDep401Response})
+async def artefact_vc(
+    uid: PathUUID,
+    api_token: APITokenDep,
+    did_svc: DIDServiceDep,):
+    """Return a Verifiable Credential with proofs for a Digital Artefact."""
+    return did_svc.artefact_vc(division=_EPDW_DIVISION, uid=uid)

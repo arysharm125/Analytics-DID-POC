@@ -398,6 +398,74 @@ class DIDService:
 
         return list(cursor)
 
+    def find_by_external_uid(
+        self, external_uid: UUIDString, division: DivisionStr | None = None
+    ) -> Optional[ArtefactRecord]:
+        """
+        Find the latest version of an artefact by external_uid.
+
+        Args:
+            external_uid: The external UUID of the artefact
+            division: Optional division identifier. If specified, the artefact
+                      must match that division. If None, any division is acceptable.
+
+        Returns:
+            ArtefactRecord if found, None otherwise
+        """
+        collection = self.db.get_collection(self._artefacts_col_name)
+
+        query: dict[str, Any] = {"external_uid": external_uid}
+        if division is not None:
+            query["division"] = division
+
+        doc = collection.find_one(query, sort=[("version", -1)])
+        if doc is None:
+            return None
+        # Remove MongoDB _id before returning
+        doc.pop("_id", None)
+        return ArtefactRecord(**doc)
+
+    def find_by_provenance(
+        self, provenance_uid: UUIDString, division: DivisionStr | None = None
+    ) -> list[ArtefactRecord]:
+        """
+        Find all artefacts that have the given uid in their provenance.
+        Returns only the latest version of each artefact.
+
+        Args:
+            provenance_uid: The UUID that should be in the provenance array
+            division: Optional division identifier. If specified, only artefacts
+                      in that division are returned. If None, all divisions.
+
+        Returns:
+            List of ArtefactRecords that have this provenance
+        """
+        collection = self.db.get_collection(self._artefacts_col_name)
+
+        # Build match criteria
+        match_criteria: dict[str, Any] = {"provenance": provenance_uid}
+        if division is not None:
+            match_criteria["division"] = division
+
+        # Use aggregation to get only the latest version of each external_uid
+        pipeline = [
+            {"$match": match_criteria},
+            {"$sort": {"external_uid": 1, "version": -1}},
+            {
+                "$group": {
+                    "_id": "$external_uid",
+                    "doc": {"$first": "$$ROOT"}
+                }
+            },
+            {"$replaceRoot": {"newRoot": "$doc"}}
+        ]
+
+        results = []
+        for doc in collection.aggregate(pipeline):
+            doc.pop("_id", None)
+            results.append(ArtefactRecord(**doc))
+        return results
+
     def _fetch_division_pub_keys(self, division: DivisionStr) -> list[dict]:
         """Fetch the public keys for a division from vault.
 
