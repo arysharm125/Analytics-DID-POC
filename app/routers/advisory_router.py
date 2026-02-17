@@ -1,16 +1,11 @@
 from uuid import uuid4
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, Path
 from pydantic import BaseModel, Field
 from typing import Annotated, Any, Optional
 import logging
 from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid, multihash_from_str
 from app.routers.dependencies import APITokenDep, APITokenDep401Response
 from app.services.did_service import DIDServiceDep, ArtefactInput
-from app.services.exceptions import (
-    DivisionMismatchError,
-    VersionConflictError,
-    ProvenanceNotFoundError,
-)
 
 _ADVISORY_DIVISION = "advisory"
 
@@ -104,23 +99,7 @@ async def record_report(request: RecordReportRequest, api_token: APITokenDep, di
     )
 
     # Upsert the artefact
-    try:
-        record = did_svc.upsert_artefact(artefact_input)
-    except DivisionMismatchError as e:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Division mismatch: {e}",
-        ) from e
-    except VersionConflictError as e:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Version conflict: {e}",
-        ) from e
-    except ProvenanceNotFoundError as e:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Provenance item not found: {e}",
-        ) from e
+    record = did_svc.upsert_artefact(artefact_input)
 
     return RecordReportResponse(
         artefact_did=did_from_uuid(record.external_uid),

@@ -45,40 +45,41 @@ class DuplicateProvenanceError(DIDServiceError):
         )
 
 
-class DivisionMismatchError(DIDServiceError):
+class DivisionMismatchError(DIDServiceError, HTTPException):
     """Raised when attempting to change an artefact's division."""
 
     def __init__(self, external_uid: str, existing_division: str, new_division: str):
         self.external_uid = external_uid
         self.existing_division = existing_division
         self.new_division = new_division
-        super().__init__(
+        detail = (
             f"Division mismatch for artefact '{external_uid}': "
             f"existing division is '{existing_division}', "
             f"but attempted to set '{new_division}'. Division cannot be changed."
         )
+        super().__init__(status_code=409, detail=detail)
 
 
-class VersionConflictError(DIDServiceError):
+class VersionConflictError(DIDServiceError, HTTPException):
     """Raised when a concurrent update creates a version conflict."""
 
     def __init__(self, external_uid: str, version: int):
         self.external_uid = external_uid
         self.version = version
-        super().__init__(
+        detail = (
             f"Version conflict for artefact '{external_uid}': "
             f"version {version} already exists. This may indicate a concurrent update."
         )
+        super().__init__(status_code=409, detail=detail)
 
 
-class ProvenanceNotFoundError(DIDServiceError):
+class ProvenanceNotFoundError(DIDServiceError, HTTPException):
     """Raised when a provenance item references a non-existent artefact."""
 
     def __init__(self, identifier: str):
         self.identifier = identifier
-        super().__init__(
-            f"Provenance item '{identifier}' does not exist in did_artefacts."
-        )
+        detail = f"Provenance item '{identifier}' does not exist in did_artefacts."
+        super().__init__(status_code=409, detail=detail)
 
 
 class InvalidMultihashError(ValidationError):
