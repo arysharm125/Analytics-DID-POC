@@ -35,11 +35,11 @@ class InvalidIdentifierError(ValidationError):
         )
 
 
-class DuplicateProvenanceError(DIDServiceError):
+class DuplicateProvenanceError(DIDServiceError, HTTPException):
     """Raised when duplicate identifiers are found in provenance after canonicalization."""
 
     def __init__(self):
-        super().__init__(
+        super().__init__(status_code=400, detail=
             "Duplicate identifiers found after canonicalization. "
             "Each provenance item must be unique."
         )

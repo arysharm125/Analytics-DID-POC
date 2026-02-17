@@ -75,6 +75,15 @@ BadRequestResponse = {
                                 "artefact_hash, artefact_metadata, or provenance."
                             )
                         }
+                    },
+                    "duplicate_provenance": {
+                        "summary": "Duplicated item in provenance list",
+                        "value": {
+                            "detail": (
+                                "Duplicate identifiers found after canonicalization. "
+                                "Each provenance item must be unique."
+                            )
+                        }
                     }
                 }
             }
