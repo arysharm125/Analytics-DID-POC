@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Excel DID Generator</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 2rem;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+      color: white;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      opacity: 0.9;
+      font-size: 1rem;
+    }
+
+    main {
+      flex: 1;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 2rem;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .generate-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 1rem 2rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: white;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .generate-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .generate-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .status {
+      text-align: center;
+      padding: 0.75rem;
+      border-radius: 6px;
+      background: #f0f9ff;
+      color: #0369a1;
+      font-weight: 500;
+    }
+
+    .status.error {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .error-message {
+      padding: 1rem;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      color: #dc2626;
+    }
+
+    .result {
+      padding: 1rem;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 6px;
+    }
+
+    .result h3 {
+      margin: 0 0 0.5rem 0;
+      color: #16a34a;
+      font-size: 1rem;
+    }
+
+    .did-code {
+      display: block;
+      padding: 0.75rem;
+      background: #1a1a1a;
+      color: #4ade80;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      word-break: break-all;
+      overflow-wrap: break-word;
+      font-family: monospace;
+    }
+
+    .download-section {
+      display: flex;
+      justify-content: center;
+    }
+
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: #059669;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+
+    .download-btn:hover {
+      background: #047857;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 2rem;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 0.875rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="container">
+      <header>
+        <h1>📊 Excel DID Generator</h1>
+        <p class="subtitle">Generate Excel reports with Decentralized Identifier tracking</p>
+      </header>
+
+      <main>
+        <div class="card">
+          <button
+            @click="generateExcelSheet"
+            :disabled="isLoading"
+            class="generate-btn"
+          >
+            <span v-if="isLoading" class="spinner"></span>
+            <span v-else>📝</span>
+            {{ isLoading ? 'Generating...' : 'Generate Excel Sheet' }}
+          </button>
+
+          <div v-if="status" class="status" :class="{ error: error }">
+            {{ status }}
+          </div>
+
+          <div v-if="error" class="error-message">
+            ❌ {{ error }}
+          </div>
+
+          <div v-if="createdDID" class="result">
+            <h3>✅ DID Created</h3>
+            <code class="did-code">{{ createdDID }}</code>
+          </div>
+
+          <div v-if="downloadUrl" class="download-section">
+            <a
+              :href="downloadUrl"
+              :download="downloadFilename"
+              class="download-btn"
+            >
+              ⬇️ Download Excel File
+            </a>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <p>DID Service POC - Analytics Division</p>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref } = Vue
+
+    createApp({
+      setup() {
+        const isLoading = ref(false)
+        const status = ref('')
+        const error = ref('')
+        const createdDID = ref('')
+        const downloadUrl = ref('')
+        const downloadFilename = ref('')
+
+        async function generateExcelSheet() {
+          isLoading.value = true
+          status.value = 'Generating report...'
+          error.value = ''
+          createdDID.value = ''
+
+          // Clean up previous download URL
+          if (downloadUrl.value) {
+            URL.revokeObjectURL(downloadUrl.value)
+            downloadUrl.value = ''
+            downloadFilename.value = ''
+          }
+
+          try {
+            const response = await fetch('/generate-report', {
+              method: 'POST',
+            })
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}))
+              throw new Error(errorData.detail || `HTTP error: ${response.status}`)
+            }
+
+            // Extract DID info from response headers
+            const artefactDID = response.headers.get('X-Artefact-DID')
+            if (artefactDID) {
+              createdDID.value = artefactDID
+            }
+
+            // Extract filename from Content-Disposition header
+            const contentDisposition = response.headers.get('Content-Disposition')
+            if (contentDisposition) {
+              const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/)
+              if (filenameMatch) {
+                downloadFilename.value = filenameMatch[1]
+              }
+            }
+            if (!downloadFilename.value) {
+              downloadFilename.value = 'report.xlsx'
+            }
+
+            // Get the file blob
+            const blob = await response.blob()
+
+            // Create download URL
+            downloadUrl.value = URL.createObjectURL(blob)
+
+            status.value = 'Success! Excel file generated and DID created.'
+
+          } catch (err) {
+            error.value = err.message || 'An error occurred'
+            status.value = 'Failed'
+            console.error('Error:', err)
+          } finally {
+            isLoading.value = false
+          }
+        }
+
+        return {
+          isLoading,
+          status,
+          error,
+          createdDID,
+          downloadUrl,
+          downloadFilename,
+          generateExcelSheet,
+        }
+      }
+    }).mount('#app')
+  </script>
+</body>
+</html>

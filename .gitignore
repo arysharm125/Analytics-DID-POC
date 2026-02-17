@@ -13,3 +13,5 @@ public.pem
 veramo/
 fernet.key
 db_connector.log
+
+node_modules/
