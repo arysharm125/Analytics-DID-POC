@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional
 
@@ -78,6 +79,22 @@ class ArtefactRecord(BaseModel):
     artefact_hash: Optional[Multihash] = Field(None, description="Multihash identifying artefact content")
     artefact_metadata: Optional[Any] = Field(None, description="Optional JSON metadata for the artefact")
     provenance: Optional[DIDOrUUIDList] = Field(None, description="Optional list of provenance identifiers (normalized to UUIDs)")
+
+
+@dataclass
+class ProvenanceNode:
+    """Represents a node in the provenance tree.
+
+    Attributes:
+        uid: The UUID identifying the artefact (version_uid if found, otherwise the original provenance uid)
+        division: The division identifier of the artefact, or None if not found
+        truncated: True if the node has children but recursion was stopped (due to depth or child count limits)
+        children: List of child ProvenanceNodes, or None if no children or not recursed
+    """
+    uid: str
+    division: Optional[str]
+    truncated: bool = False
+    children: Optional[list["ProvenanceNode"]] = field(default=None)
 
 
 # =============================================================================
@@ -603,6 +620,163 @@ class DIDService:
             "assertionMethod": assertion_method_refs,
             # "authentication": assertion_method_refs,  # Same keys used for VP signing
         }
+
+    def get_artefact_overview(
+        self, uid: CanonicalizedUUID
+    ) -> tuple[dict, Optional[dict]]:
+        """
+        Get overview information for an artefact.
+
+        Returns the artefact document and, if a newer version exists,
+        the latest version document.
+
+        Args:
+            uid: The canonicalized UUID to search for (version_uid or external_uid)
+
+        Returns:
+            A tuple of (artefact_doc, latest_version_doc).
+            latest_version_doc is None if the found artefact is already the latest version.
+
+        Raises:
+            ArtefactNotFoundError: If the artefact is not found.
+        """
+        collection = self.db.get_collection(self._artefacts_col_name)
+
+        # Find the artefact by uid
+        artefact = self._find_artefact_by_uid(uid, collection)
+        if artefact is None:
+            raise ArtefactNotFoundError(uid=uid, division=None)
+
+        # Check if there's a newer version by querying for the latest version
+        # with the same external_uid
+        latest_doc = collection.find_one(
+            {"external_uid": artefact["external_uid"]},
+            sort=[("version", -1)]
+        )
+
+        # If latest_doc has a higher version, return it as latest_version
+        latest_version = None
+        if latest_doc and latest_doc["version"] > artefact["version"]:
+            latest_version = latest_doc
+
+        return artefact, latest_version
+
+    def get_provenance_tree(
+        self,
+        uid: CanonicalizedUUID,
+        max_depth: int = 3,
+        max_children: int = 10,
+    ) -> list[ProvenanceNode]:
+        """
+        Get the recursive provenance tree for an artefact.
+
+        Traverses the provenance graph up to max_depth levels deep.
+        If a node has more than max_children provenance items, it won't be
+        recursed into (marked as truncated).
+
+        Args:
+            uid: The canonicalized UUID to get provenance for
+            max_depth: Maximum depth to recurse (default 3)
+            max_children: Maximum children count before truncating recursion (default 10)
+
+        Returns:
+            A list of ProvenanceNode objects representing the provenance tree.
+
+        Raises:
+            ArtefactNotFoundError: If the root artefact is not found.
+        """
+        collection = self.db.get_collection(self._artefacts_col_name)
+
+        # Find the root artefact
+        root_artefact = self._find_artefact_by_uid(uid, collection)
+        if root_artefact is None:
+            raise ArtefactNotFoundError(uid=uid, division=None)
+
+        # Get the direct provenance of the root
+        root_provenance = root_artefact.get("provenance") or []
+
+        # Build the tree recursively
+        return self._build_provenance_tree(
+            collection=collection,
+            provenance_uids=root_provenance,
+            current_depth=1,
+            max_depth=max_depth,
+            max_children=max_children,
+        )
+
+    def _build_provenance_tree(
+        self,
+        collection,
+        provenance_uids: list[str],
+        current_depth: int,
+        max_depth: int,
+        max_children: int,
+    ) -> list[ProvenanceNode]:
+        """
+        Recursively build the provenance tree.
+
+        Args:
+            collection: The MongoDB collection
+            provenance_uids: List of UIDs to process at this level
+            current_depth: Current depth in the tree (1-indexed)
+            max_depth: Maximum depth to recurse
+            max_children: Maximum children count before truncating
+
+        Returns:
+            List of ProvenanceNode objects
+        """
+        nodes: list[ProvenanceNode] = []
+
+        for prov_uid in provenance_uids:
+            # Try to find this provenance artefact
+            artefact = self._find_artefact_by_uid(prov_uid, collection)
+
+            if artefact is None:
+                # Artefact not found - include it with minimal info
+                nodes.append(ProvenanceNode(
+                    uid=prov_uid,
+                    division=None,
+                    truncated=False,
+                    children=None,
+                ))
+                continue
+
+            # Get this artefact's provenance
+            child_provenance = artefact.get("provenance") or []
+            has_children = len(child_provenance) > 0
+
+            # Determine if we should recurse
+            should_recurse = (
+                has_children
+                and current_depth < max_depth
+                and len(child_provenance) <= max_children
+            )
+
+            if should_recurse:
+                # Recurse into children
+                children = self._build_provenance_tree(
+                    collection=collection,
+                    provenance_uids=child_provenance,
+                    current_depth=current_depth + 1,
+                    max_depth=max_depth,
+                    max_children=max_children,
+                )
+                nodes.append(ProvenanceNode(
+                    uid=artefact["version_uid"],
+                    division=artefact.get("division"),
+                    truncated=False,
+                    children=children if children else None,
+                ))
+            else:
+                # Don't recurse - mark as truncated if it has children
+                nodes.append(ProvenanceNode(
+                    uid=artefact["version_uid"],
+                    division=artefact.get("division"),
+                    truncated=has_children,
+                    children=None,
+                ))
+
+        return nodes
 
     # TODO: Add unit tests for this.
     def artefact_vc(self, division: DivisionStr | None, uid: UUIDString) -> dict:
