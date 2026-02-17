@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
 from app.database import MigrationSet, MongoConnector, get_global_db
+from app.did_utils.comparisons import deep_equals
 from app.did_utils.jsonld import DigitalArtefactVCInput, generate_digital_artefact_vc
 from app.routers.basetypes import (
     UUIDString,
@@ -18,6 +19,7 @@ from app.routers.basetypes import (
     division_from_str,
 )
 from app.services.exceptions import (
+    ArtefactNoChangesError,
     ArtefactNotFoundError,
     DivisionKeysNotFound,
     DivisionMismatchError,
@@ -191,6 +193,48 @@ def migration_20260212001_init(db: MongoConnector) -> None:
 # =============================================================================
 # Utils/helpers
 # =============================================================================
+def _artefact_has_changes(
+    existing: dict[str, Any],
+    new_hash: Optional[str],
+    new_metadata: Optional[Any],
+    new_provenance: Optional[list[str]],
+) -> bool:
+    """Check if the new artefact data differs from the existing version.
+
+    Compares artefact_hash, artefact_metadata (deep), and provenance list
+    to determine if at least one field has changed.
+
+    Args:
+        existing: The existing artefact document from the database
+        new_hash: The new artefact_hash value (or None)
+        new_metadata: The new artefact_metadata value (or None)
+        new_provenance: The new provenance list (or None)
+
+    Returns:
+        True if at least one field has changed, False otherwise
+    """
+    # Compare artefact_hash
+    existing_hash = existing.get("artefact_hash")
+    if existing_hash != new_hash:
+        return True
+
+    # Compare artefact_metadata (deep comparison)
+    existing_metadata = existing.get("artefact_metadata")
+    if not deep_equals(existing_metadata, new_metadata):
+        return True
+
+    # Compare provenance list
+    existing_provenance = existing.get("provenance")
+    # Normalize None to empty list for comparison, since both represent "no provenance"
+    existing_prov_list = existing_provenance if existing_provenance is not None else []
+    new_prov_list = new_provenance if new_provenance is not None else []
+
+    if existing_prov_list != new_prov_list:
+        return True
+
+    return False
+
+
 def _artefact_to_da_vc_input(artefact : dict[str, Any]) -> DigitalArtefactVCInput:
     return DigitalArtefactVCInput(
             uid=artefact["external_uid"],
@@ -301,6 +345,8 @@ class DIDService:
 
         Raises:
             DivisionMismatchError: If division doesn't match existing artefact's division
+            ArtefactNoChangesError: If no changes detected in artefact_hash,
+                artefact_metadata, or provenance compared to latest version
             VersionConflictError: If a concurrent update causes a version conflict
         """
         collection = self.db.get_collection(self._artefacts_col_name)
@@ -319,6 +365,17 @@ class DIDService:
                     existing_division=latest_doc["division"],
                     new_division=artefact.division,
                 )
+
+            # Validate at least one thing changed (either artefact_hash,
+            # artefact_metadata (deep) or provenance list).
+            if not _artefact_has_changes(
+                existing=latest_doc,
+                new_hash=artefact.artefact_hash,
+                new_metadata=artefact.artefact_metadata,
+                new_provenance=list(artefact.provenance) if artefact.provenance else None,
+            ):
+                raise ArtefactNoChangesError(external_uid=artefact.external_uid)
+
             new_version = latest_doc["version"] + 1
         else:
             # First version

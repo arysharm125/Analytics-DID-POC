@@ -6,11 +6,12 @@ executions and their iterations using the DIDService.
 from fastapi import APIRouter, Path, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional, cast
 import logging
 
 from app.constants import QA_COLLECTION, QA_COLLECTION_ITER
 from app.database import MongoConnector, get_global_db
+from app.did_utils.comparisons import compute_diff, has_diff
 from app.routers.basetypes import CanonicalizedUUID, UUIDString, did_from_uuid
 from app.routers.dependencies import APITokenDep, APITokenDep401Response
 from app.services.did_service import DIDServiceDep, ArtefactInput
@@ -254,62 +255,6 @@ def _validate_amd_email(email: str) -> None:
     """
     if not isinstance(email, str) or not email.lower().endswith("@amd.com"):
         raise InvalidUpdaterEmailError()
-
-
-def _compute_diff(old: dict, new: dict, path: str = "") -> Dict[str, Any]:
-    """
-    Compute the difference between old and new dictionaries.
-
-    Args:
-        old: The old dictionary
-        new: The new dictionary
-        path: Current path for nested keys
-
-    Returns:
-        Dictionary with 'added', 'removed', and 'modified' keys
-    """
-    diff = {"added": {}, "removed": {}, "modified": {}}
-
-    if old == new:
-        return diff
-
-    if isinstance(old, dict) and isinstance(new, dict):
-        old_keys = set(old.keys())
-        new_keys = set(new.keys())
-
-        for k in new_keys - old_keys:
-            p = f"{path}.{k}" if path else k
-            diff["added"][p] = {"old": None, "new": new[k]}
-
-        for k in old_keys - new_keys:
-            p = f"{path}.{k}" if path else k
-            diff["removed"][p] = {"old": old[k], "new": None}
-
-        for k in old_keys & new_keys:
-            p = f"{path}.{k}" if path else k
-            sub = _compute_diff(old[k], new[k], p)
-            for t in ("added", "removed", "modified"):
-                diff[t].update(sub[t])
-
-        return diff
-
-    if isinstance(old, list) and isinstance(new, list):
-        max_len = max(len(old), len(new))
-        for i in range(max_len):
-            p = f"{path}[{i}]"
-            if i >= len(old):
-                diff["added"][p] = {"old": None, "new": new[i]}
-            elif i >= len(new):
-                diff["removed"][p] = {"old": old[i], "new": None}
-            else:
-                sub = _compute_diff(old[i], new[i], p)
-                for t in ("added", "removed", "modified"):
-                    diff[t].update(sub[t])
-        return diff
-
-    # Primitive changed
-    diff["modified"][path] = {"old": old, "new": new}
-    return diff
 
 
 def _apply_updates(old_data: dict, incoming_data: dict) -> dict:
@@ -587,11 +532,11 @@ async def append_did(
         "previous_version": previous_version,
     }
 
-    # Compute diff
-    diff = _compute_diff(old_metadata, new_metadata)
+    # Compute diff using shared comparison utility
+    diff = cast(Dict[str, Any], compute_diff(old_metadata, new_metadata))
 
     # Check if there are actual changes
-    if not any(diff.values()):
+    if not has_diff(diff):
         raise NoChangesDetectedError()
 
     # Create new version via DIDService

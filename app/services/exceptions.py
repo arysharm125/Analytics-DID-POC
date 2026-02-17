@@ -120,6 +120,24 @@ class DivisionKeysNotFound(DIDServiceError, HTTPException):
         super().__init__(status_code=404, detail=f"Division keys for '{division}' not found.")
 
 
+class ArtefactNoChangesError(DIDServiceError, HTTPException):
+    """Raised when upserting an artefact with no actual changes.
+
+    A new version requires at least one change to: artefact_hash,
+    artefact_metadata (deep comparison), or provenance list.
+    """
+    def __init__(self, external_uid: str):
+        self.external_uid = external_uid
+        super().__init__(
+            status_code=400,
+            detail=(
+                f"No changes detected for artefact '{external_uid}'. "
+                "A new version requires changes to at least one of: "
+                "artefact_hash, artefact_metadata, or provenance."
+            )
+        )
+
+
 # =============================================================================
 # SUT-specific Exceptions
 # =============================================================================

@@ -59,6 +59,29 @@ class RecordReportResponse(BaseModel):
     )
 
 
+# Response documentation for 400 Bad Request errors
+BadRequestResponse = {
+    400: {
+        "description": "Bad Request: Invalid input or no changes detected",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "no_changes": {
+                        "summary": "No changes detected",
+                        "value": {
+                            "detail": (
+                                "No changes detected for artefact 'b8ff3b79-863f-4fa9-84ba-0067663f2b04'. "
+                                "A new version requires changes to at least one of: "
+                                "artefact_hash, artefact_metadata, or provenance."
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 # Response documentation for 409 Conflict errors
 ConflictResponse = {
     409: {
@@ -85,9 +108,15 @@ ConflictResponse = {
 }
 
 
-@router.post("/record_report", responses={**APITokenDep401Response, **ConflictResponse})
+@router.post("/record_report", responses={**APITokenDep401Response, **BadRequestResponse, **ConflictResponse})
 async def record_report(request: RecordReportRequest, api_token: APITokenDep, did_svc: DIDServiceDep) -> RecordReportResponse:
-    """Record an advisory report as a DID."""
+    """Record an advisory report as a DID.
+
+    Creates a new Digital Artefact record or a new version of an existing one.
+    If the artefact_id already exists, the request must include at least one
+    change to artefact_hash, artefact_metadata, or provenance - otherwise a
+    400 Bad Request error is returned.
+    """
 
     # Build artefact input from request
     artefact_input = ArtefactInput(
