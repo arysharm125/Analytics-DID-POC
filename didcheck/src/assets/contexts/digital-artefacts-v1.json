@@ -1,0 +1,14 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "@protected": true,
+    "DigitalArtefactCredential": "https://did.amd.com/contexts/digitalArtefacts/v1#DigitalArtefactCredential",
+    "artefactHash": "https://did.amd.com/contexts/digitalArtefacts/v1#artefactHash",
+    "artefactMetadata": { "@id": "https://did.amd.com/contexts/digitalArtefacts/v1#artefactMetadata", "@type": "@json" },
+    "creationDate": "https://did.amd.com/contexts/digitalArtefacts/v1#creationDate",
+    "version": "https://did.amd.com/contexts/digitalArtefacts/v1#version",
+    "versionUid": "https://did.amd.com/contexts/digitalArtefacts/v1#versionUid",
+    "division": "https://did.amd.com/contexts/digitalArtefacts/v1#division",
+    "provenance": { "@id": "https://did.amd.com/contexts/digitalArtefacts/v1#provenance", "@type": "@json", "@container": "@set" }
+  }
+}

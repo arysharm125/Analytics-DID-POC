@@ -1,0 +1,64 @@
+/*
+ * DID Check - Global Styles
+ * These styles should not interfere with Vuetify's layout
+ */
+
+/* Base HTML/Body reset for Vuetify with Titillium Web font */
+html,
+body {
+  font-family: "Titillium Web", Arial, sans-serif;
+}
+
+html {
+  overflow-y: auto !important;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+/* Remove Vite default app constraints - let Vuetify handle layout */
+#app {
+  width: 100%;
+  font-family: "Titillium Web", Arial, sans-serif;
+}
+
+/* Header styles */
+.headingTitle {
+  display: flex;
+  align-items: center;
+}
+
+.navItems {
+  display: flex;
+  align-items: center;
+  min-width: 300px !important;
+}
+
+.nav-item {
+  position: relative;
+  padding-bottom: 0.3rem;
+}
+
+.nav-item span {
+  position: relative;
+  padding-bottom: 5px;
+}
+
+.nav-item::after {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 2px;
+  background-color: white;
+  bottom: 0;
+  left: 0;
+  transition: width 0.3s ease;
+}
+
+.nav-item:hover::after,
+.nav-item.active::after {
+  width: 100%;
+}
