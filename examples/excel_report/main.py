@@ -32,7 +32,7 @@ load_dotenv()
 # Configuration
 DIDSVC_BASE_URL = os.getenv("DIDSVC_BASE_URL", "http://localhost:8000")
 DIDSVC_API_TOKEN = os.getenv("DIDSVC_API_TOKEN", "example-api-token-123")
-DIDCHECK_URL = os.getenv("DIDCHECK_URL", "http://localhost:8100")
+DIDCHECK_URL = os.getenv("DIDCHECK_URL", "http://localhost:5173")
 
 # Path to static files
 STATIC_DIR = Path(__file__).parent / "static"
