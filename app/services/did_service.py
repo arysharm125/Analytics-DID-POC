@@ -1,13 +1,14 @@
+from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional
+from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional, TYPE_CHECKING
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
-from app.database import MigrationSet, MongoConnector, get_global_db
+from app.database import MigrationSet, MongoConnector
 from app.did_utils.comparisons import deep_equals
 from app.did_utils.jsonld import DigitalArtefactVCInput, generate_digital_artefact_vc
 from app.routers.basetypes import (
@@ -28,14 +29,14 @@ from app.services.exceptions import (
     VersionConflictError,
 )
 from app.did_utils.eddsa import sign_vc
-from app.services.vault import (
-    vault_get_division_public_keys,
-    vault_list_division_signing_key_fragments,
-    vault_signing_key_context,
-    vault_ensure_division_signing_key,
+from app.services.vault_service import (
+    VaultService,
     DivisionPublicKeysNotFoundError,
     SigningKeyNotFoundError,
 )
+
+if TYPE_CHECKING:
+    pass
 
 
 # =============================================================================
@@ -268,33 +269,100 @@ def _artefact_to_da_vc_input(artefact : dict[str, Any]) -> DigitalArtefactVCInpu
 # DIDService definition
 # =============================================================================
 class DIDService:
-    """Service provider for DID-related actions."""
+    """Service provider for DID-related actions.
 
-    """Singleton reference to DIDService instance."""
+    This service handles all DID-related operations including:
+    - Artefact management (create, update, query)
+    - Division key management
+    - Verifiable Credential generation
+
+    The service supports dependency injection for both database and vault,
+    enabling easy testing with mocks.
+
+    Example usage:
+        # Production with dependency injection
+        vault_svc = get_vault_service()
+        db = MongoConnector.from_vault_service(vault_svc)
+        did_svc = DIDService(db=db, vault_svc=vault_svc)
+
+        # Testing with mocks
+        mock_client = InMemoryVaultClient()
+        vault_svc = VaultService(mock_client, "secret")
+        db = MongoConnector.from_client(mongomock.MongoClient(), "test_db")
+        did_svc = DIDService(db=db, vault_svc=vault_svc, run_migrations=True)
+    """
+
+    # Singleton reference (deprecated - use DI instead)
     _singleton_svc: ClassVar[Optional["DIDService"]] = None
 
     @classmethod
-    def _get_instance(cls, db: MongoConnector) -> "DIDService":
+    def _get_instance(
+        cls,
+        db: MongoConnector,
+        vault_svc: Optional[VaultService] = None,
+    ) -> "DIDService":
+        """Get or create the singleton DIDService instance.
+
+        DEPRECATED: Prefer direct instantiation with dependency injection.
+
+        Args:
+            db: MongoConnector instance
+            vault_svc: Optional VaultService instance. If None, uses get_vault_service().
+
+        Returns:
+            The singleton DIDService instance
+        """
         if cls._singleton_svc is None:
-            cls._singleton_svc = cls(db)
+            cls._singleton_svc = cls(db=db, vault_svc=vault_svc)
         return cls._singleton_svc
 
-    _artefacts_col_name = "did_artefacts" # Collection name.
+    @classmethod
+    def _reset_instance(cls) -> None:
+        """Reset the singleton instance (for testing)."""
+        cls._singleton_svc = None
+
+    _artefacts_col_name = "did_artefacts"  # Collection name.
 
     db: MongoConnector
+    _vault_svc: VaultService
 
     # List of divisions that must have signing keys provisioned. Currently
     # hardcoded, in the future we will have a management API endpoint to create
     # these.
     _required_divisions: ClassVar[list[str]] = ["advisory", "epdw"]
 
-    def __init__(self, db: MongoConnector):
+    def __init__(
+        self,
+        db: MongoConnector,
+        vault_svc: Optional[VaultService] = None,
+        run_migrations: bool = True,
+        ensure_signing_keys: bool = True,
+    ):
+        """Initialize DIDService with injected dependencies.
+
+        Args:
+            db: MongoConnector instance for database operations
+            vault_svc: VaultService instance for vault operations.
+                       If None, will use get_vault_service() from vault module.
+            run_migrations: Whether to run database migrations on init (default True)
+            ensure_signing_keys: Whether to ensure division signing keys exist (default True)
+        """
         self.db = db
-        self.db.run_migrations(_did_service_migrations)
+
+        # Use provided vault service or get from module
+        if vault_svc is not None:
+            self._vault_svc = vault_svc
+        else:
+            from app.services.vault import get_vault_service
+            self._vault_svc = get_vault_service()
+
+        if run_migrations:
+            self.db.run_migrations(_did_service_migrations)
 
         # Ensure required divisions have at least one signing key in vault
-        for division in self._required_divisions:
-            vault_ensure_division_signing_key(division)
+        if ensure_signing_keys:
+            for division in self._required_divisions:
+                self._vault_svc.ensure_division_signing_key(division)
 
 
     def _validate_id_list_exists(
@@ -558,7 +626,7 @@ class DIDService:
             DivisionKeysNotFound: If no keys are found registered for the division.
         """
         try:
-            return vault_get_division_public_keys(division)
+            return self._vault_svc.get_division_public_keys(division)
         except DivisionPublicKeysNotFoundError:
             raise DivisionKeysNotFound(division=division)
 
@@ -577,11 +645,10 @@ class DIDService:
         Raises:
             DivisionKeysNotFound: If no signing keys exist for the division.
         """
-        fragments = vault_list_division_signing_key_fragments(division)
-        if not fragments:
+        try:
+            return self._vault_svc.get_active_signing_key_fragment(division)
+        except SigningKeyNotFoundError:
             raise DivisionKeysNotFound(division=division)
-        # Return the latest fragment (by convention, sorted alphabetically)
-        return sorted(fragments)[-1]
 
     def division_did_doc(self, division: str) -> dict:
         """Generates the DID document in JSON-LD format for a given division.
@@ -836,12 +903,12 @@ class DIDService:
         )
 
         # Fetch and use the signing key with secure cleanup
-        # The vault_signing_key_context ensures the key material is:
+        # The signing_key_context ensures the key material is:
         # 1. Fetched from vault
         # 2. Converted to a SigningKey
         # 3. Cleared from memory after use via sodium_memzero
         try:
-            with vault_signing_key_context(division, fragment) as (signing_key, frag):
+            with self._vault_svc.signing_key_context(division, fragment) as (signing_key, frag):
                 verification_method = f"{division_did}#{frag}"
 
                 return sign_vc(
@@ -865,17 +932,46 @@ class DIDService:
 # =============================================================================
 
 def _get_db() -> MongoConnector:
-    """FastAPI dependency to get MongoConnector instance."""
-    return get_global_db()
+    """FastAPI dependency to get MongoConnector instance.
+
+    Uses the get_db() from app.routers.dependencies which handles
+    lazy initialization via VaultService.
+    """
+    from app.routers.dependencies import get_db
+    return get_db()
+
+
+def _get_vault() -> VaultService:
+    """FastAPI dependency to get VaultService instance.
+
+    Uses the get_vault() from app.routers.dependencies which handles
+    lazy initialization based on config.
+    """
+    from app.routers.dependencies import get_vault
+    return get_vault()
 
 
 # Type alias for MongoConnector dependency injection
 MongoConnectorDep = Annotated[MongoConnector, Depends(_get_db)]
 
+# Type alias for VaultService dependency injection
+VaultServiceDep = Annotated[VaultService, Depends(_get_vault)]
 
-def _get_DID_service(db: MongoConnectorDep) -> DIDService:
-    """FastAPI dependency to get DIDService instance with injected database."""
-    return DIDService._get_instance(db=db)
+
+def _get_DID_service(
+    db: MongoConnectorDep,
+    vault_svc: VaultServiceDep,
+) -> DIDService:
+    """FastAPI dependency to get DIDService instance with injected dependencies.
+
+    Args:
+        db: MongoConnector instance
+        vault_svc: VaultService instance
+
+    Returns:
+        DIDService singleton instance
+    """
+    return DIDService._get_instance(db=db, vault_svc=vault_svc)
 
 
 # Type alias for DIDService dependency injection
@@ -884,9 +980,16 @@ DIDServiceDep = Annotated[DIDService, Depends(_get_DID_service)]
 
 @asynccontextmanager
 async def did_service_lifespan() -> AsyncGenerator[None, None]:
-    """Control lifespan of global DIDService instance."""
-    db = get_global_db()
-    DIDService._get_instance(db=db)
+    """Control lifespan of global DIDService instance.
+
+    This is used by FastAPI's lifespan context to initialize
+    the DIDService before handling requests.
+    """
+    from app.routers.dependencies import get_db, get_vault
+
+    db = get_db()
+    vault_svc = get_vault()
+    DIDService._get_instance(db=db, vault_svc=vault_svc)
     try:
         yield
     finally:

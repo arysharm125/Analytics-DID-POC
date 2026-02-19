@@ -1,15 +1,29 @@
 # db_connector.py
-from typing import Callable
+"""MongoDB connector with factory methods for different initialization strategies.
+
+This module provides MongoConnector for database access. Use factory methods
+to create instances:
+
+- MongoConnector.from_uri(): Connect with explicit connection string
+- MongoConnector.from_client(): Use existing MongoClient (e.g., mongomock)
+- MongoConnector.from_vault_service(): Read config from VaultService (production)
+
+For FastAPI applications, use the get_db() dependency from app.routers.dependencies.
+"""
+from __future__ import annotations
+from typing import Callable, TYPE_CHECKING
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 from pymongo import MongoClient
 from pymongo.synchronous import database
-import logging, sys, time, re
+import logging
+import sys
+import time
+import re
 from datetime import datetime, timezone
 
-from app.services.vault import (
-    vault_fetch_secret
-)
+if TYPE_CHECKING:
+    from app.services.vault_service import VaultService
 
 # -----------------------------------------------------------
 # Logging
@@ -20,47 +34,6 @@ logging.basicConfig(
     stream=sys.stdout
 )
 logger = logging.getLogger("db_connector")
-
-# ===========================================================
-# Vault KV v2 Reader (ONLY)
-# ===========================================================
-
-class _MongoDBConfig:
-    """Config parameters for MongoDB connection."""
-    conn_string : str
-    db_name : str
-    def __init__(self, conn_str : str, db_name : str):
-        self.conn_string = conn_str
-        self.db_name = db_name
-
-
-def _vault_read_mongo() -> _MongoDBConfig:
-    """
-    Reads KV v2 secret stored at: secret/data/mongo
-    Your Vault path is:
-        secret → mount
-        mongo  → key
-    """
-    try:
-        logger.info("Reading Mongo config from Vault KV v2 → secret/data/mongo")
-        data = vault_fetch_secret("mongo")
-        if not data:
-            raise RuntimeError("Vault secret 'mongo' is empty.")
-
-        cfg = _MongoDBConfig(data["connection_string"], data["database_name"])
-
-        if not cfg.conn_string:
-            raise RuntimeError("Vault missing key: connection_string")
-
-        if not cfg.db_name:
-            raise RuntimeError("Vault missing key: database_name")
-
-        return cfg
-
-    except Exception as e:
-        raise RuntimeError(
-            f"Failed to read Vault KV v2 secret at secret/data/mongo → {e}"
-        )
 
 # Type alias for migration functions
 MigrationFunc = Callable[["MongoConnector"], None]
@@ -176,29 +149,81 @@ class MigrationSet:
 # ===========================================================
 
 _MIGRATIONS_COLLECTION = "did_service_migrations"
-class MongoConnector:
-    """MongoDB connector using Vault KV v2 secrets only."""
 
-    db : database.Database
+
+class MongoConnectorInitError(Exception):
+    """Raised when MongoConnector() is called directly."""
+    pass
+
+
+class MongoConnector:
+    """MongoDB connector with factory methods for initialization.
+
+    Use factory methods to create instances:
+
+    - from_uri(): Connect to a specific MongoDB using connection string
+    - from_client(): Use an existing MongoClient (for mongomock testing)
+    - from_vault_service(): Read config from VaultService (production)
+
+    For FastAPI applications, use the get_db() dependency from
+    app.routers.dependencies which handles initialization automatically.
+
+    Example usage:
+        # Production with dependency injection
+        from app.routers.dependencies import get_db
+        vault_svc = get_vault()
+        db = MongoConnector.from_vault_service(vault_svc)
+
+        # Testing with mongomock
+        import mongomock
+        client = mongomock.MongoClient()
+        db = MongoConnector.from_client(client, "test_db")
+
+        # Testing with real MongoDB
+        db = MongoConnector.from_uri("mongodb://localhost:27017", "test_db")
+    """
+
+    db: database.Database
+    client: MongoClient | None
 
     def __init__(self):
-        cfg = _vault_read_mongo()
+        """Direct instantiation is not supported.
 
-        logger.info(f"Mongo target DB: {cfg.db_name}")
-        logger.info(f"Connecting to MongoDB at {cfg.conn_string}")
+        Use factory methods instead:
+        - MongoConnector.from_uri(conn_string, db_name)
+        - MongoConnector.from_client(client, db_name)
+        - MongoConnector.from_vault_service(vault_svc)
+        """
+        raise MongoConnectorInitError(
+            "Direct instantiation of MongoConnector is not supported. "
+            "Use factory methods: from_uri(), from_client(), or from_vault_service()"
+        )
+
+    def _connect(self, conn_string: str, db_name: str) -> None:
+        """Establish connection to MongoDB with retry logic.
+
+        Args:
+            conn_string: MongoDB connection string
+            db_name: Database name to use
+
+        Raises:
+            RuntimeError: If connection fails after 3 attempts
+        """
+        logger.info(f"Mongo target DB: {db_name}")
+        logger.info(f"Connecting to MongoDB...")
 
         self.client = None
 
         use_tls = (
-            cfg.conn_string.startswith("mongodb+srv://")
-            or "mongodb.net" in cfg.conn_string
+            conn_string.startswith("mongodb+srv://")
+            or "mongodb.net" in conn_string
         )
 
         # Retry logic
         for attempt in range(3):
             try:
                 self.client = MongoClient(
-                    cfg.conn_string,
+                    conn_string,
                     tls=use_tls,
                     tlsAllowInvalidCertificates=True,
                     tlsAllowInvalidHostnames=True,
@@ -209,15 +234,101 @@ class MongoConnector:
                 # Force connection test
                 self.client.admin.command("ping")
 
-                self.db = self.client[cfg.db_name]
-                logger.info(f"✅ Connected to MongoDB: {cfg.db_name}")
-                break
+                self.db = self.client[db_name]
+                logger.info(f"Connected to MongoDB: {db_name}")
+                return
             except Exception as e:
                 logger.error(f"[Attempt {attempt+1}/3] Mongo connection failed → {e}")
                 time.sleep(3)
 
-        if self.db is None:
-            raise RuntimeError("❌ Could not connect to MongoDB after 3 attempts.")
+        raise RuntimeError("Could not connect to MongoDB after 3 attempts.")
+
+    @classmethod
+    def from_uri(cls, conn_string: str, db_name: str) -> "MongoConnector":
+        """Create connector from explicit connection URI.
+
+        Use this for testing with a real MongoDB instance or testcontainers.
+
+        Args:
+            conn_string: MongoDB connection string
+            db_name: Database name
+
+        Returns:
+            Configured MongoConnector
+
+        Example:
+            # Local MongoDB
+            db = MongoConnector.from_uri("mongodb://localhost:27017", "test_db")
+
+            # Testcontainers
+            container = MongoDbContainer("mongo:6.0")
+            container.start()
+            db = MongoConnector.from_uri(container.get_connection_url(), "test_db")
+        """
+        instance = cls.__new__(cls)
+        instance.client = None
+        instance._connect(conn_string, db_name)
+        return instance
+
+    @classmethod
+    def from_client(cls, client: MongoClient, db_name: str) -> "MongoConnector":
+        """Create connector from existing MongoClient.
+
+        Use this for testing with mongomock or other mock clients.
+
+        Args:
+            client: An existing MongoClient (or mongomock.MongoClient)
+            db_name: Database name
+
+        Returns:
+            Configured MongoConnector
+
+        Example:
+            import mongomock
+            client = mongomock.MongoClient()
+            db = MongoConnector.from_client(client, "test_db")
+        """
+        instance = cls.__new__(cls)
+        instance.client = client
+        instance.db = client[db_name]
+        return instance
+
+    @classmethod
+    def from_vault_service(cls, vault_svc: VaultService) -> MongoConnector:
+        """Create connector by reading config from a VaultService.
+
+        Use this for production with proper dependency injection.
+
+        Args:
+            vault_svc: The VaultService instance to read config from
+
+        Returns:
+            Configured MongoConnector
+
+        Raises:
+            RuntimeError: If vault secret is missing required keys
+
+        Example:
+            vault_svc = VaultService(client, mount_point="secret")
+            db = MongoConnector.from_vault_service(vault_svc)
+        """
+        # Import here to avoid circular dependency
+        from app.services.vault_service import SecretNotFoundError
+
+        try:
+            config = vault_svc.fetch_secret("mongo")
+        except SecretNotFoundError as e:
+            raise RuntimeError(f"Failed to read MongoDB config from vault: {e}") from e
+
+        conn_string = config.get("connection_string")
+        db_name = config.get("database_name")
+
+        if not conn_string:
+            raise RuntimeError("Vault secret 'mongo' missing key: connection_string")
+        if not db_name:
+            raise RuntimeError("Vault secret 'mongo' missing key: database_name")
+
+        return cls.from_uri(conn_string, db_name)
 
     # -------------------------------------------------------
     def now(self) -> datetime:
@@ -315,12 +426,3 @@ class MongoConnector:
             except Exception as e:
                 logger.error(f"Migration {full_name_str} failed: {e}")
                 raise RuntimeError(f"Migration {full_name_str} failed") from e
-
-
-_db : MongoConnector | None = None
-def get_global_db() -> MongoConnector:
-    """Return global DB connector."""
-    global _db
-    if _db is None:
-        _db = MongoConnector()
-    return _db

@@ -10,6 +10,7 @@ from bson import json_util
 # Import your DecisionEngine and MongoConnector
 from app.services.decision_engine import DecisionEngine, Rule
 from app.database import MongoConnector
+from app.routers.dependencies import get_db
 
 logger = logging.getLogger("policy_orchestrator")
 logger.setLevel(logging.INFO)
@@ -121,17 +122,29 @@ class PolicyOrchestrator:
         return self.engine.evaluate(facts, correlation_id=correlation_id)
 
 
-# instantiate a global orchestrator (will be initialized when app imports)
-_db = None
-_orch = None
+# Orchestrator singleton with lazy initialization using DI
+_orch: PolicyOrchestrator | None = None
+_orch_initialized: bool = False
 
-def get_orchestrator():
-    global _db, _orch
-    if _orch is None:
-        if _db is None:
-            _db = MongoConnector()
-        _orch = PolicyOrchestrator(_db)
-    return _orch
+
+def get_orchestrator(db: MongoConnector = Depends(get_db)) -> PolicyOrchestrator:
+    """FastAPI dependency to get PolicyOrchestrator instance.
+
+    Uses the get_db() dependency for database access, ensuring consistent
+    initialization across all routers.
+    """
+    global _orch, _orch_initialized
+    if not _orch_initialized:
+        _orch = PolicyOrchestrator(db)
+        _orch_initialized = True
+    return _orch  # type: ignore
+
+
+def reset_orchestrator() -> None:
+    """Reset the orchestrator singleton (for testing)."""
+    global _orch, _orch_initialized
+    _orch = None
+    _orch_initialized = False
 
 # --- Routes ---
 @router.get("/rules")
@@ -183,4 +196,3 @@ def evaluate(req: EvaluateRequest, orchestrator: PolicyOrchestrator = Depends(ge
     result = orchestrator.evaluate(facts, correlation_id=corr)
     # result is already JSON-safe (engine used json_util)
     return result
-
