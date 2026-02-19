@@ -71,10 +71,10 @@ def _load_config_from_env() -> AppConfig:
         ),
         collections=MongoCollectionConfig(
             qa_benchmark_collection=os.getenv(
-                "QA_BENCHMARK_COLLECTION", "benchmark_executions"
+                "QA_COLLECTION", "benchmark_executions"
             ),
             qa_benchmark_iterations=os.getenv(
-                "QA_BENCHMARK_ITERATIONS", "benchmark_iterations"
+                "QA_COLLECTION_ITER", "benchmark_iterations"
             ),
         ),
         features=FeatureFlags(
