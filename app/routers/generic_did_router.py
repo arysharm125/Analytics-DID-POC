@@ -2,11 +2,11 @@ from datetime import datetime
 from typing import Annotated, Any, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Path, Query
+from fastapi import APIRouter, Path
 from pydantic import BaseModel, Field
 
 from app.routers.basetypes import DivisionStr, Multihash, UUIDString
-from app.routers.didrouter import PathUUID
+from app.routers.epdw import PathUUID
 from app.services.did_service import DIDServiceDep, ProvenanceNode as ServiceProvenanceNode
 
 # ==========================
