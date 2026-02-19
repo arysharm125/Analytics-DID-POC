@@ -283,7 +283,8 @@ class MockVaultClient:
     Mock hvac Vault client for local development.
 
     This class mimics the structure of hvac.Client, storing secrets
-    as JSON files on the local filesystem.
+    as JSON files on the local filesystem. It also implements
+    VaultClientProtocol for compatibility with VaultService.
 
     Usage:
         client = MockVaultClient(root_dir="/tmp/vault_mock")
@@ -292,6 +293,10 @@ class MockVaultClient:
             path="my/secret",
             secret={"key": "value"}
         )
+
+        # Or use the protocol-compatible methods:
+        client.write_secret("secret", "my/secret", {"key": "value"})
+        data = client.read_secret("secret", "my/secret")
     """
 
     def __init__(self, root_dir: str, default_mount: str = "secret"):
@@ -313,3 +318,66 @@ class MockVaultClient:
     def is_authenticated(self) -> bool:
         """Always returns True for the mock client."""
         return True
+
+    # =========================================================================
+    # VaultClientProtocol implementation
+    # =========================================================================
+
+    def read_secret(self, mount_point: str, path: str) -> Dict[str, Any]:
+        """Read a secret from the file-based mock vault.
+
+        Args:
+            mount_point: The mount point (e.g., "secret")
+            path: Path to the secret
+
+        Returns:
+            The secret data as a dictionary
+
+        Raises:
+            hvac.exceptions.InvalidPath: If the secret doesn't exist
+        """
+        result = self.secrets.kv.v2.read_secret_version(
+            mount_point=mount_point, path=path
+        )
+        return result.get("data", {}).get("data", {})
+
+    def write_secret(self, mount_point: str, path: str, data: Dict[str, Any]) -> None:
+        """Write a secret to the file-based mock vault.
+
+        Args:
+            mount_point: The mount point
+            path: Path to the secret
+            data: The secret data to write
+        """
+        self.secrets.kv.v2.create_or_update_secret(
+            mount_point=mount_point, path=path, secret=data
+        )
+
+    def list_secrets(self, mount_point: str, path: str) -> List[str]:
+        """List secrets at a path in the file-based mock vault.
+
+        Args:
+            mount_point: The mount point
+            path: Path to list
+
+        Returns:
+            List of secret names/paths
+        """
+        try:
+            result = self.secrets.kv.v2.list_secrets(
+                mount_point=mount_point, path=path
+            )
+            return result.get("data", {}).get("keys", [])
+        except hvac.exceptions.InvalidPath:
+            return []
+
+    def delete_secret(self, mount_point: str, path: str) -> None:
+        """Delete a secret from the file-based mock vault.
+
+        Args:
+            mount_point: The mount point
+            path: Path to the secret
+        """
+        self.secrets.kv.v2.delete_metadata_and_all_versions(
+            mount_point=mount_point, path=path
+        )
