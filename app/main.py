@@ -12,7 +12,6 @@ from app.version import VERSION
 # Logging
 # ==========================
 logging.config.fileConfig("deployment/logging.ini", disable_existing_loggers=False)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logger = logging.getLogger("deployment")
