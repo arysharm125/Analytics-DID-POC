@@ -7,7 +7,7 @@ following the W3C VC Data Integrity eddsa-rdfc-2022 cryptosuite specification.
 
 import base64
 import gc
-import uuid
+import hashlib
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Generator
@@ -153,7 +153,6 @@ def sign_data(signing_key: SigningKey, data: bytes) -> bytes:
         EdDSASigningError: If signing fails
     """
     try:
-        print(f"Data to sign (hex): {data.hex()}")
         signed = signing_key.sign(data)
         return signed.signature
     except Exception as e:
@@ -309,18 +308,12 @@ def _create_verify_data(document: dict, proof_options: dict) -> bytes:
     Returns:
         Bytes to be signed
     """
-    import hashlib
-
     # Canonicalize and hash the proof options
     proof_options_canonical = canonicalize_document(proof_options)
     proof_options_hash = hashlib.sha256(proof_options_canonical.encode('utf-8')).digest()
 
     # Canonicalize and hash the document
     document_canonical = canonicalize_document(document)
-    fname = f"/tmp/canonical_document_{uuid.uuid4().hex}.txt"
-    with open(fname, "w") as f:
-        f.write(document_canonical)
-    print(f"XXXXXXXX saved to {fname}")
     document_hash = hashlib.sha256(document_canonical.encode('utf-8')).digest()
 
     # Concatenate hashes
