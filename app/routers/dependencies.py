@@ -1,60 +1,71 @@
 """
 Reusable dependencies for FastAPI routes.
 """
-from fastapi import Header, HTTPException, Depends
-from typing import Annotated, Callable, Awaitable
-from app.constants import (
-    EPDW_ACCESS_TOKEN,
-    ADVISORY_ACCESS_TOKEN,
-    EXAMPLE_API_TOKEN,
-)
+
 import secrets
+from typing import Annotated
+
+from fastapi import Depends, Header, HTTPException
+
+from app.config import get_config
+from app.constants import EXAMPLE_API_TOKEN
 
 
-def create_token_verifier(
-    expected_token: str, token_name: str = "API"
-) -> Callable[[str], Awaitable[str]]:
+async def verify_epdw_token(
+    x_api_token: str = Header(
+        ...,
+        description="EPDW API access token required for authentication.",
+        example=EXAMPLE_API_TOKEN,
+        alias="X-API-Token",
+    )
+) -> str:
     """
-    Factory function to create token verification dependencies.
+    Dependency that validates the EPDW API token from the request header.
 
-    Args:
-        expected_token: The token value to validate against
-        token_name: Human-readable name for error messages (e.g., "EPDW", "Advisory")
+    Uses lazy config loading to allow test overrides.
+
+    Raises:
+        HTTPException: 401 if token is missing or invalid
 
     Returns:
-        An async dependency function that validates the X-API-Token header
+        The validated token string
     """
+    config = get_config()
+    if not secrets.compare_digest(x_api_token, config.tokens.epdw_access_token):
+        raise HTTPException(status_code=401, detail="Invalid EPDW token")
+    return x_api_token
 
-    async def verify_token(
-        x_api_token: str = Header(
-            ...,
-            description=f"{token_name} API access token required for authentication.",
-            example=EXAMPLE_API_TOKEN,
-            alias="X-API-Token",
-        )
-    ) -> str:
-        """
-        Dependency that validates the API token from the request header.
 
-        Raises:
-            HTTPException: 401 if token is missing or invalid
+async def verify_advisory_token(
+    x_api_token: str = Header(
+        ...,
+        description="Advisory API access token required for authentication.",
+        example=EXAMPLE_API_TOKEN,
+        alias="X-API-Token",
+    )
+) -> str:
+    """
+    Dependency that validates the Advisory API token from the request header.
 
-        Returns:
-            The validated token string
-        """
-        if not secrets.compare_digest(x_api_token, expected_token):
-            raise HTTPException(status_code=401, detail=f"Invalid {token_name} token")
-        return x_api_token
+    Uses lazy config loading to allow test overrides.
 
-    return verify_token
+    Raises:
+        HTTPException: 401 if token is missing or invalid
+
+    Returns:
+        The validated token string
+    """
+    config = get_config()
+    if not secrets.compare_digest(x_api_token, config.tokens.advisory_access_token):
+        raise HTTPException(status_code=401, detail="Invalid Advisory token")
+    return x_api_token
+
 
 # EPDW-specific token dependency
-EPDWTokenDep = Annotated[str, Depends(create_token_verifier(EPDW_ACCESS_TOKEN, "EPDW"))]
+EPDWTokenDep = Annotated[str, Depends(verify_epdw_token)]
 
 # Advisory-specific token dependency
-AdvisoryTokenDep = Annotated[
-    str, Depends(create_token_verifier(ADVISORY_ACCESS_TOKEN, "Advisory"))
-]
+AdvisoryTokenDep = Annotated[str, Depends(verify_advisory_token)]
 
 # Response documentation for token dependencies.
 APITokenDep401Response = {401: {"description": "Invalid or missing API token"}}

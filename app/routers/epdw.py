@@ -3,14 +3,16 @@
 This module provides endpoints for creating and managing DIDs for benchmark
 executions and their iterations using the DIDService.
 """
+
+import logging
+from typing import Annotated, Any, Dict, List, Optional, cast
+
 from fastapi import APIRouter, Path, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import Annotated, Any, Dict, List, Optional, cast
-import logging
 
-from app.constants import QA_COLLECTION, QA_COLLECTION_ITER
-from app.database import MongoConnector, get_global_db
+from app.config import get_config
+from app.database import MongoConnector
 from app.did_utils.comparisons import compute_diff, has_diff
 from app.routers.basetypes import CanonicalizedUUID, UUIDString, did_from_uuid
 from app.routers.dependencies import EPDWTokenDep, APITokenDep401Response
@@ -139,7 +141,8 @@ def _fetch_benchmark_doc(db: MongoConnector, benchmark_id: str) -> dict:
     Raises:
         BenchmarkNotFoundError: If the benchmark is not found
     """
-    qa_col = db.get_collection(QA_COLLECTION)
+    config = get_config()
+    qa_col = db.get_collection(config.collections.qa_benchmark_collection)
     doc = qa_col.find_one({"benchmarkExecutionID": benchmark_id})
     if not doc:
         raise BenchmarkNotFoundError(benchmark_id)
@@ -158,7 +161,8 @@ def _fetch_iteration_doc(db: MongoConnector, iteration_id: str) -> dict:
     Raises:
         IterationNotFoundError: If the iteration is not found
     """
-    qa_col = db.get_collection(QA_COLLECTION_ITER)
+    config = get_config()
+    qa_col = db.get_collection(config.collections.qa_benchmark_iterations)
     doc = qa_col.find_one({"iterationID": iteration_id})
     if not doc:
         raise IterationNotFoundError(iteration_id)

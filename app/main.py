@@ -1,10 +1,12 @@
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import AsyncGenerator
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
 import logging
 import logging.config
 
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+
+from app.config import get_config
 from app.services.did_service import did_service_lifespan
 from app.version import VERSION
 
@@ -42,12 +44,15 @@ from app.routers.epdw import app as did_router, startup_did_router
 from app.routers.advisory_router import router as advisory_router
 from app.routers.generic_did_router import app as generic_did_router
 from app.routers.health import app as health_router
-from app.constants import FEATURE_GENERIC_DID_ROUTER
 
 # app.include_router(policy_router)
 app.include_router(did_router)
 app.include_router(advisory_router)
-if FEATURE_GENERIC_DID_ROUTER: app.include_router(generic_did_router)
+
+# Conditionally include generic DID router based on feature flag
+if get_config().features.generic_did_router:
+  app.include_router(generic_did_router)
+
 app.include_router(health_router)
 
 @app.get("/docs", include_in_schema=False)
