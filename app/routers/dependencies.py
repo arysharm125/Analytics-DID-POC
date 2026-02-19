@@ -2,40 +2,59 @@
 Reusable dependencies for FastAPI routes.
 """
 from fastapi import Header, HTTPException, Depends
-from typing import Annotated
-from app.constants import API_ACCESS_TOKEN, EXAMPLE_API_TOKEN
+from typing import Annotated, Callable, Awaitable
+from app.constants import (
+    EPDW_ACCESS_TOKEN,
+    ADVISORY_ACCESS_TOKEN,
+    EXAMPLE_API_TOKEN,
+)
 import secrets
 
 
-async def verify_api_token(
-    x_api_token: str = Header(
-        ...,
-        description="API access token required for authentication. Must match the configured API_ACCESS_TOKEN.",
-        example=EXAMPLE_API_TOKEN,
-        alias="X-API-Token",  # This allows both x_api_token and X-API-Token headers
-    )
-) -> str:
+def create_token_verifier(
+    expected_token: str, token_name: str = "API"
+) -> Callable[[str], Awaitable[str]]:
     """
-    Dependency that validates the API token from the request header.
+    Factory function to create token verification dependencies.
 
-    Include APITokenDep401Response as response in the responses= member of the
-    router annotation to document the possible response.
-
-    Raises:
-        HTTPException: 401 if token is missing or invalid
+    Args:
+        expected_token: The token value to validate against
+        token_name: Human-readable name for error messages (e.g., "EPDW", "Advisory")
 
     Returns:
-        The validated token string
+        An async dependency function that validates the X-API-Token header
     """
-    if not secrets.compare_digest(x_api_token, API_ACCESS_TOKEN):
-        raise HTTPException(status_code=401, detail="Invalid API token")
-    return x_api_token
 
+    async def verify_token(
+        x_api_token: str = Header(
+            ...,
+            description=f"{token_name} API access token required for authentication.",
+            example=EXAMPLE_API_TOKEN,
+            alias="X-API-Token",
+        )
+    ) -> str:
+        """
+        Dependency that validates the API token from the request header.
 
-# Type alias for cleaner route signatures
-APITokenDep = Annotated[str, Depends(verify_api_token)]
+        Raises:
+            HTTPException: 401 if token is missing or invalid
 
-# Response documentation for APITokenDep.
-APITokenDep401Response = {
-    401: {"description": "Invalid or missing API token"}
-}
+        Returns:
+            The validated token string
+        """
+        if not secrets.compare_digest(x_api_token, expected_token):
+            raise HTTPException(status_code=401, detail=f"Invalid {token_name} token")
+        return x_api_token
+
+    return verify_token
+
+# EPDW-specific token dependency
+EPDWTokenDep = Annotated[str, Depends(create_token_verifier(EPDW_ACCESS_TOKEN, "EPDW"))]
+
+# Advisory-specific token dependency
+AdvisoryTokenDep = Annotated[
+    str, Depends(create_token_verifier(ADVISORY_ACCESS_TOKEN, "Advisory"))
+]
+
+# Response documentation for token dependencies.
+APITokenDep401Response = {401: {"description": "Invalid or missing API token"}}

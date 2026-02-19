@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Annotated, Any, Optional
 import logging
 from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid, multihash_from_str
-from app.routers.dependencies import APITokenDep, APITokenDep401Response
+from app.routers.dependencies import AdvisoryTokenDep, APITokenDep401Response
 from app.services.did_service import DIDServiceDep, ArtefactInput
 
 _ADVISORY_DIVISION = "advisory"
@@ -118,7 +118,7 @@ ConflictResponse = {
 
 
 @router.post("/record_report", responses={**APITokenDep401Response, **BadRequestResponse, **ConflictResponse})
-async def record_report(request: RecordReportRequest, api_token: APITokenDep, did_svc: DIDServiceDep) -> RecordReportResponse:
+async def record_report(request: RecordReportRequest, api_token: AdvisoryTokenDep, did_svc: DIDServiceDep) -> RecordReportResponse:
     """Record an advisory report as a DID.
 
     Creates a new Digital Artefact record or a new version of an existing one.
@@ -165,7 +165,7 @@ PathUUID = Annotated[CanonicalizedUUID, Path(
 @router.get("/{uid}/vc.json", responses={**APITokenDep401Response})
 async def artefact_vc(
     uid: PathUUID,
-    api_token: APITokenDep,
+    api_token: AdvisoryTokenDep,
     did_svc: DIDServiceDep,):
     """Return a Verifiable Credential with proofs for a Digital Artefact."""
     return did_svc.artefact_vc(division=_ADVISORY_DIVISION, uid=uid)

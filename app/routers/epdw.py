@@ -13,7 +13,7 @@ from app.constants import QA_COLLECTION, QA_COLLECTION_ITER
 from app.database import MongoConnector, get_global_db
 from app.did_utils.comparisons import compute_diff, has_diff
 from app.routers.basetypes import CanonicalizedUUID, UUIDString, did_from_uuid
-from app.routers.dependencies import APITokenDep, APITokenDep401Response
+from app.routers.dependencies import EPDWTokenDep, APITokenDep401Response
 from app.services.did_service import DIDServiceDep, ArtefactInput
 from app.services.exceptions import (
     BenchmarkNotFoundError,
@@ -328,7 +328,7 @@ NotFoundResponses = {
 @app.post("/create-sut-did", responses={**APITokenDep401Response, **NotFoundResponses, **ConflictResponses})
 def create_sut_did(
     req: CreateSutRequest,
-    api_token: APITokenDep,
+    api_token: EPDWTokenDep,
     did_svc: DIDServiceDep
 ):
     """
@@ -461,7 +461,7 @@ def create_sut_did(
 @app.post("/append-did",responses={**APITokenDep401Response, **NotFoundResponses})
 async def append_did(
     body: DIDAppendRequest,
-    api_token: APITokenDep,
+    api_token: EPDWTokenDep,
     did_svc: DIDServiceDep,
     update_message: str = Query(
         ...,
@@ -593,7 +593,7 @@ PathUUID = Annotated[CanonicalizedUUID, Path(
 @app.get("/epdw/{uid}/vc.json", responses={**APITokenDep401Response})
 async def artefact_vc(
     uid: PathUUID,
-    api_token: APITokenDep,
+    api_token: EPDWTokenDep,
     did_svc: DIDServiceDep,):
     """Return a Verifiable Credential with proofs for a Digital Artefact."""
     return did_svc.artefact_vc(division=_EPDW_DIVISION, uid=uid)
