@@ -1,8 +1,6 @@
 # Docker compose file for use in DEV environment (no SSL/TLS).
 # Mounts the nginx reverse proxy to port 8092.
 
-version: "3.9"
-
 services:
   api:
     container_name: didsvc-api
