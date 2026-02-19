@@ -11,9 +11,6 @@ from typing import Generator, List
 from nacl.signing import SigningKey
 
 
-from dotenv import load_dotenv
-load_dotenv()
-
 from app.constants import (
     VAULT_ADDR,
     VAULT_TOKEN,

@@ -20,14 +20,10 @@ from pathlib import Path
 import base58
 import httpx
 import qrcode
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Configuration
 DIDSVC_BASE_URL = os.getenv("DIDSVC_BASE_URL", "http://localhost:8000")
