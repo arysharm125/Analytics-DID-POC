@@ -3,6 +3,8 @@ uvicorn[standard]
 pymongo
 hvac
 cryptography
+pynacl
+base58
 requests
 certifi
 redis

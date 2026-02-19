@@ -1,31 +1,21 @@
 version: "3.9"
 
 services:
-  redis:
-    image: redis:alpine
-    container_name: analytics-redis
-    restart: always
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-
   api:
-    container_name: analytics-api
+    container_name: didsvc-api
     build:
       context: ..
       dockerfile: deployment/Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     env_file:
       - ../.env
-    depends_on:
-      - redis
     restart: always
     expose:
-      - "8000"   # ✅ private, nginx will access this
+      - "8000"   # private, nginx will access this
 
   nginx:
     image: nginx:1.25-alpine
-    container_name: analytics-nginx
+    container_name: didsvc-nginx
     restart: always
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
@@ -35,7 +25,3 @@ services:
     ports:
       - "80:80"
       - "443:443"
-
-volumes:
-  redis_data:
-

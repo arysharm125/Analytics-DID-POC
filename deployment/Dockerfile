@@ -3,7 +3,7 @@
 # =========================
 # Build stage
 # =========================
-FROM python:3.11-slim AS build
+FROM python:3.12-slim AS build
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -33,16 +33,13 @@ RUN pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels \
 # =========================
 # Runtime stage
 # =========================
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Install runtime libs AND Audit Tool Dependencies (sshpass, ssh)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libssl3 \
     libffi8 \
-    sshpass \
-    openssh-client \
-    iputils-ping \
  && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -61,8 +58,10 @@ RUN pip install --no-cache-dir /wheels/* \
  && pip uninstall -y ecdsa || true \
  && rm -rf /wheels
 
-# Copy application code
-COPY . /app
+# Copy application code (allowlist approach)
+COPY app/ /app/app/
+COPY requirements.txt /app/
+COPY deployment/logging.ini /app/deployment/
 
 # Fix ownership
 RUN chown -R appuser:appgroup /app /opt/did-venv
