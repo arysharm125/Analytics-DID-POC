@@ -24,7 +24,3 @@ FERNET_KEY_FILE = os.getenv("FERNET_KEY_FILE", "fernet.key")
 FERNET_KEY = os.getenv("FERNET_KEY", "")
 
 FORCE_VERAMO_ISSUER_DID = os.getenv("FORCE_VERAMO_ISSUER_DID", "") # Whether to force an issuer instead of using the first DID in Veramo.
-
-# Celery Configuration (Point to your LOCAL Redis)
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "")

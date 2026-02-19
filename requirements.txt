@@ -4,7 +4,6 @@ pymongo
 hvac
 cryptography
 requests
-celery
 certifi
 redis
 python-multipart
