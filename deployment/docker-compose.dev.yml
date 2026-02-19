@@ -1,3 +1,6 @@
+# Docker compose file for use in DEV environment (no SSL/TLS).
+# Mounts the nginx reverse proxy to port 8092.
+
 version: "3.9"
 
 services:
@@ -19,9 +22,7 @@ services:
     restart: always
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - api
     ports:
-      - "80:80"
-      - "443:443"
+      - "8092:80"
