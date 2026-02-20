@@ -372,7 +372,7 @@ def sign_vc(
     proof = {
         "type": "DataIntegrityProof",
         "cryptosuite": EDDSA_RDFC_2022_CRYPTOSUITE,
-        "created": created,
+        "created": created.isoformat(),
         "verificationMethod": verification_method,
         "proofPurpose": "assertionMethod",
         "proofValue": proof_value
