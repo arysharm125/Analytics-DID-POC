@@ -6,7 +6,7 @@ operations for managing secrets, division signing keys, and public keys.
 """
 
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Generator, List, Optional, Any
 import gc
 import logging
@@ -347,7 +347,7 @@ class VaultService:
             return sorted(existing_fragments)[-1]  # Return the latest fragment
 
         # Generate a new key fragment based on current date
-        fragment = f"key{datetime.utcnow().strftime('%Y%m%d')}"
+        fragment = f"key{datetime.now(timezone.utc).strftime('%Y%m%d')}"
 
         # Generate a cryptographically secure random 32-byte seed
         seed_bytes = bytearray(python_secrets.token_bytes(32))

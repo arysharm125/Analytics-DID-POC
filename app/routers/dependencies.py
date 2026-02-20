@@ -20,7 +20,7 @@ async def verify_epdw_token(
     x_api_token: str = Header(
         ...,
         description="EPDW API access token required for authentication.",
-        example=EXAMPLE_API_TOKEN,
+        openapi_examples={"normal":{"value":EXAMPLE_API_TOKEN}},
         alias="X-API-Token",
     )
 ) -> str:
@@ -45,7 +45,7 @@ async def verify_advisory_token(
     x_api_token: str = Header(
         ...,
         description="Advisory API access token required for authentication.",
-        example=EXAMPLE_API_TOKEN,
+        openapi_examples={"normal":{"value":EXAMPLE_API_TOKEN}},
         alias="X-API-Token",
     )
 ) -> str:

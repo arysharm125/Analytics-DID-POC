@@ -37,6 +37,19 @@ def pytest_addoption(parser):
     )
 
 
+def pytest_collection_modifyitems(config, items):
+    """Skip integration tests when running in mock mode."""
+    db_mode = config.getoption("--db-mode")
+
+    if db_mode == "mock":
+        skip_integration = pytest.mark.skip(
+            reason="Integration tests require --db-mode=container or --db-mode=real"
+        )
+        for item in items:
+            if "integration" in item.keywords:
+                item.add_marker(skip_integration)
+
+
 @pytest.fixture(autouse=True)
 def reset_singletons():
     """Auto-reset all singletons before and after each test.

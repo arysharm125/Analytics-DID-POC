@@ -159,7 +159,7 @@ async def advisory_DID(did_svc: DIDServiceDep):
 
 PathUUID = Annotated[CanonicalizedUUID, Path(
     description="The UID or DID of the artefact to retrieve the Verifiable Credential for",
-    example=_example_random_uuid,
+    openapi_examples={"normal":{"value":_example_random_uuid}},
 )]
 
 @router.get("/{uid}/vc.json", responses={**APITokenDep401Response})

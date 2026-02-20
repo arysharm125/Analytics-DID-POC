@@ -10,7 +10,7 @@ from app.config import get_config
 from app.database import MongoConnector
 from app.did_utils.comparisons import compute_diff, has_diff
 from app.routers.basetypes import UUIDString, did_from_uuid
-from app.services.did_service import DIDService, DIDServiceDep, ArtefactInput
+from app.services.did_service import DIDService, ArtefactInput
 from app.services.exceptions import (
     BenchmarkNotFoundError,
     IterationNotFoundError,
@@ -21,6 +21,7 @@ from app.services.exceptions import (
     SUTRecordNotFoundError,
 )
 from app.utils import clean_mongo_doc
+from app.routers.dependencies import DIDServiceDep
 
 
 # ==========================

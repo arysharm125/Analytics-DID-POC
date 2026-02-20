@@ -346,13 +346,13 @@ class MongoConnector:
         return self.db[name]
 
     def insert_doc(self, collection_name: str, doc: dict):
-        doc["created_at"] = datetime.utcnow()
+        doc["created_at"] = self.now()
         return self.get_collection(collection_name).insert_one(doc)
 
     def update_doc(self, collection_name: str, query: dict, update: dict, upsert=False):
         if "$set" not in update:
             update["$set"] = {}
-        update["$set"]["updated_at"] = datetime.utcnow()
+        update["$set"]["updated_at"] = self.now()
         return self.get_collection(collection_name).update_one(query, update, upsert=upsert)
 
     def fetch_docs(self, collection_name: str, query=None, limit=20):

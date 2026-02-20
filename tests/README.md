@@ -46,6 +46,8 @@ pytest --db-mode=container
 TEST_MONGODB_URI="mongodb://localhost:27017" pytest --db-mode=real
 ```
 
+**Note:** Integration tests are automatically skipped when using `--db-mode=mock` (the default). Use `--db-mode=container` or `--db-mode=real` to run them.
+
 ## Test Markers
 
 ```bash

@@ -195,12 +195,12 @@ async def append_did(
     update_message: str = Query(
         ...,
         description="Message describing the update",
-        examples=["Adding new entitlement level"],
+        openapi_examples={"normal":{"value":"Adding new metadata"}},
     ),
     updated_by: str = Query(
         ...,
         description="AMD email of the updater",
-        examples=["user@amd.com"],
+        openapi_examples={"normal":{"value":"user@amd.com"}},
     ),
 ):
     """
@@ -249,7 +249,7 @@ async def epdw_DID(did_svc: DIDServiceDep):
 
 PathUUID = Annotated[CanonicalizedUUID, Path(
     description="The UID or DID of the artefact to retrieve the Verifiable Credential for",
-    example="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+    openapi_examples={"normal":{"value":"95da4dd5-6e48-4c5b-bb91-935983c16d9c"}},
 )]
 
 @app.get("/epdw/{uid}/vc.json", responses={**APITokenDep401Response})
