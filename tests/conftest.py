@@ -265,3 +265,97 @@ def sut_service(db_connector, did_service):
     from app.services.sut_service import SUTService
 
     return SUTService(db=db_connector, did_svc=did_service)
+
+
+# =============================================================================
+# Shared Sample Data Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def sample_uuid() -> str:
+    """A valid UUID string for testing."""
+    return "12345678-1234-1234-1234-123456789abc"
+
+
+@pytest.fixture
+def sample_uuid_2() -> str:
+    """Another valid UUID string for testing."""
+    return "87654321-4321-4321-4321-cba987654321"
+
+
+@pytest.fixture
+def sample_version_uid() -> str:
+    """A valid version UUID string for testing."""
+    return "abcdef12-abcd-abcd-abcd-abcdef123456"
+
+
+@pytest.fixture
+def sample_multihash() -> str:
+    """A valid SHA-256 multihash for testing."""
+    return "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+
+
+@pytest.fixture
+def sample_secret_key_hex() -> str:
+    """A valid 32-byte Ed25519 seed as hex string.
+
+    This is a test key - DO NOT use in production.
+    """
+    return "a" * 64  # 32 bytes as hex (64 hex chars)
+
+
+@pytest.fixture
+def signing_key(sample_secret_key_hex):
+    """An Ed25519 SigningKey for testing."""
+    from app.did_utils.eddsa import create_keypair_from_hex
+
+    return create_keypair_from_hex(sample_secret_key_hex)
+
+
+@pytest.fixture
+def sample_vc() -> dict:
+    """A minimal valid VC for testing."""
+    return {
+        "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://did.amd.com/contexts/digitalArtefacts/v1",
+        ],
+        "type": ["VerifiableCredential", "DigitalArtefactCredential"],
+        "issuer": "did:web:did.amd.com:epdw",
+        "issuanceDate": "2024-01-01T00:00:00+00:00",
+        "credentialSubject": {
+            "id": "did:web:did.amd.com:12345678-1234-1234-1234-123456789abc",
+            "version": 1,
+            "versionUid": "did:web:did.amd.com:abcdef12-abcd-abcd-abcd-abcdef123456",
+            "creationDate": "2024-01-01T00:00:00+00:00",
+        }
+    }
+
+
+@pytest.fixture
+def sample_vc_with_proof(sample_vc) -> dict:
+    """A VC with a proof for testing removal."""
+    vc = sample_vc.copy()
+    vc["proof"] = {
+        "type": "DataIntegrityProof",
+        "cryptosuite": "eddsa-rdfc-2022",
+        "created": "2024-01-01T00:00:00+00:00",
+        "verificationMethod": "did:web:did.amd.com:epdw#key-1",
+        "proofPurpose": "assertionMethod",
+        "proofValue": "z58DAdFfa9SkqZMVPxAQpic7ndTeel..."
+    }
+    return vc
+
+
+@pytest.fixture
+def sample_vp(sample_vc_with_proof) -> dict:
+    """A minimal VP with embedded VC for testing."""
+    return {
+        "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+        ],
+        "type": ["VerifiablePresentation"],
+        "holder": "did:web:did.amd.com:holder123",
+        "verifiableCredential": [sample_vc_with_proof],
+    }

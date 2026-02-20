@@ -34,59 +34,11 @@ from app.did_utils.eddsa import (
 # =============================================================================
 
 @pytest.fixture
-def sample_secret_key_hex() -> str:
-    """A valid 32-byte Ed25519 seed as hex string.
-
-    This is a test key - DO NOT use in production.
-    """
-    return "a" * 64  # 32 bytes as hex (64 hex chars)
-
-
-@pytest.fixture
-def signing_key(sample_secret_key_hex) -> SigningKey:
-    """An Ed25519 SigningKey for testing."""
-    return create_keypair_from_hex(sample_secret_key_hex)
-
-
-@pytest.fixture
-def sample_vc() -> dict:
-    """A minimal valid VC for testing."""
-    return {
-        "@context": [
-            "https://www.w3.org/2018/credentials/v1",
-            "https://did.amd.com/contexts/digitalArtefacts/v1",
-        ],
-        "type": ["VerifiableCredential", "DigitalArtefactCredential"],
-        "issuer": "did:web:did.amd.com:epdw",
-        "issuanceDate": "2024-01-01T00:00:00+00:00",
-        "credentialSubject": {
-            "id": "did:web:did.amd.com:12345678-1234-1234-1234-123456789abc",
-            "version": 1,
-            "versionUid": "did:web:did.amd.com:abcdef12-abcd-abcd-abcd-abcdef123456",
-            "creationDate": "2024-01-01T00:00:00+00:00",
-        }
-    }
-
-
-@pytest.fixture
 def signed_vc(sample_vc, signing_key) -> dict:
     """A signed VC for testing verification."""
     verification_method = "did:web:did.amd.com:epdw#key-1"
     created = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     return sign_vc(sample_vc, signing_key, verification_method, created)
-
-
-@pytest.fixture
-def sample_vp(signed_vc) -> dict:
-    """A minimal valid VP for testing."""
-    return {
-        "@context": [
-            "https://www.w3.org/2018/credentials/v1",
-        ],
-        "type": ["VerifiablePresentation"],
-        "holder": "did:web:did.amd.com:holder123",
-        "verifiableCredential": [signed_vc],
-    }
 
 
 # =============================================================================
