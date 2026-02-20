@@ -1,6 +1,8 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
+import gzip
+import json
 from typing import Any, ClassVar, Optional, TYPE_CHECKING
 
 from fastapi import HTTPException
@@ -95,6 +97,22 @@ class ProvenanceNode:
     division: Optional[str]
     truncated: bool = False
     children: Optional[list["ProvenanceNode"]] = field(default=None)
+
+
+@dataclass
+class IssuedVCRecord:
+    """Record of an issued VC stored in the database.
+
+    Attributes:
+        vc_uid: UUID identifying this VC (becomes the VC's id)
+        version_uid: Reference to the DA version this VC certifies
+        issuance_date: When the VC was issued
+        signing_key_fragment: Which signing key was used (e.g., 'key20260216')
+    """
+    vc_uid: UUIDString
+    version_uid: UUIDString
+    issuance_date: datetime
+    signing_key_fragment: str
 
 
 # =============================================================================
@@ -207,6 +225,77 @@ def migration_20260212001_init(db: MongoConnector) -> None:
         background=True  # Non-blocking index build
     )
 
+
+@_did_service_migrations.migration
+def migration_20260220002_issued_vcs(db: MongoConnector) -> None:
+    """
+    Create the did_issued_vcs collection for tracking issued VCs.
+
+    Design notes:
+    - Each DA version can have at most one issued VC
+    - VCs are stored as gzip-compressed binary blobs to save space
+    - Tracking issuance_date and signing_key_fragment enables deterministic regeneration
+    """
+    collection_name = "did_issued_vcs"
+
+    # JSON Schema validator for the collection
+    validator = {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": ["vc_uid", "version_uid", "issuance_date", "signing_key_fragment", "vc_blob"],
+            "properties": {
+                "vc_uid": {
+                    "bsonType": "string",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                    "description": "UUID identifying this VC (becomes the VC's id)"
+                },
+                "version_uid": {
+                    "bsonType": "string",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                    "description": "Reference to the DA version this VC certifies"
+                },
+                "issuance_date": {
+                    "bsonType": "date",
+                    "description": "When the VC was issued"
+                },
+                "signing_key_fragment": {
+                    "bsonType": "string",
+                    "description": "Which signing key was used (e.g., 'key20260216')"
+                },
+                "vc_blob": {
+                    "bsonType": "binData",
+                    "description": "Gzip-compressed signed VC"
+                }
+            }
+        }
+    }
+
+    # Create collection with validation
+    db.db.create_collection(
+        collection_name,
+        validator=validator,
+        validationLevel="moderate",
+        validationAction="error"
+    )
+
+    collection = db.get_collection(collection_name)
+
+    # Index on vc_uid (unique identifier for each VC)
+    collection.create_index(
+        [("vc_uid", 1)],
+        unique=True,
+        name="idx_vc_uid"
+    )
+
+    # Index on version_uid (unique - one VC per DA version)
+    # This is the primary lookup key for finding VCs by DA version
+    collection.create_index(
+        [("version_uid", 1)],
+        unique=True,
+        name="idx_version_uid"
+    )
+
+
 # =============================================================================
 # Utils/helpers
 # =============================================================================
@@ -264,6 +353,58 @@ def _artefact_to_da_vc_input(artefact : dict[str, Any]) -> DigitalArtefactVCInpu
             provenance=artefact.get("provenance"),
         )
 
+
+def compress_vc(vc: dict) -> bytes:
+    """Compress a VC dictionary to gzip bytes for storage.
+
+    Preserves the original field ordering of the VC.
+
+    Args:
+        vc: The VC dictionary to compress
+
+    Returns:
+        Gzip-compressed bytes
+    """
+    json_str = json.dumps(vc, separators=(',', ':'))
+    return gzip.compress(json_str.encode('utf-8'))
+
+
+def _vc_to_canonical_bytes(vc: dict) -> bytes:
+    """Convert VC to deterministic canonical bytes for comparison.
+
+    Uses sorted keys to ensure the same VC always produces the same bytes,
+    regardless of field ordering. This is used for VC comparison/verification
+    but NOT for storage (to preserve original field order).
+
+    Args:
+        vc: The VC dictionary to canonicalize
+
+    Returns:
+        Canonical bytes representation
+    """
+    json_str = json.dumps(vc, sort_keys=True, separators=(',', ':'))
+    return json_str.encode('utf-8')
+
+
+def decompress_vc(blob: bytes) -> dict:
+    """Decompress gzip bytes to a VC dictionary.
+
+    Args:
+        blob: Gzip-compressed bytes
+
+    Returns:
+        The decompressed VC dictionary
+
+    Raises:
+        ValueError: If decompression or JSON parsing fails
+    """
+    try:
+        json_str = gzip.decompress(blob).decode('utf-8')
+        return json.loads(json_str)
+    except (gzip.BadGzipFile, json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise ValueError(f"Failed to decompress VC blob: {e}") from e
+
+
 # =============================================================================
 # DIDService definition
 # =============================================================================
@@ -290,7 +431,8 @@ class DIDService:
         did_svc = DIDService(db=db, vault_svc=vault_svc, run_migrations=True)
     """
 
-    _artefacts_col_name = "did_artefacts"  # Collection name.
+    _artefacts_col_name = "did_artefacts"  # Collection name for artefacts
+    _issued_vcs_col_name = "did_issued_vcs"  # Collection name for issued VCs
 
     db: MongoConnector
     _vault_svc: VaultService
@@ -814,82 +956,325 @@ class DIDService:
 
         return nodes
 
-    # TODO: Add unit tests for this.
-    def artefact_vc(self, division: DivisionStr | None, uid: UUIDString) -> dict:
-        """Generates a Verifiable Credential with proofs for a Digital Artefact.
-
-        This method creates a signed Verifiable Credential for the specified
-        digital artefact. The VC is signed using EdDSA (Ed25519) Data Integrity
-        proofs with the latest valid division key.
+    def find_issued_vc(self, version_uid: UUIDString) -> Optional[IssuedVCRecord]:
+        """Find an existing issued VC for a DA version.
 
         Args:
-            division: The division identifier or None if the artefact can be from any division.
-            uid: The UUID of the artefact.
+            version_uid: The version_uid of the DA to look up
 
         Returns:
-            A signed Verifiable Credential document with eddsa-rdfc-2022 proofs.
+            IssuedVCRecord if found, None otherwise
+        """
+        from datetime import timezone
+
+        collection = self.db.get_collection(self._issued_vcs_col_name)
+        doc = collection.find_one({"version_uid": version_uid})
+
+        if doc is None:
+            return None
+
+        # Remove MongoDB _id before returning
+        doc.pop("_id", None)
+
+        # MongoDB may strip timezone info - add it back if missing
+        issuance_date = doc["issuance_date"]
+        if issuance_date.tzinfo is None:
+            issuance_date = issuance_date.replace(tzinfo=timezone.utc)
+
+        return IssuedVCRecord(
+            vc_uid=doc["vc_uid"],
+            version_uid=doc["version_uid"],
+            issuance_date=issuance_date,
+            signing_key_fragment=doc["signing_key_fragment"],
+        )
+
+    def get_issued_vc(self, version_uid: UUIDString) -> dict:
+        """Get the stored VC document for a DA version.
+
+        Returns the decompressed VC from storage.
+
+        Args:
+            version_uid: The version_uid of the DA
+
+        Returns:
+            The decompressed VC document
 
         Raises:
-            ArtefactNotFoundError: If the artefact is not found.
-            DivisionKeysNotFound: If no signing keys exist for the division.
-            HTTPException: If signing fails.
+            VCNotFoundError: If no VC exists for this version_uid
         """
-        collection = self.db.get_collection(self._artefacts_col_name)
+        from app.services.exceptions import VCNotFoundError
 
-        # Find the latest version of the artefact
-        artefact = self._find_artefact_by_uid(uid, collection)
+        collection = self.db.get_collection(self._issued_vcs_col_name)
+        doc = collection.find_one({"version_uid": version_uid})
 
-        # Check for division validity.
-        if artefact is None:
-            raise ArtefactNotFoundError(uid=uid, division=division)
-        if artefact["division"] is None or artefact["division"] == "":
-            # Should never happen - schema ensures division is not blank.
-            raise RuntimeError("artefact does not have a division")
-        elif division is None:
-            # Any division acceptable. Use the one in the artefact.
-            division = division_from_str(artefact["division"])
-        elif artefact["division"] != division:
-            # MUST be ArtefactNotFoundError to avoid leaking that the artefact
-            # exists under a different division.
-            raise ArtefactNotFoundError(uid=uid, division=division)
+        if doc is None:
+            raise VCNotFoundError(version_uid)
 
-        # Build the DID for division.
+        # Decompress and return the VC
+        return decompress_vc(doc["vc_blob"])
+
+    def _store_issued_vc(
+        self,
+        vc_uid: UUIDString,
+        version_uid: UUIDString,
+        issuance_date: datetime,
+        signing_key_fragment: str,
+        vc: dict,
+    ) -> IssuedVCRecord:
+        """Store an issued VC in the database.
+
+        Args:
+            vc_uid: UUID for the VC itself
+            version_uid: The DA version this VC certifies
+            issuance_date: When the VC was issued
+            signing_key_fragment: Which key was used to sign
+            vc: The signed VC document
+
+        Returns:
+            IssuedVCRecord with the stored metadata
+
+        Raises:
+            VCAlreadyExistsError: If a VC already exists for this version_uid
+        """
+        from app.services.exceptions import VCAlreadyExistsError
+
+        collection = self.db.get_collection(self._issued_vcs_col_name)
+
+        # Compress the VC for storage
+        vc_blob = compress_vc(vc)
+
+        doc = {
+            "vc_uid": vc_uid,
+            "version_uid": version_uid,
+            "issuance_date": issuance_date,
+            "signing_key_fragment": signing_key_fragment,
+            "vc_blob": vc_blob,
+        }
+
+        try:
+            collection.insert_one(doc)
+        except DuplicateKeyError:
+            # A VC already exists for this version_uid
+            raise VCAlreadyExistsError(version_uid)
+
+        return IssuedVCRecord(
+            vc_uid=vc_uid,
+            version_uid=version_uid,
+            issuance_date=issuance_date,
+            signing_key_fragment=signing_key_fragment,
+        )
+
+    def _generate_vc_internal(
+        self,
+        artefact: dict,
+        vc_uid: UUIDString,
+        issuance_date: datetime,
+        signing_key_fragment: str,
+    ) -> dict:
+        """Generate a signed VC deterministically given all inputs.
+
+        This is the core generation function that produces the same VC
+        given the same inputs. It's used both for initial VC generation
+        and for deterministic regeneration.
+
+        Args:
+            artefact: The artefact document from database
+            vc_uid: The UUID for the VC's id field
+            issuance_date: When the VC is/was issued
+            signing_key_fragment: Which signing key to use
+
+        Returns:
+            The signed VC document
+
+        Raises:
+            SigningKeyNotAvailableError: If the signing key is not found
+            HTTPException: If signing fails
+        """
+        from app.services.exceptions import SigningKeyNotAvailableError
+
+        division = division_from_str(artefact["division"])
         division_did = division_did_from_division(division)
 
-        # Get the active signing key fragment for this division
-        try:
-            fragment = self._get_active_signing_key_fragment(division)
-        except SigningKeyNotFoundError:
-            raise DivisionKeysNotFound(division=division)
-
-
-        # Create the unsigned VC for this DA.
-        now = self.db.now()
+        # Create the unsigned VC with the provided vc_id
         unsigned_vc = generate_digital_artefact_vc(
             format=artefact["format_version"],
             da=_artefact_to_da_vc_input(artefact),
-            issuance_date=now,
+            issuance_date=issuance_date,
+            vc_id=vc_uid,
         )
 
-        # Fetch and use the signing key with secure cleanup
-        # The signing_key_context ensures the key material is:
-        # 1. Fetched from vault
-        # 2. Converted to a SigningKey
-        # 3. Cleared from memory after use via sodium_memzero
+        # Fetch and use the specific signing key
         try:
-            with self._vault_svc.signing_key_context(division, fragment) as (signing_key, frag):
+            with self._vault_svc.signing_key_context(division, signing_key_fragment) as (signing_key, frag):
                 verification_method = f"{division_did}#{frag}"
 
                 return sign_vc(
                     vc=unsigned_vc,
                     secret_key=signing_key,
                     verification_method=verification_method,
-                    created=now,
+                    created=issuance_date,
                 )
         except SigningKeyNotFoundError:
-            raise DivisionKeysNotFound(division=division)
+            raise SigningKeyNotAvailableError(division=division, fragment=signing_key_fragment)
         except Exception as e:
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to sign VC for DA {uid} version {artefact['version']} division {division}: {e}",
+                detail=f"Failed to sign VC for DA {artefact['version_uid']} version {artefact['version']} division {division}: {e}",
             ) from e
+
+    def issue_artefact_vc(
+        self,
+        division: DivisionStr | None,
+        uid: UUIDString,
+        force_regenerate: bool = False,
+    ) -> dict:
+        """Issue or retrieve a VC for a Digital Artefact.
+
+        This method handles VC issuance with tracking and deterministic regeneration:
+        1. Find the DA (resolve external_uid to latest version_uid if needed)
+        2. Check if VC already exists for this version_uid
+        3. If exists and not force_regenerate: return stored VC
+        4. If exists and force_regenerate: regenerate and verify match
+        5. If not exists: generate new VC, store it, return it
+
+        Args:
+            division: Division filter (None = any division acceptable)
+            uid: The DA's version_uid or external_uid
+            force_regenerate: If True, regenerate and verify against stored VC
+
+        Returns:
+            The signed VC document
+
+        Raises:
+            ArtefactNotFoundError: If the artefact is not found
+            DivisionKeysNotFound: If no signing keys exist for the division
+            VCRegenerationMismatchError: If force_regenerate=True and regenerated VC doesn't match
+            HTTPException: If signing fails
+        """
+        from app.services.exceptions import VCRegenerationMismatchError
+
+        collection = self.db.get_collection(self._artefacts_col_name)
+
+        # Find the artefact (resolves external_uid to latest version)
+        artefact = self._find_artefact_by_uid(uid, collection)
+
+        # Validate artefact exists and division matches
+        if artefact is None:
+            raise ArtefactNotFoundError(uid=uid, division=division)
+        if artefact["division"] is None or artefact["division"] == "":
+            raise RuntimeError("artefact does not have a division")
+        elif division is None:
+            # Any division acceptable. Use the one in the artefact.
+            division = division_from_str(artefact["division"])
+        elif artefact["division"] != division:
+            # MUST be ArtefactNotFoundError to avoid leaking division info
+            raise ArtefactNotFoundError(uid=uid, division=division)
+
+        version_uid = artefact["version_uid"]
+
+        # Check if a VC already exists for this version
+        existing_vc_record = self.find_issued_vc(version_uid)
+
+        if existing_vc_record is not None:
+            if force_regenerate:
+                # Regenerate and verify it matches the stored VC
+                regenerated_vc = self._generate_vc_internal(
+                    artefact=artefact,
+                    vc_uid=existing_vc_record.vc_uid,
+                    issuance_date=existing_vc_record.issuance_date,
+                    signing_key_fragment=existing_vc_record.signing_key_fragment,
+                )
+
+                stored_vc = self.get_issued_vc(version_uid)
+
+                # Compare using canonical bytes (with sorted keys) to ignore field ordering
+                regenerated_canonical = _vc_to_canonical_bytes(regenerated_vc)
+                stored_canonical = _vc_to_canonical_bytes(stored_vc)
+
+                if regenerated_canonical != stored_canonical:
+                    raise VCRegenerationMismatchError(
+                        version_uid=version_uid,
+                        details="Regenerated VC does not match stored VC"
+                    )
+
+                return regenerated_vc
+            else:
+                # Return the stored VC
+                return self.get_issued_vc(version_uid)
+
+        # No existing VC - generate and store a new one
+        vc_uid = str(self.db.random_uuid())
+        # Truncate to millisecond precision to match MongoDB storage
+        # MongoDB stores datetimes with millisecond precision, not microseconds
+        now = self.db.now()
+        issuance_date = now.replace(microsecond=now.microsecond // 1000 * 1000)
+
+        # Get the active signing key for this division
+        try:
+            fragment = self._get_active_signing_key_fragment(division)
+        except SigningKeyNotFoundError:
+            raise DivisionKeysNotFound(division=division)
+
+        # Generate the VC
+        vc = self._generate_vc_internal(
+            artefact=artefact,
+            vc_uid=vc_uid,
+            issuance_date=issuance_date,
+            signing_key_fragment=fragment,
+        )
+
+        # Store the VC
+        self._store_issued_vc(
+            vc_uid=vc_uid,
+            version_uid=version_uid,
+            issuance_date=issuance_date,
+            signing_key_fragment=fragment,
+            vc=vc,
+        )
+
+        return vc
+
+    def regenerate_and_verify_vc(self, version_uid: UUIDString) -> tuple[dict, bool]:
+        """Regenerate a VC and verify it matches the stored version.
+
+        Args:
+            version_uid: The version_uid of the DA
+
+        Returns:
+            Tuple of (regenerated_vc, matches_stored)
+
+        Raises:
+            VCNotFoundError: If no VC exists for this version_uid
+            ArtefactNotFoundError: If the DA is not found
+            SigningKeyNotAvailableError: If the signing key is no longer available
+        """
+        from app.services.exceptions import VCNotFoundError
+
+        # Get the issued VC record
+        vc_record = self.find_issued_vc(version_uid)
+        if vc_record is None:
+            raise VCNotFoundError(version_uid)
+
+        # Get the artefact
+        collection = self.db.get_collection(self._artefacts_col_name)
+        artefact = collection.find_one({"version_uid": version_uid})
+        if artefact is None:
+            raise ArtefactNotFoundError(uid=version_uid, division=None)
+
+        # Regenerate the VC using the stored parameters
+        regenerated_vc = self._generate_vc_internal(
+            artefact=artefact,
+            vc_uid=vc_record.vc_uid,
+            issuance_date=vc_record.issuance_date,
+            signing_key_fragment=vc_record.signing_key_fragment,
+        )
+
+        # Get the stored VC and compare
+        stored_vc = self.get_issued_vc(version_uid)
+
+        # Compare using canonical bytes (with sorted keys) to ignore field ordering
+        regenerated_canonical = _vc_to_canonical_bytes(regenerated_vc)
+        stored_canonical = _vc_to_canonical_bytes(stored_vc)
+        matches = (regenerated_canonical == stored_canonical)
+
+        return regenerated_vc, matches

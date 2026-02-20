@@ -259,4 +259,4 @@ async def artefact_vc(
     did_svc: DIDServiceDep,
 ):
     """Return a Verifiable Credential with proofs for a Digital Artefact."""
-    return did_svc.artefact_vc(division=_EPDW_DIVISION, uid=uid)
+    return did_svc.issue_artefact_vc(division=_EPDW_DIVISION, uid=uid)

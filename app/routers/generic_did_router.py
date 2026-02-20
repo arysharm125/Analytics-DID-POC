@@ -221,7 +221,7 @@ def artefact_vc(
     did_svc: DIDServiceDep,
 ):
     """Return a Verifiable Credential with proofs for a Digital Artefact."""
-    return did_svc.artefact_vc(division=None, uid=uid)
+    return did_svc.issue_artefact_vc(division=None, uid=uid)
 
 
 @app.get("/{uid}/overview", responses={**NotFoundResponse}, response_model_exclude_none=True)

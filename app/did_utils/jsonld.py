@@ -273,6 +273,7 @@ def generate_digital_artefact_vc(
         format: int,
         da: DigitalArtefactVCInput,
         issuance_date: datetime,
+        vc_id: UUIDString | None = None,
     ) -> dict[str, Any]:
     """
     Generates an unsigned Verifiable Credential for a Digital Artefact, as
@@ -281,7 +282,9 @@ def generate_digital_artefact_vc(
     Arguments:
         format: One of the supported format versions.
         da: Information about the digital artefact.
-        issuanceDate: Issuace date to use.
+        issuance_date: Issuance date to use.
+        vc_id: Optional UUID for the VC's own identifier (as a DID).
+               If provided, the VC will include an 'id' field.
 
     Returns:
         The structured, unsigned VC.
@@ -296,13 +299,14 @@ def generate_digital_artefact_vc(
     if format != 1:
         raise RuntimeError("Only format 1 VCs is currently supported")
 
-    return {
+    vc = {
         "@context": [
             "https://www.w3.org/2018/credentials/v1",
             "https://did.amd.com/contexts/digitalArtefacts/v1",
             DATA_INTEGRITY_V2_CONTEXT,
         ],
         "type": ["VerifiableCredential", "DigitalArtefactCredential"],
+        **({"id": did_from_uuid(vc_id)} if vc_id is not None else {}),
         "issuer": division_did_from_division(da.division),
         "issuanceDate": issuance_date.isoformat(),
         "credentialSubject": {
@@ -315,3 +319,5 @@ def generate_digital_artefact_vc(
             **({"provenance": did_list_from_uuid_list(da.provenance)} if da.provenance is not None else {}),
         }
     }
+
+    return vc

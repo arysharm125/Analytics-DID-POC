@@ -137,6 +137,54 @@ class ArtefactNoChangesError(DIDServiceError, HTTPException):
 
 
 # =============================================================================
+# VC Issuance Exceptions
+# =============================================================================
+
+class VCAlreadyExistsError(DIDServiceError, HTTPException):
+    """Raised when attempting to issue a VC for a DA version that already has one."""
+    def __init__(self, version_uid: str):
+        self.version_uid = version_uid
+        super().__init__(
+            status_code=409,
+            detail=f"A VC has already been issued for artefact version '{version_uid}'."
+        )
+
+
+class VCNotFoundError(DIDServiceError, HTTPException):
+    """Raised when a VC is not found."""
+    def __init__(self, version_uid: str):
+        self.version_uid = version_uid
+        super().__init__(
+            status_code=404,
+            detail=f"No VC found for artefact version '{version_uid}'."
+        )
+
+
+class VCRegenerationMismatchError(DIDServiceError):
+    """Raised when regenerated VC doesn't match stored VC.
+
+    This is a non-HTTP exception used internally for verification purposes.
+    """
+    def __init__(self, version_uid: str, details: str = ""):
+        self.version_uid = version_uid
+        message = f"Regenerated VC for version '{version_uid}' does not match stored VC"
+        if details:
+            message += f": {details}"
+        super().__init__(message)
+
+
+class SigningKeyNotAvailableError(DIDServiceError, HTTPException):
+    """Raised when a specific signing key fragment is not available in vault."""
+    def __init__(self, division: str, fragment: str):
+        self.division = division
+        self.fragment = fragment
+        super().__init__(
+            status_code=404,
+            detail=f"Signing key '{fragment}' not found for division '{division}'."
+        )
+
+
+# =============================================================================
 # SUT-specific Exceptions
 # =============================================================================
 

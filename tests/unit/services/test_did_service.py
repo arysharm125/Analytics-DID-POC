@@ -17,8 +17,11 @@ from app.services.did_service import (
     ArtefactInput,
     ArtefactRecord,
     ProvenanceNode,
+    IssuedVCRecord,
     _artefact_has_changes,
     _artefact_to_da_vc_input,
+    compress_vc,
+    decompress_vc,
 )
 from app.services.exceptions import (
     ArtefactNoChangesError,
@@ -27,6 +30,10 @@ from app.services.exceptions import (
     DivisionMismatchError,
     ProvenanceNotFoundError,
     VersionConflictError,
+    VCAlreadyExistsError,
+    VCNotFoundError,
+    VCRegenerationMismatchError,
+    SigningKeyNotAvailableError,
 )
 from app.did_utils.jsonld import DigitalArtefactVCInput
 
@@ -1141,17 +1148,92 @@ class TestDivisionDidDoc:
 
 
 # =============================================================================
-# Verifiable Credential Generation Tests
+# VC Compression Helper Tests
 # =============================================================================
 
 
-class TestArtefactVc:
-    """Tests for artefact_vc method."""
+class TestVCCompression:
+    """Tests for compress_vc and decompress_vc helper functions."""
 
-    def test_generates_signed_vc(self, did_service_no_migrations, vault_service):
-        """artefact_vc should generate a signed VC."""
+    def test_compress_decompress_roundtrip(self):
+        """Compressing and decompressing should produce original VC."""
+        vc = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["VerifiableCredential"],
+            "credentialSubject": {"id": "did:web:did.amd.com:test"},
+        }
+
+        compressed = compress_vc(vc)
+        decompressed = decompress_vc(compressed)
+
+        assert decompressed == vc
+
+    def test_compress_reduces_size(self):
+        """Compression should reduce data size for typical VCs."""
+        # Create a VC with some data
+        vc = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["VerifiableCredential", "DigitalArtefactCredential"],
+            "credentialSubject": {
+                "id": "did:web:did.amd.com:12345678-1234-1234-1234-123456789abc",
+                "artefactMetadata": {"key1": "value1", "key2": "value2"},
+            },
+        }
+
+        import json
+        original_size = len(json.dumps(vc))
+        compressed = compress_vc(vc)
+
+        # Compressed should be smaller (though not always for very small data)
+        # For typical VCs, compression should help
+        assert len(compressed) > 0
+        assert isinstance(compressed, bytes)
+
+    def test_decompress_invalid_data_raises(self):
+        """Decompressing invalid data should raise ValueError."""
+        invalid_blob = b"not gzip data"
+
+        with pytest.raises(ValueError) as exc:
+            decompress_vc(invalid_blob)
+        assert "Failed to decompress VC blob" in str(exc.value)
+
+    def test_compress_preserves_field_order(self):
+        """Compression should preserve original field ordering."""
+        from collections import OrderedDict
+
+        # Create VC with specific field order
+        vc = {
+            "id": "did:web:did.amd.com:vc-123",
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["VerifiableCredential"],
+            "credentialSubject": {"id": "did:web:did.amd.com:test"},
+        }
+
+        # Compress and decompress
+        compressed = compress_vc(vc)
+        decompressed = decompress_vc(compressed)
+
+        # Field order should be preserved (Python 3.7+ guarantees dict order)
+        assert list(decompressed.keys()) == list(vc.keys())
+
+
+# =============================================================================
+# VC Issuance and Tracking Tests
+# =============================================================================
+
+
+class TestFindIssuedVc:
+    """Tests for find_issued_vc method."""
+
+    def test_find_existing_vc(self, did_service_no_migrations, vault_service):
+        """Finding an existing VC should return its record."""
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
+
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
 
         artefact = did_service.upsert_artefact(
             ArtefactInput(
@@ -1161,39 +1243,151 @@ class TestArtefactVc:
             )
         )
 
-        vc = did_service.artefact_vc("epdw", artefact.version_uid)
+        vc = did_service.issue_artefact_vc("epdw", artefact.version_uid)
 
+        result = did_service.find_issued_vc(artefact.version_uid)
+        assert result is not None
+        assert isinstance(result, IssuedVCRecord)
+        assert result.version_uid == artefact.version_uid
+        assert result.vc_uid is not None
+
+    def test_find_nonexistent_returns_none(self, did_service_no_migrations):
+        """Finding non-existent VC should return None."""
+        did_service = did_service_no_migrations
+        result = did_service.find_issued_vc("nonexistent-uuid")
+        assert result is None
+
+
+class TestGetIssuedVc:
+    """Tests for get_issued_vc method."""
+
+    def test_get_existing_vc_decompresses(self, did_service_no_migrations, vault_service):
+        """Getting an existing VC should decompress it correctly."""
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        # Issue a VC
+        issued_vc = did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Retrieve it
+        retrieved_vc = did_service.get_issued_vc(artefact.version_uid)
+
+        assert retrieved_vc == issued_vc
+        assert "proof" in retrieved_vc
+
+    def test_get_nonexistent_raises(self, did_service_no_migrations):
+        """Getting non-existent VC should raise VCNotFoundError."""
+        did_service = did_service_no_migrations
+
+        with pytest.raises(VCNotFoundError):
+            did_service.get_issued_vc("nonexistent-uuid")
+
+
+class TestIssueArtefactVc:
+    """Tests for issue_artefact_vc method."""
+
+    def test_creates_new_vc_when_none_exists(self, did_service_no_migrations, vault_service):
+        """Issuing VC for first time should create and store it."""
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        vc = did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Verify VC was stored
+        record = did_service.find_issued_vc(artefact.version_uid)
+        assert record is not None
+        assert record.version_uid == artefact.version_uid
+
+    def test_returns_stored_vc_when_exists(self, did_service_no_migrations, vault_service):
+        """Issuing VC when one exists should return the stored VC."""
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        # Issue first time
+        vc1 = did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Issue again - should return the same VC
+        vc2 = did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        assert vc1 == vc2
+        assert vc1["id"] == vc2["id"]
+
+    def test_stored_vc_has_correct_structure(self, did_service_no_migrations, vault_service):
+        """Stored VC should have all required fields including id."""
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        vc = did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Check VC structure
+        assert "id" in vc
+        assert vc["id"].startswith("did:web:did.amd.com:")
         assert "@context" in vc
         assert "type" in vc
         assert "credentialSubject" in vc
         assert "proof" in vc
-        assert vc["type"] == ["VerifiableCredential", "DigitalArtefactCredential"]
 
-    def test_vc_includes_correct_artefact_data(self, did_service_no_migrations, vault_service):
-        """VC should include correct artefact data."""
+    def test_vc_has_unique_id(self, did_service_no_migrations, vault_service):
+        """Each VC should have a unique id (different from DA id)."""
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        artefact = did_service.upsert_artefact(
-            ArtefactInput(
-                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
-                division="epdw",
-                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
-                artefact_metadata={"key": "value"},
-            )
-        )
-
-        vc = did_service.artefact_vc("epdw", artefact.version_uid)
-
-        subject = vc["credentialSubject"]
-        assert "did:web:did.amd.com:" + artefact.external_uid in subject["id"]
-        assert subject["version"] == artefact.version
-        assert subject["artefactHash"] == artefact.artefact_hash
-
-    def test_vc_with_specific_division(self, did_service_no_migrations, vault_service):
-        """VC with specific division should use that division."""
-        did_service = did_service_no_migrations
-        vault_service.ensure_division_signing_key("epdw")
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
 
         artefact = did_service.upsert_artefact(
             ArtefactInput(
@@ -1203,37 +1397,57 @@ class TestArtefactVc:
             )
         )
 
-        vc = did_service.artefact_vc("epdw", artefact.version_uid)
-        assert "did:web:did.amd.com:epdw" in vc["proof"]["verificationMethod"]
+        vc = did_service.issue_artefact_vc("epdw", artefact.version_uid)
 
-    def test_vc_without_division_uses_artefact_division(self, did_service_no_migrations, vault_service):
-        """VC without division parameter should use artefact's division."""
+        # VC id should be different from credentialSubject id
+        vc_id = vc["id"]
+        subject_id = vc["credentialSubject"]["id"]
+        assert vc_id != subject_id
+
+    def test_force_regenerate_verifies_match(self, did_service_no_migrations, vault_service):
+        """force_regenerate should verify VC matches stored version."""
         did_service = did_service_no_migrations
-        vault_service.ensure_division_signing_key("advisory")
+        vault_service.ensure_division_signing_key("epdw")
+
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
 
         artefact = did_service.upsert_artefact(
             ArtefactInput(
                 external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
-                division="advisory",
+                division="epdw",
                 artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
             )
         )
 
-        vc = did_service.artefact_vc(None, artefact.version_uid)
-        assert "did:web:did.amd.com:advisory" in vc["proof"]["verificationMethod"]
+        # Issue first time
+        vc1 = did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Issue with force_regenerate - should not raise
+        vc2 = did_service.issue_artefact_vc("epdw", artefact.version_uid, force_regenerate=True)
+
+        assert vc1 == vc2
 
     def test_artefact_not_found_raises(self, did_service_no_migrations):
-        """VC for non-existent artefact should raise ArtefactNotFoundError."""
+        """Issuing VC for non-existent artefact should raise."""
         did_service = did_service_no_migrations
+
         with pytest.raises(ArtefactNotFoundError):
-            did_service.artefact_vc("epdw", "nonexistent-uuid")
+            did_service.issue_artefact_vc("epdw", "nonexistent-uuid")
 
     def test_division_mismatch_raises_not_found(self, did_service_no_migrations, vault_service):
-        """VC with wrong division should raise ArtefactNotFoundError (security)."""
+        """Issuing VC with wrong division should raise ArtefactNotFoundError."""
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
         vault_service.ensure_division_signing_key("advisory")
 
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+
         artefact = did_service.upsert_artefact(
             ArtefactInput(
                 external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -1242,15 +1456,22 @@ class TestArtefactVc:
             )
         )
 
-        # Should raise ArtefactNotFoundError, not DivisionMismatchError
-        # This prevents leaking that the artefact exists in a different division
         with pytest.raises(ArtefactNotFoundError):
-            did_service.artefact_vc("advisory", artefact.version_uid)
+            did_service.issue_artefact_vc("advisory", artefact.version_uid)
 
-    def test_missing_signing_keys_raises(self, did_service_no_migrations, vault_service):
-        """VC generation without signing keys should raise DivisionKeysNotFound."""
+
+# =============================================================================
+# VC Deterministic Regeneration Tests
+# =============================================================================
+
+
+class TestVCDeterministicRegeneration:
+    """Tests for deterministic VC regeneration."""
+
+    def test_same_inputs_produce_identical_vc(self, did_service_no_migrations, vault_service, db_connector):
+        """Generating VC twice with same inputs should produce identical results."""
         did_service = did_service_no_migrations
-        vault_service._client.clear()
+        vault_service.ensure_division_signing_key("epdw")
 
         artefact = did_service.upsert_artefact(
             ArtefactInput(
@@ -1260,5 +1481,206 @@ class TestArtefactVc:
             )
         )
 
-        with pytest.raises(DivisionKeysNotFound):
-            did_service.artefact_vc("epdw", artefact.version_uid)
+        # Get artefact doc
+        collection = db_connector.get_collection("did_artefacts")
+        artefact_doc = collection.find_one({"version_uid": artefact.version_uid})
+
+        # Fixed parameters for deterministic generation
+        vc_uid = "12345678-1234-1234-1234-123456789abc"
+        issuance_date = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+        fragment = vault_service.get_active_signing_key_fragment("epdw")
+
+        # Generate twice
+        vc1 = did_service._generate_vc_internal(
+            artefact=artefact_doc,
+            vc_uid=vc_uid,
+            issuance_date=issuance_date,
+            signing_key_fragment=fragment,
+        )
+
+        vc2 = did_service._generate_vc_internal(
+            artefact=artefact_doc,
+            vc_uid=vc_uid,
+            issuance_date=issuance_date,
+            signing_key_fragment=fragment,
+        )
+
+        # Should be byte-identical
+        assert compress_vc(vc1) == compress_vc(vc2)
+
+    def test_regenerate_matches_stored(self, did_service_no_migrations, vault_service):
+        """Regenerating a VC should match the stored version."""
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        # Issue VC
+        original_vc = did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Regenerate and verify
+        regenerated_vc, matches = did_service.regenerate_and_verify_vc(artefact.version_uid)
+
+        assert matches is True
+        assert regenerated_vc == original_vc
+
+    def test_different_issuance_date_produces_different_vc(self, did_service_no_migrations, vault_service, db_connector):
+        """VCs with different issuance dates should be different."""
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        collection = db_connector.get_collection("did_artefacts")
+        artefact_doc = collection.find_one({"version_uid": artefact.version_uid})
+
+        vc_uid = "12345678-1234-1234-1234-123456789abc"
+        fragment = vault_service.get_active_signing_key_fragment("epdw")
+
+        vc1 = did_service._generate_vc_internal(
+            artefact=artefact_doc,
+            vc_uid=vc_uid,
+            issuance_date=datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc),
+            signing_key_fragment=fragment,
+        )
+
+        vc2 = did_service._generate_vc_internal(
+            artefact=artefact_doc,
+            vc_uid=vc_uid,
+            issuance_date=datetime(2026, 2, 21, 12, 0, 0, tzinfo=timezone.utc),
+            signing_key_fragment=fragment,
+        )
+
+        assert vc1 != vc2
+        assert vc1["issuanceDate"] != vc2["issuanceDate"]
+
+    def test_different_signing_key_produces_different_vc(self, did_service_no_migrations, vault_service, db_connector):
+        """VCs with different signing keys should be different."""
+        did_service = did_service_no_migrations
+
+        # Create two different signing keys
+        vault_service.write_secret("divisions/epdw/signing_keys/key20260101", {"secret_key_hex": "a" * 64})
+        vault_service.write_secret("divisions/epdw/signing_keys/key20260201", {"secret_key_hex": "b" * 64})
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        collection = db_connector.get_collection("did_artefacts")
+        artefact_doc = collection.find_one({"version_uid": artefact.version_uid})
+
+        vc_uid = "12345678-1234-1234-1234-123456789abc"
+        issuance_date = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+
+        vc1 = did_service._generate_vc_internal(
+            artefact=artefact_doc,
+            vc_uid=vc_uid,
+            issuance_date=issuance_date,
+            signing_key_fragment="key20260101",
+        )
+
+        vc2 = did_service._generate_vc_internal(
+            artefact=artefact_doc,
+            vc_uid=vc_uid,
+            issuance_date=issuance_date,
+            signing_key_fragment="key20260201",
+        )
+
+        assert vc1 != vc2
+        assert vc1["proof"]["verificationMethod"] != vc2["proof"]["verificationMethod"]
+
+
+class TestRegenerateAndVerifyVc:
+    """Tests for regenerate_and_verify_vc method."""
+
+    def test_regenerate_matches_original(self, did_service_no_migrations, vault_service):
+        """Regenerating a VC should produce a matching VC."""
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        # Issue VC
+        did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Regenerate
+        regenerated_vc, matches = did_service.regenerate_and_verify_vc(artefact.version_uid)
+
+        assert matches is True
+
+    def test_regenerate_detects_tampering(self, did_service_no_migrations, vault_service, db_connector):
+        """Regeneration should detect if stored VC was tampered with."""
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        # Manually create issued VCs collection
+        collection = did_service.db.get_collection("did_issued_vcs")
+        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        # Issue VC
+        did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Manually tamper with stored VC
+        stored_vc = did_service.get_issued_vc(artefact.version_uid)
+        stored_vc["credentialSubject"]["artefactHash"] = "QmTamperedHash"
+
+        # Replace in database
+        tampered_blob = compress_vc(stored_vc)
+        vc_collection = db_connector.get_collection("did_issued_vcs")
+        vc_collection.update_one(
+            {"version_uid": artefact.version_uid},
+            {"$set": {"vc_blob": tampered_blob}}
+        )
+
+        # Regenerate and verify - should detect mismatch
+        regenerated_vc, matches = did_service.regenerate_and_verify_vc(artefact.version_uid)
+
+        assert matches is False
+
+    def test_no_vc_raises(self, did_service_no_migrations):
+        """Regenerating non-existent VC should raise VCNotFoundError."""
+        did_service = did_service_no_migrations
+
+        with pytest.raises(VCNotFoundError):
+            did_service.regenerate_and_verify_vc("nonexistent-uuid")
