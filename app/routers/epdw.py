@@ -8,8 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.routers.basetypes import CanonicalizedUUID, UUIDString
-from app.routers.dependencies import EPDWTokenDep, APITokenDep401Response
-from app.services.did_service import DIDServiceDep
+from app.routers.dependencies import EPDWTokenDep, APITokenDep401Response, DIDServiceDep
 from app.services.sut_service import SUTServiceDep
 
 

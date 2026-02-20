@@ -1,8 +1,6 @@
 """Exceptions for DID service and related operations."""
 
 from fastapi import HTTPException
-from requests import HTTPError
-
 
 _DID_PREFIX = "did:amd:com"
 
@@ -108,7 +106,7 @@ class ArtefactNotFoundError(DIDServiceError, HTTPException):
         if division is None:
             detail = f"Artefact with uid '{uid}' not found in any division"
         else:
-            f"Artefact with uid '{uid}' not found in division '{division}."
+            detail = f"Artefact with uid '{uid}' not found in division '{division}."
 
         super().__init__(status_code=404, detail=detail)
 

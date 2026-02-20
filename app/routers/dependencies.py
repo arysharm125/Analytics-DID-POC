@@ -1,18 +1,19 @@
 """Reusable dependencies for FastAPI routes."""
 
 from __future__ import annotations
+from contextlib import asynccontextmanager
 import secrets
-from functools import lru_cache
-from typing import Annotated, TYPE_CHECKING
+from typing import Annotated, TYPE_CHECKING, AsyncGenerator
 
 from fastapi import Depends, Header, HTTPException
 
-from app.config import get_config
+from app.config import get_config, reset_config_cache
 from app.constants import EXAMPLE_API_TOKEN
 
 if TYPE_CHECKING:
     from app.database import MongoConnector
     from app.services.vault_service import VaultService
+    from app.services.did_service import DIDService
 
 
 async def verify_epdw_token(
@@ -202,14 +203,89 @@ MongoConnectorDep = Annotated["MongoConnector", Depends(get_db)]
 
 
 # =============================================================================
+# DIDService Dependency
+# =============================================================================
+
+_did_service: "DIDService | None" = None
+_did_service_initialized: bool = False
+
+
+def get_did_service() -> "DIDService":
+    """FastAPI dependency to get DIDService instance.
+
+    The DIDService is lazily initialized on first access and cached
+    for subsequent requests. It uses the cached VaultService and
+    MongoConnector instances.
+
+    Returns:
+        DIDService instance
+
+    Example:
+        @router.get("/example")
+        def example(did_svc: DIDServiceDep):
+            artefact = did_svc.find_by_external_uid(uid)
+    """
+    global _did_service, _did_service_initialized
+
+    if not _did_service_initialized:
+        from app.services.did_service import DIDService
+        db = get_db()
+        vault_svc = get_vault()
+        _did_service = DIDService(db=db, vault_svc=vault_svc)
+        _did_service_initialized = True
+
+    return _did_service  # type: ignore
+
+
+def reset_did_service_dependency() -> None:
+    """Reset the DIDService dependency cache.
+
+    Use this in tests to clear the cached DIDService.
+    """
+    global _did_service, _did_service_initialized
+    _did_service = None
+    _did_service_initialized = False
+
+
+def set_did_service_dependency(did_svc: "DIDService") -> None:
+    """Set the DIDService dependency directly.
+
+    Use this in tests to inject a mock or test DIDService.
+
+    Args:
+        did_svc: The DIDService instance to use
+    """
+    global _did_service, _did_service_initialized
+    _did_service = did_svc
+    _did_service_initialized = True
+
+
+# Type alias for DIDService dependency injection
+DIDServiceDep = Annotated["DIDService", Depends(get_did_service)]
+
+
+@asynccontextmanager
+async def did_service_lifespan() -> AsyncGenerator[None, None]:
+    """Control lifespan of global DIDService instance."""
+
+    # Initialize the DIDService (runs migrations, ensures signing keys)
+    get_did_service()
+    try:
+        yield
+    finally:
+        pass  # No shutdown procedure yet.
+
+# =============================================================================
 # Test Utilities
 # =============================================================================
 
 def reset_all_dependencies() -> None:
     """Reset all cached dependencies.
 
-    Use this in tests to clear all cached services (vault and database).
+    Use this in tests to clear all cached services (vault, database, and DIDService).
     Should be called in test teardown to ensure clean state.
     """
     reset_vault_dependency()
     reset_db_dependency()
+    reset_did_service_dependency()
+    reset_config_cache()

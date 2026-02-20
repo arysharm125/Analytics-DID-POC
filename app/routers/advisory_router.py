@@ -3,9 +3,9 @@ from fastapi import APIRouter, Path
 from pydantic import BaseModel, Field
 from typing import Annotated, Any, Optional
 import logging
-from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid, multihash_from_str
-from app.routers.dependencies import AdvisoryTokenDep, APITokenDep401Response
-from app.services.did_service import DIDServiceDep, ArtefactInput
+from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid
+from app.routers.dependencies import AdvisoryTokenDep, APITokenDep401Response, DIDServiceDep
+from app.services.did_service import ArtefactInput
 
 _ADVISORY_DIVISION = "advisory"
 

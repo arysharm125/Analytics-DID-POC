@@ -37,33 +37,6 @@ UUIDString = Annotated[str, AfterValidator(validate_uuid)]
 
 
 # =============================================================================
-# Generic DID Validation
-# =============================================================================
-
-# Generic DID format: did:<method>:<path>
-# The pattern validates the basic DID structure per W3C DID spec
-GENERIC_DID_PATTERN = re.compile(
-    r"^did:"  # Fixed prefix
-    r"[a-zA-Z0-9]+"  # Method (required, alphanumeric)
-    r":.+$"  # Path (required, at least one character after method)
-)
-
-
-def validate_did(value: str) -> str:
-    """Validate that a string is a valid DID in the generic format did:<method>:<path>."""
-    if not GENERIC_DID_PATTERN.match(value):
-        raise ValueError(
-            f"Invalid DID format: '{value}'. "
-            "Expected format: did:<method>:<path>"
-        )
-    return value
-
-
-# Annotated type for generic DID validation (did:<method>:<path>)
-DIDString = Annotated[str, AfterValidator(validate_did)]
-
-
-# =============================================================================
 # AMD Web DID Validation
 # =============================================================================
 

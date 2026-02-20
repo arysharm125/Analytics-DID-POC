@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
 from app.config import get_config
-from app.services.did_service import did_service_lifespan
+from app.routers.dependencies import did_service_lifespan
 from app.version import VERSION
 
 # ==========================

@@ -1,10 +1,9 @@
 from __future__ import annotations
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional, TYPE_CHECKING
+from typing import Any, ClassVar, Optional, TYPE_CHECKING
 
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
@@ -280,10 +279,9 @@ class DIDService:
     enabling easy testing with mocks.
 
     Example usage:
-        # Production with dependency injection
-        vault_svc = get_vault_service()
-        db = MongoConnector.from_vault_service(vault_svc)
-        did_svc = DIDService(db=db, vault_svc=vault_svc)
+        # Production - use get_did_service() from dependencies
+        from app.routers.dependencies import get_did_service
+        did_svc = get_did_service()
 
         # Testing with mocks
         mock_client = InMemoryVaultClient()
@@ -291,35 +289,6 @@ class DIDService:
         db = MongoConnector.from_client(mongomock.MongoClient(), "test_db")
         did_svc = DIDService(db=db, vault_svc=vault_svc, run_migrations=True)
     """
-
-    # Singleton reference (deprecated - use DI instead)
-    _singleton_svc: ClassVar[Optional["DIDService"]] = None
-
-    @classmethod
-    def _get_instance(
-        cls,
-        db: MongoConnector,
-        vault_svc: Optional[VaultService] = None,
-    ) -> "DIDService":
-        """Get or create the singleton DIDService instance.
-
-        DEPRECATED: Prefer direct instantiation with dependency injection.
-
-        Args:
-            db: MongoConnector instance
-            vault_svc: Optional VaultService instance. If None, uses get_vault_service().
-
-        Returns:
-            The singleton DIDService instance
-        """
-        if cls._singleton_svc is None:
-            cls._singleton_svc = cls(db=db, vault_svc=vault_svc)
-        return cls._singleton_svc
-
-    @classmethod
-    def _reset_instance(cls) -> None:
-        """Reset the singleton instance (for testing)."""
-        cls._singleton_svc = None
 
     _artefacts_col_name = "did_artefacts"  # Collection name.
 
@@ -924,73 +893,3 @@ class DIDService:
                 status_code=500,
                 detail=f"Failed to sign VC for DA {uid} version {artefact['version']} division {division}: {e}",
             ) from e
-
-
-
-# =============================================================================
-# FastAPI Dependency Injection
-# =============================================================================
-
-def _get_db() -> MongoConnector:
-    """FastAPI dependency to get MongoConnector instance.
-
-    Uses the get_db() from app.routers.dependencies which handles
-    lazy initialization via VaultService.
-    """
-    from app.routers.dependencies import get_db
-    return get_db()
-
-
-def _get_vault() -> VaultService:
-    """FastAPI dependency to get VaultService instance.
-
-    Uses the get_vault() from app.routers.dependencies which handles
-    lazy initialization based on config.
-    """
-    from app.routers.dependencies import get_vault
-    return get_vault()
-
-
-# Type alias for MongoConnector dependency injection
-MongoConnectorDep = Annotated[MongoConnector, Depends(_get_db)]
-
-# Type alias for VaultService dependency injection
-VaultServiceDep = Annotated[VaultService, Depends(_get_vault)]
-
-
-def _get_DID_service(
-    db: MongoConnectorDep,
-    vault_svc: VaultServiceDep,
-) -> DIDService:
-    """FastAPI dependency to get DIDService instance with injected dependencies.
-
-    Args:
-        db: MongoConnector instance
-        vault_svc: VaultService instance
-
-    Returns:
-        DIDService singleton instance
-    """
-    return DIDService._get_instance(db=db, vault_svc=vault_svc)
-
-
-# Type alias for DIDService dependency injection
-DIDServiceDep = Annotated[DIDService, Depends(_get_DID_service)]
-
-
-@asynccontextmanager
-async def did_service_lifespan() -> AsyncGenerator[None, None]:
-    """Control lifespan of global DIDService instance.
-
-    This is used by FastAPI's lifespan context to initialize
-    the DIDService before handling requests.
-    """
-    from app.routers.dependencies import get_db, get_vault
-
-    db = get_db()
-    vault_svc = get_vault()
-    DIDService._get_instance(db=db, vault_svc=vault_svc)
-    try:
-        yield
-    finally:
-        pass  # No shutdown procedure yet.

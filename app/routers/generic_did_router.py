@@ -6,8 +6,9 @@ from fastapi import APIRouter, Path
 from pydantic import BaseModel, Field
 
 from app.routers.basetypes import DivisionStr, Multihash, UUIDString
+from app.routers.dependencies import DIDServiceDep
 from app.routers.epdw import PathUUID
-from app.services.did_service import DIDServiceDep, ProvenanceNode as ServiceProvenanceNode
+from app.services.did_service import ProvenanceNode as ServiceProvenanceNode
 
 # ==========================
 # Response Models

@@ -1,0 +1,16 @@
+# Development and testing dependencies
+# Install with: pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+# Testing framework
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Test utilities
+mongomock>=4.1.2
+httpx>=0.24.0
+
+# Container-based testing (requires Docker)
+testcontainers[mongodb]>=3.7.0
