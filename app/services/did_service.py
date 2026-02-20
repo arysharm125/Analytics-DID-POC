@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import gzip
 import json
+import logging
 from typing import Any, ClassVar, Optional, TYPE_CHECKING
 
 from fastapi import HTTPException
@@ -38,6 +39,12 @@ from app.services.vault_service import (
 
 if TYPE_CHECKING:
     pass
+
+
+# =============================================================================
+# Logging
+# =============================================================================
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -617,6 +624,24 @@ class DIDService:
                     version=new_version,
                 ) from e
             raise
+
+        # Log DA creation or new version
+        if new_version == 1:
+            logger.info(
+                "Created new DA: external_uid=%s, version=%d, version_uid=%s, division=%s",
+                artefact.external_uid,
+                new_version,
+                new_version_uid,
+                artefact.division,
+            )
+        else:
+            logger.info(
+                "Added new version to DA: external_uid=%s, version=%d, version_uid=%s, division=%s",
+                artefact.external_uid,
+                new_version,
+                new_version_uid,
+                artefact.division,
+            )
 
         # Return the ArtefactRecord (exclude MongoDB's _id)
         del new_doc["_id"]
@@ -1200,6 +1225,11 @@ class DIDService:
                 return regenerated_vc
             else:
                 # Return the stored VC
+                logger.info(
+                    "Fetched existing VC for DA: version_uid=%s, vc_uid=%s",
+                    version_uid,
+                    existing_vc_record.vc_uid,
+                )
                 return self.get_issued_vc(version_uid)
 
         # No existing VC - generate and store a new one
@@ -1230,6 +1260,13 @@ class DIDService:
             issuance_date=issuance_date,
             signing_key_fragment=fragment,
             vc=vc,
+        )
+
+        # Log VC generation
+        logger.info(
+            "Generated new VC for DA: version_uid=%s, vc_uid=%s",
+            version_uid,
+            vc_uid,
         )
 
         return vc
