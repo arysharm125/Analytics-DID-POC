@@ -2,7 +2,7 @@ from attr import dataclass
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from app.services.vault import vault_is_authenticated
-from app.version import VERSION
+from app.version import VERSION, full_version
 
 
 # -------------------------
@@ -21,6 +21,10 @@ class HealthResponse(BaseModel):
         ...,
         description="Backend service version",
     )
+    full_version : str = Field(
+        ...,
+        description="Backend service version and build metadata (full version string)",
+    )
     pass
 
 app = APIRouter(tags=["Health"])
@@ -33,4 +37,9 @@ def health() -> HealthResponse:
     except Exception:
         vault_ok = False
 
-    return HealthResponse(status="ok", vault_authenticated=vault_ok, version=VERSION)
+    return HealthResponse(
+        status="ok",
+        vault_authenticated=vault_ok,
+        version=VERSION,
+        full_version=full_version(),
+    )

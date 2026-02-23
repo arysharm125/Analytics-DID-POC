@@ -1,0 +1,8 @@
+# Ignore all files in results directory (CSV, HTML, JSON)
+*
+
+# But track this .gitignore file
+!.gitignore
+
+# Note: Baseline JSON files should be in benchmarks/baselines/ instead
+# and committed to git for version comparison

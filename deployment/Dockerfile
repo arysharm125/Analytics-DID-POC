@@ -1,4 +1,5 @@
 # deployment/Dockerfile
+# syntax=docker/dockerfile:1
 
 # =========================
 # Build stage
@@ -13,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libssl-dev \
     cargo \
+    git \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -22,13 +24,22 @@ RUN python -m venv /opt/did-venv
 ENV PATH="/opt/did-venv/bin:$PATH"
 
 # Upgrade tooling
-RUN pip install --upgrade pip==25.3 setuptools wheel
+RUN pip install --upgrade setuptools wheel
 
 # Copy requirements
 COPY requirements.txt .
 # Build wheels
 RUN pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels \
  && rm -f /wheels/ecdsa-*.whl || true
+
+# Generate version_metadata.py using bind-mounted .git directory
+# This temporarily mounts the host's .git directory without copying it into the image
+RUN --mount=type=bind,source=.git,target=/tmp/.git \
+    GIT_SHA=$(git --git-dir=/tmp/.git rev-parse --short=6 HEAD 2>/dev/null || echo "unknown") && \
+    mkdir -p /app/app && \
+    echo "# Auto-generated during Docker build" > /app/app/version_metadata.py && \
+    echo "VERSION_TAG = \"docker\"" >> /app/app/version_metadata.py && \
+    echo "GIT_SHA = \"${GIT_SHA}\"" >> /app/app/version_metadata.py
 
 # =========================
 # Runtime stage
@@ -62,6 +73,9 @@ RUN pip install --no-cache-dir /wheels/* \
 COPY app/ /app/app/
 COPY requirements.txt /app/
 COPY deployment/logging.ini /app/deployment/
+
+# Copy generated version_metadata.py from build stage
+COPY --from=build /app/app/version_metadata.py /app/app/version_metadata.py
 
 # Fix ownership
 RUN chown -R appuser:appgroup /app /opt/did-venv

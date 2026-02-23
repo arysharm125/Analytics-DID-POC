@@ -4,6 +4,9 @@
 # Ignore Python cache directories
 __pycache__/
 
+# Ignore auto-generated version metadata (generated during Docker build)
+app/version_metadata.py
+
 # Ignore generated CSV export files
 did_export_output.csv
 private.pem

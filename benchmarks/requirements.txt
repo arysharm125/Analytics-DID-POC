@@ -1,0 +1,6 @@
+# Performance benchmarking dependencies
+# Install with: pip install -r benchmarks/requirements.txt
+
+locust>=2.24.0
+httpx>=0.24.0
+base58>=2.1.1

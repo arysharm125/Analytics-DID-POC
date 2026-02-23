@@ -1,0 +1,93 @@
+# Docker Compose configuration for load testing
+# This extends the dev setup with Locust for performance benchmarking
+
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: loadtest-mongodb
+    restart: unless-stopped
+    volumes:
+      - mongodb_loadtest_data:/data/db
+    ports:
+      - "8430:27017"  # Loadtest port range starts at 8430
+
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: loadtest-vault
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "loadtest-root-token"
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    ports:
+      - "8431:8200"  # Loadtest port range: 8430+
+
+  vault-init:
+    image: hashicorp/vault:1.15
+    container_name: loadtest-vault-init
+    depends_on:
+      - vault
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "loadtest-root-token"
+    entrypoint: /bin/sh
+    command: -c "sleep 5 && vault kv put secret/mongo connection_string=mongodb://mongodb:27017/ database_name=loadtest_did_service"
+    restart: "no"
+
+  api:
+    container_name: loadtest-api
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8434 --workers 1
+    env_file:
+      - ../.env.loadtest
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_started
+      vault:
+        condition: service_started
+      vault-init:
+        condition: service_completed_successfully
+    expose:
+      - "8434"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: loadtest-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.loadtest.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+    ports:
+      - "8432:80"  # Loadtest port range: 8430+
+
+  locust:
+    image: locustio/locust:2.24.0
+    container_name: loadtest-locust
+    restart: unless-stopped
+    ports:
+      - "8433:8089"  # Loadtest port range: 8430+
+    volumes:
+      - ../benchmarks:/mnt/benchmarks
+    working_dir: /mnt/benchmarks/locustfiles
+    environment:
+      - ADVISORY_API_TOKEN=test-advisory-token
+      - EPDW_API_TOKEN=test-epdw-token
+    command: >
+      -f advisory_scenarios.py
+      --host http://nginx
+      --web-host 0.0.0.0
+    depends_on:
+      - nginx
+
+volumes:
+  mongodb_loadtest_data:
