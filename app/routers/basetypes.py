@@ -11,6 +11,7 @@ from app.services.exceptions import (
     InvalidIdentifierError,
     InvalidDivisionError,
     InvalidMultihashError,
+    InvalidArtefactTypeError,
 )
 
 
@@ -305,6 +306,55 @@ Multihash = Annotated[str, AfterValidator(_validate_multihash)]
 def multihash_from_str(s : str) -> Multihash:
     _validate_multihash(s)
     return s
+
+# =============================================================================
+# Artefact Type String Validation
+# =============================================================================
+
+# Artefact type pattern: lowercase ASCII alphanumeric, allows underscore, hyphen, colon, slash
+# Must start with a lowercase letter
+_ARTEFACT_TYPE_PATTERN = re.compile(r"^[a-z][a-z0-9_:/-]*$")
+
+
+def _validate_artefact_type(value: str) -> str:
+    """
+    Validate that a string is a valid artefact type identifier.
+
+    A valid artefact type is a string containing lowercase ASCII letters,
+    digits, and the characters: underscore (_), hyphen (-), colon (:), and slash (/).
+    It must start with a lowercase letter.
+
+    Args:
+        value: The string to validate
+
+    Returns:
+        The validated string (unchanged)
+
+    Raises:
+        InvalidArtefactTypeError: If the string is not a valid artefact type format
+    """
+    if not value:
+        raise InvalidArtefactTypeError(value, "Artefact type cannot be empty")
+
+    if not _ARTEFACT_TYPE_PATTERN.match(value):
+        raise InvalidArtefactTypeError(
+            value,
+            "must contain only lowercase ASCII letters, digits, and characters: _ - : /, "
+            "and must start with a lowercase letter"
+        )
+
+    return value
+
+
+# Annotated type for artefact type validation
+ArtefactTypeStr = Annotated[str, AfterValidator(_validate_artefact_type)]
+
+
+def artefact_type_from_str(s: str) -> ArtefactTypeStr:
+    """Convert and validate a string to ArtefactTypeStr type."""
+    _validate_artefact_type(s)
+    return s
+
 
 # =============================================================================
 # Division String Validation

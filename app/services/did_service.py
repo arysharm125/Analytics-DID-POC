@@ -19,6 +19,7 @@ from app.routers.basetypes import (
     DivisionStr,
     CanonicalizedUUID,
     Multihash,
+    ArtefactTypeStr,
     division_did_from_division,
     division_from_str,
 )
@@ -65,6 +66,8 @@ class ArtefactInput(BaseModel):
     division: DivisionStr = Field(..., description="Division identifier")
     artefact_hash: Optional[Multihash] = Field(default=None, description="Multihash identifying artefact content")
     artefact_metadata: Optional[Any] = Field(default=None, description="Optional JSON metadata for the artefact")
+    artefact_type: Optional[ArtefactTypeStr] = Field(default=None, description="Optional artefact type identifier")
+    backlink: Optional[str] = Field(default=None, description="Optional URL back to the object in the originating system")
     provenance: Optional[DIDOrUUIDList] = Field(
         default=None,
         description="Optional list of provenance identifiers (UUIDs or DIDs). "
@@ -87,6 +90,8 @@ class ArtefactRecord(BaseModel):
     created_at: datetime = Field(..., description="Timestamp when this artefact version was created")
     artefact_hash: Optional[Multihash] = Field(None, description="Multihash identifying artefact content")
     artefact_metadata: Optional[Any] = Field(None, description="Optional JSON metadata for the artefact")
+    artefact_type: Optional[ArtefactTypeStr] = Field(None, description="Optional artefact type identifier")
+    backlink: Optional[str] = Field(None, description="Optional URL back to the object in the originating system")
     provenance: Optional[DIDOrUUIDList] = Field(None, description="Optional list of provenance identifiers (normalized to UUIDs)")
 
 
@@ -303,6 +308,90 @@ def migration_20260220002_issued_vcs(db: MongoConnector) -> None:
     )
 
 
+@_did_service_migrations.migration
+def migration_20260225003_artefact_type_backlink(db: MongoConnector) -> None:
+    """
+    Add artefact_type and backlink fields to did_artefacts collection.
+
+    Design notes:
+    - artefact_type: Optional string with pattern validation (lowercase alphanumeric + _-:/)
+    - backlink: Optional string (URL back to originating system)
+    - Both fields are optional and stored as metadata
+    - artefact_type is included in VCs, backlink is not
+    """
+    collection_name = "did_artefacts"
+    collection = db.get_collection(collection_name)
+
+    # Update validator to add new optional fields
+    # Note: We use collMod to update the existing validator
+    db.db.command({
+        "collMod": collection_name,
+        "validator": {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["version_uid", "external_uid", "version", "division", "format_version"],
+                "properties": {
+                    "version_uid": {
+                        "bsonType": "string",
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                        "description": "UUID identifying this specific version"
+                    },
+                    "external_uid": {
+                        "bsonType": "string",
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                        "description": "UUID identifying the artefact across versions"
+                    },
+                    "version": {
+                        "bsonType": "int",
+                        "minimum": 1,
+                        "description": "Monotonically increasing version number"
+                    },
+                    "artefact_hash": {
+                        "bsonType": "string",
+                        "description": "Hash-like string identifying artefact content"
+                    },
+                    "division": {
+                        "bsonType": "string",
+                        "description": "Division identifier"
+                    },
+                    "artefact_metadata": {
+                        "description": "Optional JSON metadata for the artefact"
+                    },
+                    "artefact_type": {
+                        "bsonType": "string",
+                        "pattern": "^[a-z][a-z0-9_:/-]*$",
+                        "description": "Optional artefact type identifier (lowercase alphanumeric + _-:/)"
+                    },
+                    "backlink": {
+                        "bsonType": "string",
+                        "description": "Optional URL back to the object in the originating system"
+                    },
+                    "provenance": {
+                        "bsonType": "array",
+                        "items": {"bsonType": "string"},
+                        "description": "List of provenance identifiers (normalized to UUIDs)"
+                    },
+                    "revoked": {
+                        "bsonType": "bool",
+                        "description": "Whether this artefact version is revoked (defaults to false)"
+                    },
+                    "format_version": {
+                        "bsonType": "int",
+                        "minimum": 1,
+                        "description": "Schema format version (defaults to 1)"
+                    },
+                    "created_at": {
+                        "bsonType": "date",
+                        "description": "Timestamp when this artefact version was created"
+                    }
+                }
+            }
+        },
+        "validationLevel": "moderate",
+        "validationAction": "error"
+    })
+
+
 # =============================================================================
 # Utils/helpers
 # =============================================================================
@@ -311,10 +400,11 @@ def _artefact_has_changes(
     new_hash: Optional[str],
     new_metadata: Optional[Any],
     new_provenance: Optional[list[str]],
+    new_artefact_type: Optional[str],
 ) -> bool:
     """Check if the new artefact data differs from the existing version.
 
-    Compares artefact_hash, artefact_metadata (deep), and provenance list
+    Compares artefact_hash, artefact_metadata (deep), provenance list, and artefact_type
     to determine if at least one field has changed.
 
     Args:
@@ -322,6 +412,7 @@ def _artefact_has_changes(
         new_hash: The new artefact_hash value (or None)
         new_metadata: The new artefact_metadata value (or None)
         new_provenance: The new provenance list (or None)
+        new_artefact_type: The new artefact_type value (or None)
 
     Returns:
         True if at least one field has changed, False otherwise
@@ -345,6 +436,11 @@ def _artefact_has_changes(
     if existing_prov_list != new_prov_list:
         return True
 
+    # Compare artefact_type
+    existing_artefact_type = existing.get("artefact_type")
+    if existing_artefact_type != new_artefact_type:
+        return True
+
     return False
 
 
@@ -358,6 +454,7 @@ def _artefact_to_da_vc_input(artefact : dict[str, Any]) -> DigitalArtefactVCInpu
             created_at=artefact["created_at"],
             division=artefact["division"],
             provenance=artefact.get("provenance"),
+            artefact_type=artefact.get("artefact_type"),
         )
 
 
@@ -570,12 +667,13 @@ class DIDService:
                 )
 
             # Validate at least one thing changed (either artefact_hash,
-            # artefact_metadata (deep) or provenance list).
+            # artefact_metadata (deep), provenance list, or artefact_type).
             if not _artefact_has_changes(
                 existing=latest_doc,
                 new_hash=artefact.artefact_hash,
                 new_metadata=artefact.artefact_metadata,
                 new_provenance=list(artefact.provenance) if artefact.provenance else None,
+                new_artefact_type=artefact.artefact_type,
             ):
                 raise ArtefactNoChangesError(external_uid=artefact.external_uid)
 
@@ -610,6 +708,10 @@ class DIDService:
             new_doc["artefact_hash"] = artefact.artefact_hash
         if artefact.artefact_metadata is not None:
             new_doc["artefact_metadata"] = artefact.artefact_metadata
+        if artefact.artefact_type is not None:
+            new_doc["artefact_type"] = artefact.artefact_type
+        if artefact.backlink is not None:
+            new_doc["backlink"] = artefact.backlink
         if artefact.provenance is not None and len(artefact.provenance) > 0:
             new_doc["provenance"] = artefact.provenance
 

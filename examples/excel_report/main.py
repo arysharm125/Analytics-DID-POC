@@ -29,6 +29,7 @@ from openpyxl.drawing.image import Image
 DIDSVC_BASE_URL = os.getenv("DIDSVC_BASE_URL", "http://localhost:8000")
 DIDSVC_API_TOKEN = os.getenv("DIDSVC_API_TOKEN", "example-api-token-123")
 DIDCHECK_URL = os.getenv("DIDCHECK_URL", "http://localhost:5173")
+EXAMPLE_APP_URL = os.getenv("EXAMPLE_APP_URL", "http://localhost:3001")
 
 # Path to static files
 STATIC_DIR = Path(__file__).parent / "static"
@@ -132,12 +133,14 @@ async def register_with_didsvc(
     artefact_id: str,
     artefact_hash: str,
     metadata: dict,
+    backlink: str,
 ) -> dict:
     """Register the artefact with DIDSvc."""
     request_body = {
         "artefact_id": artefact_id,
         "artefact_hash": artefact_hash,
         "artefact_metadata": metadata,
+        "backlink": backlink,
         "provenance": [],
     }
 
@@ -194,8 +197,11 @@ async def generate_report():
         "rowCount": len(data),
     }
 
+    # Create backlink URL pointing to this app's report details page
+    backlink = f"{EXAMPLE_APP_URL}/report/{artefact_id}"
+
     # Register with DIDSvc
-    did_response = await register_with_didsvc(artefact_id, artefact_hash, metadata)
+    did_response = await register_with_didsvc(artefact_id, artefact_hash, metadata, backlink)
 
     # Create filename
     filename = f"report_{artefact_id[:8]}.xlsx"
@@ -211,6 +217,34 @@ async def generate_report():
             "X-Version": str(did_response["version"]),
         },
     )
+
+
+@app.get("/report/{artefact_id}")
+async def report_details(artefact_id: str):
+    """
+    Report details page - displays the DID and link to DIDCheck.
+
+    This demonstrates the backlink functionality: when users click the backlink
+    in DIDCheck, they come here to see the report DID with a link back to DIDCheck
+    for full verification details.
+    """
+    from fastapi.responses import HTMLResponse
+    from string import Template
+
+    # Read the template file
+    template_path = STATIC_DIR / "report_details.html"
+    with open(template_path, "r") as f:
+        template_content = f.read()
+
+    # Prepare the data
+    did_check_url = f"{DIDCHECK_URL}/{artefact_id}"
+    did = f"did:web:did.amd.com:{artefact_id}"
+
+    # Render the template with actual values
+    template = Template(template_content)
+    html_content = template.substitute(did=did, did_check_url=did_check_url)
+
+    return HTMLResponse(content=html_content)
 
 
 @app.get("/health")

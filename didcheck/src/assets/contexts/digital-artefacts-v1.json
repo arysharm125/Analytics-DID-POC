@@ -5,6 +5,7 @@
     "DigitalArtefactCredential": "https://did.amd.com/contexts/digitalArtefacts/v1#DigitalArtefactCredential",
     "artefactHash": "https://did.amd.com/contexts/digitalArtefacts/v1#artefactHash",
     "artefactMetadata": { "@id": "https://did.amd.com/contexts/digitalArtefacts/v1#artefactMetadata", "@type": "@json" },
+    "artefactType": "https://did.amd.com/contexts/digitalArtefacts/v1#artefactType",
     "creationDate": "https://did.amd.com/contexts/digitalArtefacts/v1#creationDate",
     "version": "https://did.amd.com/contexts/digitalArtefacts/v1#version",
     "versionUid": "https://did.amd.com/contexts/digitalArtefacts/v1#versionUid",

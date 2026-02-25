@@ -33,6 +33,11 @@ class RecordReportRequest(BaseModel):
         description="An object with properties set by the caller (corresponds to metadata about the artefact)",
         json_schema_extra={"example": {"filename": "cca-report-123761827584.xsls", "service": "cca"}},
     )
+    backlink: Optional[str] = Field(
+        default=None,
+        description="Optional URL back to the object in the originating system",
+        json_schema_extra={"example": "https://example.com/reports/123"},
+    )
     provenance: Optional[DIDOrUUIDList] = Field(
         default=None,
         description="List of provenance identifiers (DIDs or UUIDs). Each item is validated and "
@@ -133,6 +138,8 @@ async def record_report(request: RecordReportRequest, api_token: AdvisoryTokenDe
         division=_ADVISORY_DIVISION,
         artefact_hash=request.artefact_hash,
         artefact_metadata=request.artefact_metadata,
+        artefact_type="report",  # Advisory reports are always type "report"
+        backlink=request.backlink,
         provenance=request.provenance,
     )
 

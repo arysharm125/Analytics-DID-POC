@@ -318,7 +318,37 @@ watch(() => props.identifier, () => {
                 </v-col>
               </v-row>
 
-              <!-- Row 2: Artefact Hash -->
+              <!-- Row 2: Artefact Type and Backlink -->
+              <v-row v-if="digitalArtefact.artefact_type || digitalArtefact.backlink" class="mt-2">
+                <v-col v-if="digitalArtefact.artefact_type" cols="12" sm="6">
+                  <div class="text-subtitle-2 text-grey">Artefact Type</div>
+                  <div class="text-body-1 mt-1">
+                    <v-chip size="small" color="primary" variant="outlined">
+                      {{ digitalArtefact.artefact_type }}
+                    </v-chip>
+                  </div>
+                </v-col>
+
+                <v-col v-if="digitalArtefact.backlink" cols="12" sm="6">
+                  <div class="text-subtitle-2 text-grey">Backlink</div>
+                  <div class="text-body-1 mt-1">
+                    <v-btn
+                      :href="digitalArtefact.backlink"
+                      target="_blank"
+                      variant="text"
+                      color="primary"
+                      size="small"
+                      class="pa-0"
+                      style="text-transform: none; min-width: auto;"
+                    >
+                      <v-icon start size="small">mdi-open-in-new</v-icon>
+                      View in Originating System
+                    </v-btn>
+                  </div>
+                </v-col>
+              </v-row>
+
+              <!-- Row 3: Artefact Hash -->
               <v-row v-if="digitalArtefact.artefact_hash" class="mt-2">
                 <v-col cols="12">
                   <div class="text-subtitle-2 text-grey">Artefact Hash</div>
@@ -328,7 +358,7 @@ watch(() => props.identifier, () => {
                 </v-col>
               </v-row>
 
-              <!-- Row 3: Version UID -->
+              <!-- Row 4: Version UID -->
               <v-row class="mt-2">
                 <v-col cols="12">
                   <div class="text-subtitle-2 text-grey">Version UID</div>

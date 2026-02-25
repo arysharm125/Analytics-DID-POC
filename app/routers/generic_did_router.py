@@ -5,7 +5,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Path
 from pydantic import BaseModel, Field
 
-from app.routers.basetypes import DivisionStr, Multihash, UUIDString
+from app.routers.basetypes import ArtefactTypeStr, DivisionStr, Multihash, UUIDString
 from app.routers.dependencies import DIDServiceDep
 from app.routers.epdw import PathUUID
 from app.services.did_service import ProvenanceNode as ServiceProvenanceNode
@@ -44,6 +44,16 @@ class DigitalArtefactInfo(BaseModel):
         default=None,
         description="Multihash identifying artefact content",
         examples=["QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"],
+    )
+    artefact_type: Optional[ArtefactTypeStr] = Field(
+        default=None,
+        description="Optional artefact type identifier",
+        examples=["report", "benchmark", "benchmark_iteration"],
+    )
+    backlink: Optional[str] = Field(
+        default=None,
+        description="Optional URL back to the object in the originating system",
+        examples=["https://example.com/reports/123"],
     )
     creation_date: datetime = Field(
         ...,
@@ -136,6 +146,16 @@ class FullArtefactInfo(BaseModel):
     artefact_metadata: Optional[Any] = Field(
         default=None,
         description="Optional JSON metadata for the artefact",
+    )
+    artefact_type: Optional[ArtefactTypeStr] = Field(
+        default=None,
+        description="Optional artefact type identifier",
+        examples=["report", "benchmark", "benchmark_iteration"],
+    )
+    backlink: Optional[str] = Field(
+        default=None,
+        description="Optional URL back to the object in the originating system",
+        examples=["https://example.com/reports/123"],
     )
     provenance: Optional[list[UUIDString]] = Field(
         default=None,
@@ -250,6 +270,8 @@ def did_overview(
         version=artefact["version"],
         division=artefact["division"],
         artefact_hash=artefact.get("artefact_hash"),
+        artefact_type=artefact.get("artefact_type"),
+        backlink=artefact.get("backlink"),
         creation_date=artefact["created_at"],
         revoked=artefact.get("revoked", False),
         has_provenance=has_provenance,
@@ -295,6 +317,8 @@ def artefact_full(
         division=artefact["division"],
         artefact_hash=artefact.get("artefact_hash"),
         artefact_metadata=artefact.get("artefact_metadata"),
+        artefact_type=artefact.get("artefact_type"),
+        backlink=artefact.get("backlink"),
         provenance=artefact.get("provenance"),
         creation_date=artefact["created_at"],
         revoked=artefact.get("revoked", False),

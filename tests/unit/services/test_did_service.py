@@ -85,12 +85,14 @@ class TestArtefactHasChanges:
             "artefact_hash": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
             "artefact_metadata": {"key": "value"},
             "provenance": ["uuid-1", "uuid-2"],
+            "artefact_type": "report",
         }
         result = _artefact_has_changes(
             existing=existing,
             new_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
             new_metadata={"key": "value"},
             new_provenance=["uuid-1", "uuid-2"],
+            new_artefact_type="report",
         )
         assert result is False
 
@@ -106,6 +108,7 @@ class TestArtefactHasChanges:
             new_hash="QmNewHash",
             new_metadata={"key": "value"},
             new_provenance=None,
+            new_artefact_type=None,
         )
         assert result is True
 
@@ -121,6 +124,7 @@ class TestArtefactHasChanges:
             new_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
             new_metadata={"key": "new_value"},
             new_provenance=None,
+            new_artefact_type=None,
         )
         assert result is True
 
@@ -136,6 +140,7 @@ class TestArtefactHasChanges:
             new_hash=None,
             new_metadata={"outer": {"inner": "new_value"}},
             new_provenance=None,
+            new_artefact_type=None,
         )
         assert result is True
 
@@ -151,6 +156,7 @@ class TestArtefactHasChanges:
             new_hash=None,
             new_metadata=None,
             new_provenance=["uuid-1", "uuid-3"],
+            new_artefact_type=None,
         )
         assert result is True
 
@@ -166,6 +172,7 @@ class TestArtefactHasChanges:
             new_hash=None,
             new_metadata=None,
             new_provenance=[],
+            new_artefact_type=None,
         )
         assert result is False
 
@@ -181,8 +188,45 @@ class TestArtefactHasChanges:
             new_hash="QmNew",
             new_metadata={"key": "new"},
             new_provenance=["uuid-2"],
+            new_artefact_type=None,
         )
         assert result is True
+
+    def test_artefact_type_change_returns_true(self):
+        """Change in artefact_type should return True."""
+        existing = {
+            "artefact_hash": None,
+            "artefact_metadata": None,
+            "provenance": None,
+            "artefact_type": "report",
+        }
+        result = _artefact_has_changes(
+            existing=existing,
+            new_hash=None,
+            new_metadata=None,
+            new_provenance=None,
+            new_artefact_type="benchmark",
+        )
+        assert result is True
+
+    def test_backlink_not_in_change_detection(self):
+        """Changing only backlink should not trigger version change."""
+        existing = {
+            "artefact_hash": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            "artefact_metadata": {"key": "value"},
+            "provenance": None,
+            "artefact_type": "report",
+            "backlink": "https://old.example.com",
+        }
+        # backlink is not a parameter to _artefact_has_changes, so changing it doesn't matter
+        result = _artefact_has_changes(
+            existing=existing,
+            new_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            new_metadata={"key": "value"},
+            new_provenance=None,
+            new_artefact_type="report",
+        )
+        assert result is False
 
 
 class TestArtefactToDaVcInput:
@@ -502,6 +546,57 @@ class TestUpsertArtefact:
                 )
             )
         assert "95da4dd5-9999-9999-9999-999999999999" in str(exc.value)
+
+    def test_create_with_artefact_type(self, did_service_no_migrations):
+        """Creating artefact with artefact_type should store it."""
+        did_service = did_service_no_migrations
+        result = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="advisory",
+                artefact_type="report",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+        assert result.artefact_type == "report"
+
+    def test_create_with_backlink(self, did_service_no_migrations):
+        """Creating artefact with backlink should store it."""
+        did_service = did_service_no_migrations
+        result = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="advisory",
+                backlink="https://example.com/report/123",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+        assert result.backlink == "https://example.com/report/123"
+
+    def test_update_with_artefact_type_change(self, did_service_no_migrations):
+        """Updating artefact_type should create new version."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_type="benchmark",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_type="benchmark_iteration",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        assert v2.version == 2
+        assert v2.artefact_type == "benchmark_iteration"
 
 
 class TestFindByExternalUid:

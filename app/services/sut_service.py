@@ -370,6 +370,7 @@ class SUTService:
             external_uid=benchmark_id,
             division=_EPDW_DIVISION,
             artefact_metadata=master_metadata,
+            artefact_type="benchmark",
         ))
         master_did = did_from_uuid(master_record.external_uid)
 
@@ -383,6 +384,7 @@ class SUTService:
                 external_uid=iter_id,
                 division=_EPDW_DIVISION,
                 artefact_metadata=iter_metadata,
+                artefact_type="benchmark_iteration",
                 provenance=[benchmark_id],
             ))
             iterations.append(IterationDIDInfo(
@@ -465,11 +467,12 @@ class SUTService:
         if not has_diff(diff):
             raise NoChangesDetectedError()
 
-        # Create new version via DIDService
+        # Create new version via DIDService (preserve artefact_type from existing)
         new_record = self._did_svc.upsert_artefact(ArtefactInput(
             external_uid=iteration_id,
             division=_EPDW_DIVISION,
             artefact_metadata=new_metadata,
+            artefact_type=existing.artefact_type,  # Preserve existing artefact_type
             provenance=[benchmark_id],
         ))
 

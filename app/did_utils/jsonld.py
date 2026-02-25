@@ -267,6 +267,7 @@ class DigitalArtefactVCInput:
     created_at: datetime
     division: DivisionStr
     provenance: DIDList | None
+    artefact_type: str | None = None
 
 
 def generate_digital_artefact_vc(
@@ -314,6 +315,7 @@ def generate_digital_artefact_vc(
             "version": da.version,
             "versionUid": did_from_uuid(da.version_uid),
             "creationDate": da.created_at.isoformat(),
+            **({"artefactType": da.artefact_type} if da.artefact_type is not None else {}),
             **({"artefactHash": str(da.hash)} if da.hash is not None else {}),
             **({"artefactMetadata": da.metadata} if da.metadata is not None else {}),
             **({"provenance": did_list_from_uuid_list(da.provenance)} if da.provenance is not None else {}),

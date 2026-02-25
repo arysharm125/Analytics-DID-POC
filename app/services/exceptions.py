@@ -97,6 +97,15 @@ class InvalidDivisionError(ValidationError):
         self.reason = reason
         super().__init__(f"Invalid division '{division}': {reason}")
 
+
+class InvalidArtefactTypeError(ValidationError):
+    """Raised when an artefact type identifier is invalid."""
+
+    def __init__(self, artefact_type: str, reason: str):
+        self.artefact_type = artefact_type
+        self.reason = reason
+        super().__init__(f"Invalid artefact type '{artefact_type}': {reason}")
+
 class ArtefactNotFoundError(DIDServiceError, HTTPException):
     """Raised when a DID/UUID fails to be fetched for a specified division."""
     def __init__(self, division: str | None, uid: str):

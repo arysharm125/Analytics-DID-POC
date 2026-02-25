@@ -634,3 +634,81 @@ class TestValidateDIDList:
         dids = ["did:web:did.amd.com:advisory"]
         with pytest.raises(ValueError):
             _validate_did_list(dids)
+
+
+class TestArtefactTypeValidation:
+    """Tests for artefact type identifier validation."""
+
+    def test_valid_simple_type(self):
+        """Simple artefact type should pass."""
+        from app.routers.basetypes import _validate_artefact_type
+        assert _validate_artefact_type("report") == "report"
+        assert _validate_artefact_type("benchmark") == "benchmark"
+
+    def test_valid_with_underscore(self):
+        """Artefact type with underscore should pass."""
+        from app.routers.basetypes import _validate_artefact_type
+        assert _validate_artefact_type("benchmark_iteration") == "benchmark_iteration"
+        assert _validate_artefact_type("my_type_v2") == "my_type_v2"
+
+    def test_valid_with_hyphen(self):
+        """Artefact type with hyphen should pass."""
+        from app.routers.basetypes import _validate_artefact_type
+        assert _validate_artefact_type("my-type") == "my-type"
+        assert _validate_artefact_type("report-v2") == "report-v2"
+
+    def test_valid_with_colon(self):
+        """Artefact type with colon should pass."""
+        from app.routers.basetypes import _validate_artefact_type
+        assert _validate_artefact_type("type:subtype") == "type:subtype"
+        assert _validate_artefact_type("namespace:type:version") == "namespace:type:version"
+
+    def test_valid_with_slash(self):
+        """Artefact type with slash should pass."""
+        from app.routers.basetypes import _validate_artefact_type
+        assert _validate_artefact_type("type/subtype") == "type/subtype"
+        assert _validate_artefact_type("path/to/type") == "path/to/type"
+
+    def test_valid_complex_combination(self):
+        """Complex artefact type with all allowed chars should pass."""
+        from app.routers.basetypes import _validate_artefact_type
+        assert _validate_artefact_type("my-type_v2:sub/path") == "my-type_v2:sub/path"
+
+    def test_invalid_starts_with_number(self):
+        """Artefact type starting with number should raise."""
+        from app.routers.basetypes import _validate_artefact_type
+        from app.services.exceptions import InvalidArtefactTypeError
+        with pytest.raises(InvalidArtefactTypeError):
+            _validate_artefact_type("123type")
+
+    def test_invalid_uppercase(self):
+        """Artefact type with uppercase should raise."""
+        from app.routers.basetypes import _validate_artefact_type
+        from app.services.exceptions import InvalidArtefactTypeError
+        with pytest.raises(InvalidArtefactTypeError):
+            _validate_artefact_type("Report")
+        with pytest.raises(InvalidArtefactTypeError):
+            _validate_artefact_type("BENCHMARK")
+
+    def test_invalid_space(self):
+        """Artefact type with space should raise."""
+        from app.routers.basetypes import _validate_artefact_type
+        from app.services.exceptions import InvalidArtefactTypeError
+        with pytest.raises(InvalidArtefactTypeError):
+            _validate_artefact_type("my type")
+
+    def test_invalid_special_chars(self):
+        """Artefact type with invalid special chars should raise."""
+        from app.routers.basetypes import _validate_artefact_type
+        from app.services.exceptions import InvalidArtefactTypeError
+        with pytest.raises(InvalidArtefactTypeError):
+            _validate_artefact_type("type@version")
+        with pytest.raises(InvalidArtefactTypeError):
+            _validate_artefact_type("type.subtype")
+
+    def test_empty_string_raises(self):
+        """Empty artefact type should raise."""
+        from app.routers.basetypes import _validate_artefact_type
+        from app.services.exceptions import InvalidArtefactTypeError
+        with pytest.raises(InvalidArtefactTypeError):
+            _validate_artefact_type("")
