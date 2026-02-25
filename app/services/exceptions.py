@@ -249,3 +249,13 @@ class SUTRecordNotFoundError(DIDServiceError, HTTPException):
             status_code=404,
             detail=f"Record not found for benchmark '{benchmark_id}', iteration '{iteration_id}'"
         )
+
+
+class DuplicateIterationIdsError(DIDServiceError, HTTPException):
+    """Raised when duplicate iteration IDs are found in a benchmark request."""
+    def __init__(self, duplicate_ids: list[str]):
+        self.duplicate_ids = duplicate_ids
+        super().__init__(
+            status_code=400,
+            detail=f"Duplicate iteration IDs found: {', '.join(duplicate_ids)}"
+        )
