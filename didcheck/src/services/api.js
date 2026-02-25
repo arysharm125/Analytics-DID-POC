@@ -101,11 +101,30 @@ export async function checkDIDStatus(identifier) {
   }
 }
 
+/**
+ * Fetch canonicalized VC in N-Quads format (debug endpoint)
+ * @param {string} uid - The VC identifier
+ * @returns {Promise<string>} The canonicalized VC as N-Quads text
+ */
+export async function fetchCanonicalizedVC(uid) {
+  const url = `${API_BASE}/did/${encodeURIComponent(uid)}/vc.nq`
+
+  const response = await fetch(url)
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '')
+    throw new Error(errorText || `HTTP ${response.status}`)
+  }
+
+  return response.text()
+}
+
 export default {
   fetchDIDByIdentifier,
   fetchArtefactOverview,
   fetchVC,
   fetchArtefact,
   fetchProvenance,
-  checkDIDStatus
+  checkDIDStatus,
+  fetchCanonicalizedVC
 }

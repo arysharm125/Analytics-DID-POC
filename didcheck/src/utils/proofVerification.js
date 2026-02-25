@@ -6,6 +6,7 @@
 import { DataIntegrityProof } from '@digitalbazaar/data-integrity'
 import { cryptosuite as eddsaRdfc2022CryptoSuite } from '@digitalbazaar/eddsa-rdfc-2022-cryptosuite'
 import * as vc from '@digitalbazaar/vc'
+import jsonld from 'jsonld'
 import { documentLoader } from './documentLoader.js'
 
 /**
@@ -124,6 +125,31 @@ export async function verifyVCProof(credential) {
   }
 }
 
+/**
+ * Canonicalize a Verifiable Credential to N-Quads format
+ *
+ * This function removes the proof from the VC and canonicalizes it using
+ * the RDFC-1.0 (URDNA2015) algorithm. This is useful for debugging
+ * signature verification issues.
+ *
+ * @param {object} credential - The VC to canonicalize
+ * @returns {Promise<string>} The canonicalized N-Quads string
+ */
+export async function canonicalizeVC(credential) {
+  // Remove proof for canonicalization (same as what the cryptosuite does)
+  const credentialWithoutProof = { ...credential }
+  delete credentialWithoutProof.proof
+
+  // Canonicalize using RDFC-1.0 (the algorithm used by eddsa-rdfc-2022)
+  const canonicalized = await jsonld.canonize(credentialWithoutProof, {
+    algorithm: 'RDFC-1.0',
+    documentLoader
+  })
+
+  return canonicalized
+}
+
 export default {
-  verifyVCProof
+  verifyVCProof,
+  canonicalizeVC
 }

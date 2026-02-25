@@ -176,6 +176,7 @@ def test_config() -> AppConfig:
         ),
         features=FeatureFlags(
             generic_did_router=True,
+            debug_vc_nquads=True,
         ),
     )
 
@@ -247,6 +248,48 @@ def did_service(db_connector, vault_service):
         db=db_connector,
         vault_svc=vault_service,
         run_migrations=True,
+        ensure_signing_keys=False,  # Already done above
+    )
+
+
+@pytest.fixture
+def did_service_no_migrations(db_connector, vault_service):
+    """Create a DIDService without running migrations (for mongomock compatibility).
+
+    Mongomock doesn't support validator parameters in create_collection,
+    so we manually create the collections and indexes instead.
+
+    Use this fixture for unit tests that need to run with mongomock.
+
+    Args:
+        db_connector: MongoConnector instance
+        vault_service: VaultService instance
+
+    Returns:
+        DIDService instance with manually created collections
+    """
+    from app.services.did_service import DIDService
+
+    # Manually create the did_artefacts collection with indexes
+    artefacts_collection = db_connector.get_collection("did_artefacts")
+    artefacts_collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+    artefacts_collection.create_index(
+        [("external_uid", 1), ("version", 1)],
+        unique=True,
+        name="idx_external_uid_version"
+    )
+    artefacts_collection.create_index([("provenance", 1)], name="idx_provenance")
+
+    # Manually create the did_issued_vcs collection with indexes
+    vcs_collection = db_connector.get_collection("did_issued_vcs")
+    vcs_collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+    vcs_collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+
+    # Create DIDService without running migrations
+    return DIDService(
+        db=db_connector,
+        vault_svc=vault_service,
+        run_migrations=False,
         ensure_signing_keys=False,  # Already done above
     )
 

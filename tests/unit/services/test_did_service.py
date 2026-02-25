@@ -39,39 +39,6 @@ from app.did_utils.jsonld import DigitalArtefactVCInput
 
 
 # =============================================================================
-# Test Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def did_service_no_migrations(db_connector, vault_service):
-    """Create a DIDService without running migrations (for mongomock compatibility).
-
-    Mongomock doesn't support validator parameters in create_collection,
-    so we manually create the collection and indexes instead.
-    """
-    # Manually create the did_artefacts collection with indexes
-    collection = db_connector.get_collection("did_artefacts")
-
-    # Create indexes (mongomock supports these)
-    collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
-    collection.create_index(
-        [("external_uid", 1), ("version", 1)],
-        unique=True,
-        name="idx_external_uid_version"
-    )
-    collection.create_index([("provenance", 1)], name="idx_provenance")
-
-    # Create DIDService without running migrations
-    return DIDService(
-        db=db_connector,
-        vault_svc=vault_service,
-        run_migrations=False,
-        ensure_signing_keys=False,
-    )
-
-
-# =============================================================================
 # Helper Function Tests
 # =============================================================================
 

@@ -39,6 +39,7 @@ class FeatureFlags:
     """Feature flag configuration."""
 
     generic_did_router: bool
+    debug_vc_nquads: bool
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,7 @@ def _load_config_from_env() -> AppConfig:
         ),
         features=FeatureFlags(
             generic_did_router=bool(os.getenv("FEATURE_GENERIC_DID_ROUTER", "")),
+            debug_vc_nquads=bool(os.getenv("FEATURE_DEBUG_VC_NQUADS", "")),
         ),
     )
 

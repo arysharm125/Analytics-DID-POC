@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { useDIDStore } from '@/stores/did'
 import { validateVCStructure } from '@/utils/vcValidation'
 import NewerVersionAlert from '@/components/NewerVersionAlert.vue'
+import DebugCanonicalization from '@/components/DebugCanonicalization.vue'
+import { DEBUG_CANONICALIZATION_ENABLED } from '@/utils/featureFlags.js'
 
 // Props from router
 const props = defineProps({
@@ -40,6 +42,10 @@ const saveResultsToStorage = () => {
   if (overviewError.value) {
     sessionStorage.setItem(storageKey('overviewError'), overviewError.value)
   }
+  // Save vcData only in debug mode for canonicalization comparison
+  if (DEBUG_CANONICALIZATION_ENABLED && vcData.value) {
+    sessionStorage.setItem(storageKey('vcData'), JSON.stringify(vcData.value))
+  }
 }
 
 // Try to restore cached results from sessionStorage
@@ -60,6 +66,14 @@ const restoreFromStorage = () => {
       const cachedOverviewError = sessionStorage.getItem(storageKey('overviewError'))
       if (cachedOverviewError) {
         overviewError.value = cachedOverviewError
+      }
+
+      // Restore vcData if in debug mode
+      if (DEBUG_CANONICALIZATION_ENABLED) {
+        const cachedVcData = sessionStorage.getItem(storageKey('vcData'))
+        if (cachedVcData) {
+          vcData.value = JSON.parse(cachedVcData)
+        }
       }
 
       return true
@@ -324,6 +338,13 @@ onMounted(async () => {
               </v-row>
             </v-card-text>
           </v-card>
+
+          <!-- Debug Canonicalization Panel (dev mode only) -->
+          <DebugCanonicalization
+            v-if="DEBUG_CANONICALIZATION_ENABLED && validationResult.versionUid && vcData"
+            :vc-data="vcData"
+            :version-uid="validationResult.versionUid"
+          />
         </template>
       </v-col>
     </v-row>

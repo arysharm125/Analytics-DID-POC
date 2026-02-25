@@ -2,9 +2,12 @@ from datetime import datetime
 from typing import Annotated, Any, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, HTTPException, Path
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from app.config import get_config
+from app.did_utils.jsonld import canonicalize_document
 from app.routers.basetypes import ArtefactTypeStr, DivisionStr, Multihash, UUIDString
 from app.routers.dependencies import DIDServiceDep
 from app.routers.epdw import PathUUID
@@ -371,6 +374,52 @@ def artefact_provenance(
         max_children=max_children,
         provenance=provenance_nodes,
     )
+
+
+# ==========================
+# Debug Endpoint - VC Canonicalization
+# ==========================
+
+@app.get(
+    "/{uid}/vc.nq",
+    response_class=PlainTextResponse,
+    responses={**NotFoundResponse},
+    tags=["Debug"],
+)
+def artefact_vc_nquads(
+    uid: PathUUID,
+    did_svc: DIDServiceDep,
+) -> str:
+    """[DEBUG] Return the canonicalized VC in N-Quads format.
+
+    This endpoint returns the canonicalized (URDNA2015/RDFC-1.0) representation
+    of the Verifiable Credential without the proof. This is useful for debugging
+    signature verification issues by comparing the backend's canonicalization
+    with the frontend's.
+
+    The endpoint is only available when the FEATURE_DEBUG_VC_NQUADS environment
+    variable is set.
+
+    Returns:
+        Plain text N-Quads representation of the VC (without proof)
+    """
+    # Check feature flag
+    if not get_config().features.debug_vc_nquads:
+        raise HTTPException(
+            status_code=404,
+            detail="Debug VC N-Quads endpoint is not enabled"
+        )
+
+    # Get the signed VC
+    vc = did_svc.issue_artefact_vc(division=None, uid=uid)
+
+    # Remove the proof for canonicalization
+    vc_without_proof = {k: v for k, v in vc.items() if k != "proof"}
+
+    # Canonicalize to N-Quads
+    nquads = canonicalize_document(vc_without_proof)
+
+    return nquads
 
 
 # ==========================
