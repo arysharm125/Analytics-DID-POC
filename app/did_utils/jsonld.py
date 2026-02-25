@@ -18,10 +18,9 @@ from app.routers.basetypes import DIDList, DIDOrUUIDList, DivisionStr, Multihash
 
 # Mapping of context URLs to local JSON files
 _CONTEXT_FILES = {
-    "https://www.w3.org/2018/credentials/v1": "credentials_v1.json",
-    "https://www.w3.org/2018/credentials/examples/v1": "credentials_examples_v1.json",
-    "https://did.amd.com/contexts/digitalArtefacts/v1": "digital_artefacts_v1.json",
-    "https://w3id.org/security/data-integrity/v2": "data_integrity_v2.json",
+    "https://www.w3.org/2018/credentials/v1": "credentials-v1.json",
+    "https://did.amd.com/contexts/digitalArtefacts/v1": "digital-artefacts-v1.json",
+    "https://w3id.org/security/data-integrity/v2": "data-integrity-v2.json",
 }
 
 # Data Integrity context URL
@@ -33,7 +32,7 @@ _context_cache: dict[str, dict] = {}
 
 def _get_contexts_path() -> Path:
     """Get the path to the contexts directory."""
-    return Path(__file__).parent / "contexts"
+    return Path(__file__).parents[2] / "contexts"
 
 
 def _load_context(url: str) -> dict | None:

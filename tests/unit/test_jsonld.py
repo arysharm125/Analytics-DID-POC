@@ -91,7 +91,7 @@ class TestContextLoading:
         path = _get_contexts_path()
         assert isinstance(path, Path)
         assert path.name == "contexts"
-        assert path.parent.name == "did_utils"
+        assert path.parent.name == "Analytics-DID-POC"
 
     def test_load_context_returns_cached_context(self, clear_context_cache):
         """Verify caching behavior when loading same URL twice."""

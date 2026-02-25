@@ -7,9 +7,9 @@ import * as credentialsContext from '@digitalbazaar/credentials-context'
 import * as multikeyContext from '@digitalbazaar/multikey-context'
 
 // Import bundled contexts
-import credentialsV1Context from '@/assets/contexts/credentials-v1.json'
-import dataIntegrityV2Context from '@/assets/contexts/data-integrity-v2.json'
-import digitalArtefactsV1Context from '@/assets/contexts/digital-artefacts-v1.json'
+import credentialsV1Context from '@contexts/credentials-v1.json'
+import dataIntegrityV2Context from '@contexts/data-integrity-v2.json'
+import digitalArtefactsV1Context from '@contexts/digital-artefacts-v1.json'
 
 // Cache for fetched DID documents
 const didDocumentCache = new Map()
