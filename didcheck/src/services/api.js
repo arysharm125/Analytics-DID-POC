@@ -46,7 +46,7 @@ export async function fetchDIDByIdentifier(identifier) {
  * @returns {Promise<Object>} Artefact overview with digital_artefact and optional latest_version
  */
 export async function fetchArtefactOverview(identifier) {
-  return request(`/did/${encodeURIComponent(identifier)}/overview`)
+  return request(`/didcheck/${encodeURIComponent(identifier)}/overview`)
 }
 
 /**
@@ -55,7 +55,7 @@ export async function fetchArtefactOverview(identifier) {
  * @returns {Promise<Object>} The VC
  */
 export async function fetchVC(did_or_uid) {
-  return request(`/did/${encodeURIComponent(did_or_uid)}/vc.json`)
+  return request(`/didcheck/${encodeURIComponent(did_or_uid)}/vc.json`)
 }
 
 /**
@@ -64,7 +64,7 @@ export async function fetchVC(did_or_uid) {
  * @returns {Promise<Object>} The full artefact data
  */
 export async function fetchArtefact(did_or_uid) {
-  return request(`/did/${encodeURIComponent(did_or_uid)}/artefact.json`)
+  return request(`/didcheck/${encodeURIComponent(did_or_uid)}/artefact.json`)
 }
 
 /**
@@ -84,7 +84,7 @@ export async function fetchProvenance(did_or_uid, options = {}) {
     params.append('max_children', options.maxChildren)
   }
   const queryString = params.toString()
-  const endpoint = `/did/${encodeURIComponent(did_or_uid)}/provenance${queryString ? `?${queryString}` : ''}`
+  const endpoint = `/didcheck/${encodeURIComponent(did_or_uid)}/provenance${queryString ? `?${queryString}` : ''}`
   return request(endpoint)
 }
 
@@ -95,9 +95,9 @@ export async function fetchProvenance(did_or_uid, options = {}) {
  */
 export async function checkDIDStatus(identifier) {
   if (identifier.startsWith('did:')) {
-    return request(`/did/${encodeURIComponent(identifier)}/status`)
+    return request(`/didcheck/${encodeURIComponent(identifier)}/status`)
   } else {
-    return request(`/did/uid/${identifier}/status`)
+    return request(`/didcheck/uid/${identifier}/status`)
   }
 }
 
@@ -107,7 +107,7 @@ export async function checkDIDStatus(identifier) {
  * @returns {Promise<string>} The canonicalized VC as N-Quads text
  */
 export async function fetchCanonicalizedVC(uid) {
-  const url = `${API_BASE}/did/${encodeURIComponent(uid)}/vc.nq`
+  const url = `${API_BASE}/didcheck/${encodeURIComponent(uid)}/vc.nq`
 
   const response = await fetch(url)
 

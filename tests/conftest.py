@@ -169,13 +169,14 @@ def test_config() -> AppConfig:
         tokens=TokenConfig(
             epdw_access_token="test-epdw-token",
             advisory_access_token="test-advisory-token",
+            didcheck_access_token="test-didcheck-token",
         ),
         collections=MongoCollectionConfig(
             qa_benchmark_collection="test_benchmark_executions",
             qa_benchmark_iterations="test_benchmark_iterations",
         ),
         features=FeatureFlags(
-            generic_did_router=True,
+            didcheck_router=True,
             debug_vc_nquads=True,
         ),
     )

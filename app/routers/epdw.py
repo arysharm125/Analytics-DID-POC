@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid
 from app.routers.dependencies import EPDWTokenDep, APITokenDep401Response, DIDServiceDep
 from app.services.did_service import ArtefactInput
-from app.services.exceptions import DuplicateIterationIdsError, ProvenanceNotFoundError
+from app.services.exceptions import DuplicateIterationIdsError
 from app.services.sut_service import SUTServiceDep
 
 
@@ -23,7 +23,6 @@ _EPDW_DIVISION = "epdw"
 # Example UUIDs for OpenAPI documentation
 _example_benchmark_id = f"{uuid4()}"
 _example_iteration_id_1 = f"{uuid4()}"
-_example_iteration_id_2 = f"{uuid4()}"
 
 # ==========================
 # Logging

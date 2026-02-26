@@ -42,7 +42,7 @@ app = FastAPI(docs_url=None, redoc_url=None, lifespan=_app_lifespan, version=VER
 # from app.routers.policy import router as policy_router
 from app.routers.epdw import app as did_router, startup_did_router
 from app.routers.advisory_router import router as advisory_router
-from app.routers.generic_did_router import app as generic_did_router
+from app.routers.didcheck import app as didcheck_router
 from app.routers.health import app as health_router
 
 # app.include_router(policy_router)
@@ -50,8 +50,8 @@ app.include_router(did_router)
 app.include_router(advisory_router)
 
 # Conditionally include generic DID router based on feature flag
-if get_config().features.generic_did_router:
-  app.include_router(generic_did_router)
+if get_config().features.didcheck_router:
+  app.include_router(didcheck_router)
 
 app.include_router(health_router)
 

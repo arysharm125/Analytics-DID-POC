@@ -3,15 +3,52 @@
 Tests the generic DID router endpoints including the debug VC N-Quads endpoint.
 """
 
-from datetime import datetime, timezone
-
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.config import AppConfig, FeatureFlags, override_config
 from app.main import app
 from app.routers.dependencies import set_did_service_dependency
+
+
+# =============================================================================
+# Test Utilities
+# =============================================================================
+
+
+class AuthenticatedTestClient:
+    """Test client wrapper that automatically includes authentication headers.
+
+    This wrapper simplifies testing by automatically including default headers
+    with every request, while still allowing explicit header overrides when needed.
+    """
+
+    def __init__(self, client: TestClient, default_headers: dict):
+        """Initialize with a TestClient and default headers to include.
+
+        Args:
+            client: The FastAPI TestClient instance to wrap
+            default_headers: Headers to automatically include with every request
+        """
+        self._client = client
+        self._default_headers = default_headers
+
+    @property
+    def raw(self) -> TestClient:
+        """Access the underlying TestClient without default headers.
+
+        Useful for testing scenarios where headers should not be included,
+        such as testing 401 responses when auth is missing.
+        """
+        return self._client
+
+    def get(self, url, **kwargs):
+        """Make a GET request with default headers automatically included.
+
+        Explicit headers in kwargs will override default headers.
+        """
+        headers = {**self._default_headers, **kwargs.pop('headers', {})}
+        return self._client.get(url, headers=headers, **kwargs)
 
 
 # =============================================================================
@@ -40,23 +77,24 @@ class TestArtefactVCNquads:
 
     @pytest.fixture
     def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
-        """Create a test client with DIDService dependency override."""
+        """Create a test client with DIDService dependency override and auth headers."""
         set_did_service_dependency(did_service_no_migrations)
         vault_service.ensure_division_signing_key("epdw")
-        return TestClient(app)
+        client = TestClient(app)
+        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
 
     def test_returns_text_plain_content_type(
         self, client_with_service, test_artefact_uid
     ):
         """Endpoint should return text/plain content type."""
-        response = client_with_service.get(f"/did/{test_artefact_uid}/vc.nq")
+        response = client_with_service.get(f"/didcheck/{test_artefact_uid}/vc.nq")
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/plain; charset=utf-8"
 
     def test_returns_nquads_format(self, client_with_service, test_artefact_uid):
         """Endpoint should return N-Quads formatted text."""
-        response = client_with_service.get(f"/did/{test_artefact_uid}/vc.nq")
+        response = client_with_service.get(f"/didcheck/{test_artefact_uid}/vc.nq")
 
         assert response.status_code == 200
         nquads = response.text
@@ -75,7 +113,7 @@ class TestArtefactVCNquads:
         self, client_with_service, test_artefact_uid
     ):
         """The canonicalized output should not contain proof information."""
-        response = client_with_service.get(f"/did/{test_artefact_uid}/vc.nq")
+        response = client_with_service.get(f"/didcheck/{test_artefact_uid}/vc.nq")
 
         assert response.status_code == 200
         nquads = response.text
@@ -86,8 +124,8 @@ class TestArtefactVCNquads:
 
     def test_output_is_deterministic(self, client_with_service, test_artefact_uid):
         """Same VC should produce identical N-Quads output."""
-        response1 = client_with_service.get(f"/did/{test_artefact_uid}/vc.nq")
-        response2 = client_with_service.get(f"/did/{test_artefact_uid}/vc.nq")
+        response1 = client_with_service.get(f"/didcheck/{test_artefact_uid}/vc.nq")
+        response2 = client_with_service.get(f"/didcheck/{test_artefact_uid}/vc.nq")
 
         assert response1.status_code == 200
         assert response2.status_code == 200
@@ -98,7 +136,7 @@ class TestArtefactVCNquads:
     ):
         """Endpoint should return 404 for non-existent artefact."""
         # Use a UUID that doesn't exist
-        response = client_with_service.get(f"/did/{sample_uuid_2}/vc.nq")
+        response = client_with_service.get(f"/didcheck/{sample_uuid_2}/vc.nq")
 
         assert response.status_code == 404
 
@@ -112,7 +150,7 @@ class TestArtefactVCNquads:
             tokens=test_config.tokens,
             collections=test_config.collections,
             features=FeatureFlags(
-                generic_did_router=True,
+                didcheck_router=True,
                 debug_vc_nquads=False,  # Disabled
             ),
         )
@@ -121,7 +159,10 @@ class TestArtefactVCNquads:
         set_did_service_dependency(did_service_no_migrations)
         client = TestClient(app)
 
-        response = client.get(f"/did/{test_artefact_uid}/vc.nq")
+        response = client.get(
+            f"/didcheck/{test_artefact_uid}/vc.nq",
+            headers={"X-API-Token": "test-didcheck-token"}
+        )
 
         assert response.status_code == 404
         assert "not enabled" in response.json()["detail"]
@@ -130,7 +171,7 @@ class TestArtefactVCNquads:
         self, client_with_service, test_artefact_uid
     ):
         """N-Quads should contain credential subject information."""
-        response = client_with_service.get(f"/did/{test_artefact_uid}/vc.nq")
+        response = client_with_service.get(f"/didcheck/{test_artefact_uid}/vc.nq")
 
         assert response.status_code == 200
         nquads = response.text
@@ -164,9 +205,32 @@ class TestArtefactVCNquads:
             )
         )
 
-        response1 = client_with_service.get(f"/did/{result1.version_uid}/vc.nq")
-        response2 = client_with_service.get(f"/did/{result2.version_uid}/vc.nq")
+        response1 = client_with_service.get(f"/didcheck/{result1.version_uid}/vc.nq")
+        response2 = client_with_service.get(f"/didcheck/{result2.version_uid}/vc.nq")
 
         assert response1.status_code == 200
         assert response2.status_code == 200
         assert response1.text != response2.text
+
+    def test_returns_401_with_wrong_token(
+        self, client_with_service, test_artefact_uid
+    ):
+        """Endpoint should return 401 when provided with an invalid token."""
+        response = client_with_service.get(
+            f"/didcheck/{test_artefact_uid}/vc.nq",
+            headers={"X-API-Token": "wrong-token"}
+        )
+
+        assert response.status_code == 401
+
+    def test_returns_422_with_missing_token(
+        self, client_with_service, test_artefact_uid
+    ):
+        """Endpoint should return 422 when authentication token is missing.
+
+        FastAPI returns 422 (Unprocessable Entity) when a required parameter
+        is missing, which occurs before the authentication dependency runs.
+        """
+        response = client_with_service.raw.get(f"/didcheck/{test_artefact_uid}/vc.nq")
+
+        assert response.status_code == 422

@@ -24,6 +24,7 @@ class TokenConfig:
 
     epdw_access_token: str
     advisory_access_token: str
+    didcheck_access_token: str
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,7 @@ class MongoCollectionConfig:
 class FeatureFlags:
     """Feature flag configuration."""
 
-    generic_did_router: bool
+    didcheck_router: bool
     debug_vc_nquads: bool
 
 
@@ -69,6 +70,7 @@ def _load_config_from_env() -> AppConfig:
         tokens=TokenConfig(
             epdw_access_token=os.getenv("EPDW_ACCESS_TOKEN", ""),
             advisory_access_token=os.getenv("ADVISORY_ACCESS_TOKEN", ""),
+            didcheck_access_token=os.getenv("DIDCHECK_ACCESS_TOKEN", ""),
         ),
         collections=MongoCollectionConfig(
             qa_benchmark_collection=os.getenv(
@@ -79,7 +81,7 @@ def _load_config_from_env() -> AppConfig:
             ),
         ),
         features=FeatureFlags(
-            generic_did_router=bool(os.getenv("FEATURE_GENERIC_DID_ROUTER", "")),
+            didcheck_router=bool(os.getenv("FEATURE_DIDCHECK_ROUTER", "")),
             debug_vc_nquads=bool(os.getenv("FEATURE_DEBUG_VC_NQUADS", "")),
         ),
     )

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from app.config import get_config
 from app.did_utils.jsonld import canonicalize_document
 from app.routers.basetypes import ArtefactTypeStr, DivisionStr, Multihash, UUIDString
-from app.routers.dependencies import DIDServiceDep
+from app.routers.dependencies import DIDCheckTokenDep, DIDServiceDep, APITokenDep401Response
 from app.routers.epdw import PathUUID
 from app.services.did_service import ProvenanceNode as ServiceProvenanceNode
 
@@ -235,21 +235,23 @@ NotFoundResponse = {
 # ==========================
 # Router
 # ==========================
-app = APIRouter(tags=["Generic DID"], prefix="/did")
+app = APIRouter(tags=["DID Check"], prefix="/didcheck")
 
 
-@app.get("/{uid}/vc.json")
+@app.get("/{uid}/vc.json", responses={**APITokenDep401Response})
 def artefact_vc(
     uid: PathUUID,
+    api_token: DIDCheckTokenDep,
     did_svc: DIDServiceDep,
 ):
     """Return a Verifiable Credential with proofs for a Digital Artefact."""
     return did_svc.issue_artefact_vc(division=None, uid=uid)
 
 
-@app.get("/{uid}/overview", responses={**NotFoundResponse}, response_model_exclude_none=True)
+@app.get("/{uid}/overview", responses={**APITokenDep401Response, **NotFoundResponse}, response_model_exclude_none=True)
 def did_overview(
     uid: PathUUID,
+    api_token: DIDCheckTokenDep,
     did_svc: DIDServiceDep,
 ) -> DIDOverviewResponse:
     """Return basic information about a digital artefact.
@@ -298,11 +300,12 @@ def did_overview(
 
 @app.get(
     "/{uid}/artefact.json",
-    responses={**NotFoundResponse},
+    responses={**APITokenDep401Response, **NotFoundResponse},
     response_model_exclude_none=True,
 )
 def artefact_full(
     uid: PathUUID,
+    api_token: DIDCheckTokenDep,
     did_svc: DIDServiceDep,
 ) -> FullArtefactInfo:
     """Return the full digital artefact data including metadata.
@@ -344,10 +347,11 @@ def _service_node_to_response(node: ServiceProvenanceNode) -> ProvenanceNode:
 
 @app.get(
     "/{uid}/provenance",
-    responses={**NotFoundResponse},
+    responses={**APITokenDep401Response, **NotFoundResponse},
 )
 def artefact_provenance(
     uid: PathUUID,
+    api_token: DIDCheckTokenDep,
     did_svc: DIDServiceDep,
 ) -> ProvenanceTreeResponse:
     """Return the recursive provenance tree for a digital artefact.
@@ -383,11 +387,12 @@ def artefact_provenance(
 @app.get(
     "/{uid}/vc.nq",
     response_class=PlainTextResponse,
-    responses={**NotFoundResponse},
+    responses={**APITokenDep401Response, **NotFoundResponse},
     tags=["Debug"],
 )
 def artefact_vc_nquads(
     uid: PathUUID,
+    api_token: DIDCheckTokenDep,
     did_svc: DIDServiceDep,
 ) -> str:
     """[DEBUG] Return the canonicalized VC in N-Quads format.
@@ -436,9 +441,10 @@ PathDivision = Annotated[
 ]
 
 
-@app.get("/{division}/did.json")
+@app.get("/{division}/did.json", responses={**APITokenDep401Response})
 def division_did_document(
     division: PathDivision,
+    api_token: DIDCheckTokenDep,
     did_svc: DIDServiceDep,
 ):
     """Return the DID document for a division.
