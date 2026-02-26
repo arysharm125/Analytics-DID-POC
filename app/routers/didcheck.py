@@ -200,6 +200,44 @@ class LatestVersionInfo(BaseModel):
     )
 
 
+class VersionInfo(BaseModel):
+    """Information about a single version of an artefact."""
+
+    version: int = Field(
+        ...,
+        description="Version number",
+        examples=[1, 2, 3],
+    )
+    version_uid: UUIDString = Field(
+        ...,
+        description="UUID identifying this specific version",
+        examples=["b8ff3b79-863f-4fa9-84ba-0067663f2b04"],
+    )
+    creation_date: datetime = Field(
+        ...,
+        description="Timestamp when this version was created",
+    )
+    revoked: bool = Field(
+        ...,
+        description="Whether this version is revoked",
+        examples=[False],
+    )
+
+
+class ArtefactVersionsResponse(BaseModel):
+    """Response model for artefact versions endpoint."""
+
+    external_uid: UUIDString = Field(
+        ...,
+        description="UUID identifying the artefact across versions",
+        examples=[_example_random_uuid],
+    )
+    versions: list[VersionInfo] = Field(
+        ...,
+        description="List of all versions sorted by version number (ascending)",
+    )
+
+
 class DIDOverviewResponse(BaseModel):
     """Response model for DID overview endpoint."""
 
@@ -377,6 +415,48 @@ def artefact_provenance(
         max_depth=depth,
         max_children=max_children,
         provenance=provenance_nodes,
+    )
+
+
+@app.get(
+    "/{uid}/versions",
+    responses={**APITokenDep401Response, **NotFoundResponse},
+)
+def artefact_versions(
+    uid: PathUUID,
+    api_token: DIDCheckTokenDep,
+    did_svc: DIDServiceDep,
+) -> ArtefactVersionsResponse:
+    """Return all versions of a digital artefact.
+
+    Returns a list of all versions for the artefact identified by the given UID.
+    The versions are sorted by version number in ascending order (oldest first).
+
+    Args:
+        uid: The artefact's version_uid or external_uid
+
+    Returns:
+        ArtefactVersionsResponse with external_uid and list of all versions
+    """
+    versions = did_svc.get_all_versions(uid)
+
+    # Get external_uid from the first version (all versions share the same external_uid)
+    external_uid = versions[0]["external_uid"] if versions else uid
+
+    # Convert to VersionInfo models
+    version_infos = [
+        VersionInfo(
+            version=v["version"],
+            version_uid=v["version_uid"],
+            creation_date=v["created_at"],
+            revoked=v.get("revoked", False),
+        )
+        for v in versions
+    ]
+
+    return ArtefactVersionsResponse(
+        external_uid=external_uid,
+        versions=version_infos,
     )
 
 

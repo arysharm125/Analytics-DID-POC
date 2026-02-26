@@ -1746,3 +1746,143 @@ class TestRegenerateAndVerifyVc:
 
         with pytest.raises(VCNotFoundError):
             did_service.regenerate_and_verify_vc("nonexistent-uuid")
+
+
+# =============================================================================
+# Version Listing Tests
+# =============================================================================
+
+
+class TestGetAllVersions:
+    """Tests for get_all_versions method."""
+
+    def test_get_all_versions_single_version(self, did_service_no_migrations):
+        """Getting all versions with a single version should return one item."""
+        did_service = did_service_no_migrations
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        versions = did_service.get_all_versions(artefact.version_uid)
+        assert len(versions) == 1
+        assert versions[0]["version"] == 1
+        assert versions[0]["version_uid"] == artefact.version_uid
+        assert "created_at" in versions[0]
+        assert "revoked" in versions[0]
+
+    def test_get_all_versions_multiple_versions(self, did_service_no_migrations):
+        """Getting all versions with multiple versions should return all."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1")
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2")
+        )
+        v3 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA3t8auVZRn8x5M3kN1p6yZR2oG7wJGD3")
+        )
+
+        versions = did_service.get_all_versions(external_uid)
+        assert len(versions) == 3
+
+    def test_get_all_versions_sorted_ascending(self, did_service_no_migrations):
+        """Versions should be sorted by version number in ascending order."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1")
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2")
+        )
+        v3 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA3t8auVZRn8x5M3kN1p6yZR2oG7wJGD3")
+        )
+
+        versions = did_service.get_all_versions(external_uid)
+        assert versions[0]["version"] == 1
+        assert versions[1]["version"] == 2
+        assert versions[2]["version"] == 3
+        assert versions[0]["version_uid"] == v1.version_uid
+        assert versions[1]["version_uid"] == v2.version_uid
+        assert versions[2]["version_uid"] == v3.version_uid
+
+    def test_get_all_versions_by_version_uid_returns_all(self, did_service_no_migrations):
+        """Getting versions by version_uid should return all versions of the artefact."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1")
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2")
+        )
+        v3 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA3t8auVZRn8x5M3kN1p6yZR2oG7wJGD3")
+        )
+
+        # Query using v2's version_uid - should return all 3 versions
+        versions = did_service.get_all_versions(v2.version_uid)
+        assert len(versions) == 3
+
+    def test_get_all_versions_by_external_uid(self, did_service_no_migrations):
+        """Getting versions by external_uid should return all versions."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1")
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2")
+        )
+
+        versions = did_service.get_all_versions(external_uid)
+        assert len(versions) == 2
+
+    def test_get_all_versions_nonexistent_raises(self, did_service_no_migrations):
+        """Getting versions for non-existent artefact should raise ArtefactNotFoundError."""
+        did_service = did_service_no_migrations
+
+        with pytest.raises(ArtefactNotFoundError):
+            did_service.get_all_versions("nonexistent-uuid")
+
+    def test_get_all_versions_contains_only_required_fields(self, did_service_no_migrations):
+        """Version documents should contain only external_uid, version, version_uid, created_at, revoked."""
+        did_service = did_service_no_migrations
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+                artefact_metadata={"some": "data"},
+                artefact_type="report",
+            )
+        )
+
+        versions = did_service.get_all_versions(artefact.version_uid)
+        assert len(versions) == 1
+        version_doc = versions[0]
+
+        # Should have these fields
+        assert "external_uid" in version_doc
+        assert "version" in version_doc
+        assert "version_uid" in version_doc
+        assert "created_at" in version_doc
+        assert "revoked" in version_doc
+
+        # Should NOT have these fields (projection excludes them)
+        assert "artefact_hash" not in version_doc
+        assert "artefact_metadata" not in version_doc
+        assert "artefact_type" not in version_doc
+        assert "division" not in version_doc
+        assert "_id" not in version_doc

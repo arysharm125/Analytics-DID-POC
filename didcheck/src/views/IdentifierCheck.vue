@@ -24,6 +24,8 @@ const fetchingArtefact = ref(false)
 const fetchedArtefact = ref(null)
 const fetchingProvenance = ref(false)
 const fetchedProvenance = ref(null)
+const fetchingVersions = ref(false)
+const fetchedVersions = ref(null)
 
 // Binary file verification state
 const selectedFile = ref(null)
@@ -166,6 +168,20 @@ const fetchProvenanceData = async () => {
     error.value = err.message || 'Failed to fetch provenance data'
   } finally {
     fetchingProvenance.value = false
+  }
+}
+
+const fetchVersionsData = async () => {
+  if (!digitalArtefact.value?.version_uid) return
+
+  fetchingVersions.value = true
+  try {
+    const versions = await didStore.fetchVersions(digitalArtefact.value.version_uid)
+    fetchedVersions.value = versions
+  } catch (err) {
+    error.value = err.message || 'Failed to fetch versions data'
+  } finally {
+    fetchingVersions.value = false
   }
 }
 
@@ -608,6 +624,77 @@ watch(() => props.identifier, () => {
               </v-card-text>
             </template>
           </v-card>
+
+          <!-- Version History Card -->
+          <v-card class="mb-4">
+            <v-card-title class="d-flex align-center justify-space-between">
+              <div class="d-flex align-center">
+                <v-icon start>mdi-history</v-icon>
+                Version History
+              </div>
+              <!-- Load Versions button (before versions are fetched) -->
+              <v-btn
+                v-if="!fetchedVersions"
+                color="primary"
+                variant="elevated"
+                :loading="fetchingVersions"
+                @click="fetchVersionsData"
+              >
+                <v-icon start>mdi-reload</v-icon>
+                Load Versions
+              </v-btn>
+            </v-card-title>
+
+            <!-- Versions list (shown after fetch) -->
+            <v-card-text v-if="fetchedVersions">
+              <v-table density="compact">
+                <thead>
+                  <tr>
+                    <th>Version</th>
+                    <th>Creation Date</th>
+                    <th>Version UID</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="version in fetchedVersions.versions"
+                    :key="version.version_uid"
+                    :class="{ 'bg-grey-lighten-4': version.version_uid === digitalArtefact.version_uid }"
+                  >
+                    <td class="font-weight-medium">v{{ version.version }}</td>
+                    <td>{{ new Date(version.creation_date).toLocaleDateString() }}</td>
+                    <td>
+                      <router-link
+                        :to="`/${version.version_uid}`"
+                        class="text-primary text-mono version-link"
+                      >
+                        {{ version.version_uid }}
+                      </router-link>
+                    </td>
+                    <td>
+                      <v-chip
+                        v-if="version.revoked"
+                        size="x-small"
+                        color="error"
+                        variant="outlined"
+                      >
+                        Revoked
+                      </v-chip>
+                      <v-chip
+                        v-else-if="version.version_uid === digitalArtefact.version_uid"
+                        size="x-small"
+                        color="primary"
+                        variant="outlined"
+                      >
+                        Current
+                      </v-chip>
+                    </td>
+                  </tr>
+                </tbody>
+              </v-table>
+            </v-card-text>
+          </v-card>
         </template>
 
         <!-- Not found state -->
@@ -674,5 +761,14 @@ watch(() => props.identifier, () => {
 
 .gap-3 {
   gap: 12px;
+}
+
+.version-link {
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.version-link:hover {
+  text-decoration: underline;
 }
 </style>

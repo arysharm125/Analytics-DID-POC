@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { fetchArtefactOverview, fetchVC, fetchArtefact as fetchArtefactApi, fetchProvenance as fetchProvenanceApi } from '@/services/api'
+import { fetchArtefactOverview, fetchVC, fetchArtefact as fetchArtefactApi, fetchProvenance as fetchProvenanceApi, fetchArtefactVersions as fetchArtefactVersionsApi } from '@/services/api'
 
 export const useDIDStore = defineStore('did', () => {
   // State
@@ -73,6 +73,15 @@ export const useDIDStore = defineStore('did', () => {
   }
 
   /**
+   * Fetch all versions of an artefact for the given identifier
+   * @param {string} identifier - DID string or UID
+   * @returns {Promise<Object>} The versions response with external_uid and versions array
+   */
+  async function fetchVersions(identifier) {
+    return await fetchArtefactVersionsApi(identifier)
+  }
+
+  /**
    * Clear the current overview data
    */
   function clearCurrent() {
@@ -98,6 +107,7 @@ export const useDIDStore = defineStore('did', () => {
     issueVC,
     fetchArtefact,
     fetchProvenance,
+    fetchVersions,
     clearCurrent,
     clearCache
   }

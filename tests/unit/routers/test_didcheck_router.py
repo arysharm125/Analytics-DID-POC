@@ -234,3 +234,162 @@ class TestArtefactVCNquads:
         response = client_with_service.raw.get(f"/didcheck/{test_artefact_uid}/vc.nq")
 
         assert response.status_code == 422
+
+
+# =============================================================================
+# Test Artefact Versions Endpoint
+# =============================================================================
+
+
+class TestArtefactVersions:
+    """Tests for the /{uid}/versions endpoint."""
+
+    @pytest.fixture
+    def multiple_versions(self, did_service_no_migrations, sample_uuid, sample_multihash):
+        """Create multiple versions of an artefact and return version UIDs."""
+        from app.services.did_service import ArtefactInput
+
+        version_uids = []
+
+        # Create version 1
+        result1 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash=sample_multihash,
+                artefact_metadata={"version": 1},
+                artefact_type="report",
+            )
+        )
+        version_uids.append(result1.version_uid)
+
+        # Create version 2
+        result2 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash=sample_multihash,
+                artefact_metadata={"version": 2},
+                artefact_type="report",
+            )
+        )
+        version_uids.append(result2.version_uid)
+
+        # Create version 3
+        result3 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash=sample_multihash,
+                artefact_metadata={"version": 3},
+                artefact_type="report",
+            )
+        )
+        version_uids.append(result3.version_uid)
+
+        return {
+            "external_uid": sample_uuid,
+            "version_uids": version_uids,
+        }
+
+    @pytest.fixture
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+        """Create a test client with DIDService dependency override and auth headers."""
+        set_did_service_dependency(did_service_no_migrations)
+        vault_service.ensure_division_signing_key("epdw")
+        client = TestClient(app)
+        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+
+    def test_returns_all_versions_for_external_uid(
+        self, client_with_service, multiple_versions
+    ):
+        """Endpoint should return all versions when queried with external_uid."""
+        response = client_with_service.get(
+            f"/didcheck/{multiple_versions['external_uid']}/versions"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["external_uid"] == multiple_versions["external_uid"]
+        assert len(data["versions"]) == 3
+
+    def test_returns_all_versions_for_version_uid(
+        self, client_with_service, multiple_versions
+    ):
+        """Endpoint should return all versions when queried with version_uid."""
+        # Query with version_uid of version 2
+        response = client_with_service.get(
+            f"/didcheck/{multiple_versions['version_uids'][1]}/versions"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["external_uid"] == multiple_versions["external_uid"]
+        assert len(data["versions"]) == 3
+
+    def test_versions_sorted_by_version_number(
+        self, client_with_service, multiple_versions
+    ):
+        """Endpoint should return versions sorted by version number (ascending)."""
+        response = client_with_service.get(
+            f"/didcheck/{multiple_versions['external_uid']}/versions"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        versions = data["versions"]
+        assert len(versions) == 3
+        assert versions[0]["version"] == 1
+        assert versions[1]["version"] == 2
+        assert versions[2]["version"] == 3
+
+    def test_version_info_contains_required_fields(
+        self, client_with_service, multiple_versions
+    ):
+        """Each version should contain version, version_uid, creation_date, and revoked fields."""
+        response = client_with_service.get(
+            f"/didcheck/{multiple_versions['external_uid']}/versions"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        for version in data["versions"]:
+            assert "version" in version
+            assert "version_uid" in version
+            assert "creation_date" in version
+            assert "revoked" in version
+            assert isinstance(version["version"], int)
+            assert isinstance(version["revoked"], bool)
+
+    def test_returns_404_when_artefact_not_found(
+        self, client_with_service, sample_uuid_2
+    ):
+        """Endpoint should return 404 for non-existent artefact."""
+        response = client_with_service.get(f"/didcheck/{sample_uuid_2}/versions")
+
+        assert response.status_code == 404
+
+    def test_returns_401_with_wrong_token(
+        self, client_with_service, multiple_versions
+    ):
+        """Endpoint should return 401 when provided with an invalid token."""
+        response = client_with_service.get(
+            f"/didcheck/{multiple_versions['external_uid']}/versions",
+            headers={"X-API-Token": "wrong-token"}
+        )
+
+        assert response.status_code == 401
+
+    def test_returns_422_with_missing_token(
+        self, client_with_service, multiple_versions
+    ):
+        """Endpoint should return 422 when authentication token is missing."""
+        response = client_with_service.raw.get(
+            f"/didcheck/{multiple_versions['external_uid']}/versions"
+        )
+
+        assert response.status_code == 422

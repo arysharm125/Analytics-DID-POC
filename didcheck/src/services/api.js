@@ -89,6 +89,15 @@ export async function fetchProvenance(did_or_uid, options = {}) {
 }
 
 /**
+ * Fetch all versions of an artefact by DID or UID.
+ * @param {string} did_or_uid - The artefact identifier
+ * @returns {Promise<Object>} The versions response with external_uid and versions array
+ */
+export async function fetchArtefactVersions(did_or_uid) {
+  return request(`/didcheck/${encodeURIComponent(did_or_uid)}/versions`)
+}
+
+/**
  * Check the status of a DID
  * @param {string} identifier - DID or UID
  * @returns {Promise<Object>} Status information
@@ -125,6 +134,7 @@ export default {
   fetchVC,
   fetchArtefact,
   fetchProvenance,
+  fetchArtefactVersions,
   checkDIDStatus,
   fetchCanonicalizedVC
 }

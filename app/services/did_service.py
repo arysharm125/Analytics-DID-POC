@@ -966,6 +966,35 @@ class DIDService:
 
         return artefact, latest_version
 
+    def get_all_versions(self, uid: CanonicalizedUUID) -> list[dict]:
+        """
+        Get all versions of an artefact.
+
+        Args:
+            uid: The canonicalized UUID to search for (version_uid or external_uid)
+
+        Returns:
+            List of version documents sorted by version number (ascending).
+            Each document contains: external_uid, version, version_uid, created_at, revoked.
+
+        Raises:
+            ArtefactNotFoundError: If the artefact is not found.
+        """
+        collection = self.db.get_collection(self._artefacts_col_name)
+
+        # Find the artefact by uid to get the external_uid
+        artefact = self._find_artefact_by_uid(uid, collection)
+        if artefact is None:
+            raise ArtefactNotFoundError(uid=uid, division=None)
+
+        # Query all versions by external_uid, sorted by version (ascending)
+        cursor = collection.find(
+            {"external_uid": artefact["external_uid"]},
+            {"external_uid": 1, "version": 1, "version_uid": 1, "created_at": 1, "revoked": 1, "_id": 0}
+        ).sort("version", 1)
+
+        return list(cursor)
+
     def get_provenance_tree(
         self,
         uid: CanonicalizedUUID,
