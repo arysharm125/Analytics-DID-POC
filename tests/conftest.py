@@ -9,6 +9,7 @@ to prevent test pollution. The reset order matters:
 """
 
 import os
+import time
 import uuid
 from typing import Generator
 
@@ -111,6 +112,12 @@ def mongodb_container(db_mode):
 
     container = MongoDbContainer("mongo:6.0")
     container.start()
+
+    # --- Readiness guard ---
+    # Even though testcontainers usually waits for the port to be open,
+    # give Mongo a moment to become command-ready.
+    time.sleep(0.5)
+
     yield container
     container.stop()
 
@@ -149,11 +156,17 @@ def db_connector(db_mode, mongodb_container) -> Generator[MongoConnector, None, 
     else:
         raise ValueError(f"Unknown db_mode: {db_mode}")
 
-    yield connector
 
-    # Cleanup
-    if db_mode != "mock" and connector.client:
-        connector.client.drop_database(db_name)
+    try:
+        yield connector
+    finally:
+        # Teardown order matters: drop DB, then close client
+        try:
+            if db_mode != "mock" and connector.client:
+                connector.client.drop_database(db_name)
+        finally:
+            connector.close_connection()
+
 
 
 @pytest.fixture

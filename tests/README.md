@@ -48,6 +48,8 @@ TEST_MONGODB_URI="mongodb://localhost:27017" pytest --db-mode=real
 
 **Note:** Integration tests are automatically skipped when using `--db-mode=mock` (the default). Use `--db-mode=container` or `--db-mode=real` to run them.
 
+**Note:**: Using `--db-mode=container` may trigger connection errors when running the entire test suite due to low ulimit. Increase file descriptor ulimit (and restart the system/docker) and try again in this case.
+
 ## Test Markers
 
 ```bash
