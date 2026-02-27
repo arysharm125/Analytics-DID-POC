@@ -155,7 +155,7 @@ async def record_report(request: RecordReportRequest, api_token: AdvisoryTokenDe
     )
 
 @router.get("/did.json")
-async def advisory_DID(did_svc: DIDServiceDep):
+async def advisory_did(did_svc: DIDServiceDep):
     """Return the DID document that corresponds to the advisory division.
 
     This DID document contains the keys that are used to verify digital artefacts

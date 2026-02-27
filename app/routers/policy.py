@@ -171,7 +171,7 @@ def create_rule(r: RuleIn, orchestrator: PolicyOrchestrator = Depends(get_orches
         from app.services.decision_engine import safe_eval
         safe_eval(data["condition"], facts={})
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid condition expression: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid condition expression: {e}") from e
     created = orchestrator.add_rule(data)
     return json.loads(json_util.dumps(created))
 

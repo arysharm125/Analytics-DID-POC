@@ -31,30 +31,30 @@ from app.services.vault_service import (
 
 # Re-export exceptions for backward compatibility
 __all__ = [
-    # Exceptions
-    "InvalidPathException",
-    "SecretNotFoundError",
     "DivisionPublicKeysNotFoundError",
+    # Exceptions
+    "InvalidPathError",
+    "SecretNotFoundError",
     "SigningKeyNotFoundError",
-    # Service access
-    "get_vault_service",
-    "reset_vault_service",
     # Backward-compatible functions
     "get_vault_client",
+    # Service access
+    "get_vault_service",
     "reset_vault_client",
+    "reset_vault_service",
+    "vault_delete_metadata_and_all_versions",
+    "vault_ensure_division_signing_key",
+    "vault_fetch_secret",
+    "vault_get_division_public_keys",
+    "vault_is_authenticated",
+    "vault_list",
+    "vault_list_division_signing_key_fragments",
     "vault_read",
     "vault_read_dict",
     "vault_read_dict_or_raise",
-    "vault_write",
-    "vault_list",
-    "vault_store_secret",
-    "vault_fetch_secret",
-    "vault_delete_metadata_and_all_versions",
-    "vault_is_authenticated",
-    "vault_get_division_public_keys",
-    "vault_list_division_signing_key_fragments",
     "vault_signing_key_context",
-    "vault_ensure_division_signing_key",
+    "vault_store_secret",
+    "vault_write",
 ]
 
 
@@ -65,7 +65,7 @@ logger = logging.getLogger("did_vault_api_sut")
 # Exceptions (backward compatibility)
 # =============================================================================
 
-class InvalidPathException(Exception):
+class InvalidPathError(Exception):
     """Raised when trying to read a path that does not exist."""
     path: str
     mount_point: str
@@ -235,8 +235,8 @@ def vault_read_dict_or_raise(mount_point: str, path: str) -> dict:
     client = get_vault_client()
     try:
         return client.read_secret(mount_point, path)
-    except Exception:
-        raise InvalidPathException(path=path, mount_point=mount_point)
+    except Exception as e:
+        raise InvalidPathError(path=path, mount_point=mount_point) from e
 
 
 def vault_read_dict(mount_point: str, path: str) -> dict:

@@ -120,7 +120,7 @@ class ArtefactNotFoundError(DIDServiceError, HTTPException):
         super().__init__(status_code=404, detail=detail)
 
 
-class DivisionKeysNotFound(DIDServiceError, HTTPException):
+class DivisionKeysNotFoundError(DIDServiceError, HTTPException):
     """Raised when a division key is not found."""
     def __init__(self, division: str):
         self.division = division

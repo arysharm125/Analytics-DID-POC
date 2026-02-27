@@ -9,7 +9,7 @@ import gc
 import logging
 import secrets as python_secrets
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 
 from nacl.signing import SigningKey
@@ -201,8 +201,8 @@ class VaultService:
             if not keys:
                 raise DivisionPublicKeysNotFoundError(division)
             return keys
-        except SecretNotFoundError:
-            raise DivisionPublicKeysNotFoundError(division)
+        except SecretNotFoundError as e:
+            raise DivisionPublicKeysNotFoundError(division) from e
 
     # =========================================================================
     # Division Signing Key Operations
@@ -244,8 +244,8 @@ class VaultService:
             if not secret_hex:
                 raise SigningKeyNotFoundError(division, fragment)
             return secret_hex
-        except SecretNotFoundError:
-            raise SigningKeyNotFoundError(division, fragment)
+        except SecretNotFoundError as e:
+            raise SigningKeyNotFoundError(division, fragment) from e
 
     @contextmanager
     def signing_key_context(
@@ -282,8 +282,8 @@ class VaultService:
 
             try:
                 key_bytes = bytearray.fromhex(secret_hex)
-            except ValueError:
-                raise SigningKeyNotFoundError(division, fragment)
+            except ValueError as e:
+                raise SigningKeyNotFoundError(division, fragment) from e
 
             # Clear our reference to the hex string
             del secret_hex
@@ -308,10 +308,8 @@ class VaultService:
 
             # Ensure key_bytes is cleared (triggered on exception cases)
             if key_bytes is not None:
-                try:
+                with suppress(Exception):
                     sodium_memzero(key_bytes)
-                except Exception:
-                    pass
 
             # Force garbage collection
             gc.collect()

@@ -83,7 +83,7 @@ class DecisionEngine:
           "correlation_id": "...",
         }
         """
-        start = time.time()
+        time.time()
         facts_clean = self._sanitize_facts(facts)
         matched_rules = []
         actions = []

@@ -38,7 +38,7 @@ def compute_diff(
         return False if early_exit else diff
 
     # Different types
-    if type(old) != type(new):
+    if type(old) is not type(new):
         if early_exit:
             return True
         diff["modified"][path if path else "<root>"] = {"old": old, "new": new}

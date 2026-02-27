@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import secrets
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Header, HTTPException
@@ -13,6 +12,8 @@ from app.config import get_config, reset_config_cache
 from app.constants import EXAMPLE_API_TOKEN
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
     from app.database import MongoConnector
     from app.services.did_service import DIDService
     from app.services.vault_service import VaultService
@@ -214,10 +215,8 @@ def reset_db_dependency() -> None:
     """
     global _db_connector, _db_connector_initialized
     if _db_connector is not None and _db_connector.client is not None:
-        try:
+        with suppress(Exception):
             _db_connector.close_connection()
-        except Exception:
-            pass
     _db_connector = None
     _db_connector_initialized = False
 

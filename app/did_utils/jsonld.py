@@ -173,7 +173,7 @@ def prepare_vc_for_signing(vc: dict) -> tuple[dict, list[str]]:
     if isinstance(contexts, str):
         contexts = [contexts]
     if DATA_INTEGRITY_V2_CONTEXT not in contexts:
-        contexts = list(contexts) + [DATA_INTEGRITY_V2_CONTEXT]
+        contexts = [*list(contexts), DATA_INTEGRITY_V2_CONTEXT]
         vc_without_proof["@context"] = contexts
 
     # Convert to N-Quad messages
@@ -202,7 +202,7 @@ def prepare_vp_for_signing(vp: dict) -> tuple[dict, list[str]]:
     if isinstance(contexts, str):
         contexts = [contexts]
     if DATA_INTEGRITY_V2_CONTEXT not in contexts:
-        contexts = list(contexts) + [DATA_INTEGRITY_V2_CONTEXT]
+        contexts = [*list(contexts), DATA_INTEGRITY_V2_CONTEXT]
         vp_without_proof["@context"] = contexts
 
     # Convert to N-Quad messages

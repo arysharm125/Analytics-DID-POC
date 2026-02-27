@@ -8,7 +8,14 @@ from fastapi.responses import HTMLResponse
 
 from app.config import get_config
 from app.middlewares import exception_handler_middleware, http_exception_handler
+
+# from app.routers.policy import router as policy_router
+from app.routers.advisory_router import router as advisory_router
 from app.routers.dependencies import did_service_lifespan
+from app.routers.didcheck import app as didcheck_router
+from app.routers.epdw import app as did_router
+from app.routers.epdw import startup_did_router
+from app.routers.health import app as health_router
 from app.version import VERSION
 
 # ==========================
@@ -43,15 +50,6 @@ app = FastAPI(docs_url=None, redoc_url=None, lifespan=_app_lifespan, version=VER
 app.exception_handler(HTTPException)(http_exception_handler)
 app.middleware("http")(exception_handler_middleware)
 
-# ==========================
-# Register Routers
-# ==========================
-# from app.routers.policy import router as policy_router
-from app.routers.advisory_router import router as advisory_router
-from app.routers.didcheck import app as didcheck_router
-from app.routers.epdw import app as did_router
-from app.routers.epdw import startup_did_router
-from app.routers.health import app as health_router
 
 # app.include_router(policy_router)
 app.include_router(did_router)

@@ -4,7 +4,7 @@ import gzip
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime  # noqa: TC003
 from typing import Any, ClassVar
 
 from fastapi import HTTPException
@@ -28,7 +28,7 @@ from app.routers.basetypes import (
 from app.services.exceptions import (
     ArtefactNoChangesError,
     ArtefactNotFoundError,
-    DivisionKeysNotFound,
+    DivisionKeysNotFoundError,
     DivisionMismatchError,
     ProvenanceNotFoundError,
     VersionConflictError,
@@ -357,7 +357,7 @@ def migration_20260225003_artefact_type_backlink(db: MongoConnector) -> None:
     - artefact_type is included in VCs, backlink is not
     """
     collection_name = "did_artefacts"
-    collection = db.get_collection(collection_name)
+    db.get_collection(collection_name)
 
     # Update validator to add new optional fields
     # Note: We use collMod to update the existing validator
@@ -475,10 +475,7 @@ def _artefact_has_changes(
 
     # Compare artefact_type
     existing_artefact_type = existing.get("artefact_type")
-    if existing_artefact_type != new_artefact_type:
-        return True
-
-    return False
+    return existing_artefact_type != new_artefact_type
 
 
 def _artefact_to_da_vc_input(artefact : dict[str, Any]) -> DigitalArtefactVCInput:
@@ -1001,8 +998,8 @@ class DIDService:
         """
         try:
             return self._vault_svc.get_division_public_keys(division)
-        except DivisionPublicKeysNotFoundError:
-            raise DivisionKeysNotFound(division=division)
+        except DivisionPublicKeysNotFoundError as e:
+            raise DivisionKeysNotFoundError(division=division) from e
 
     def _get_active_signing_key_fragment(self, division: DivisionStr) -> str:
         """Get the fragment identifier of the active (latest) signing key.
@@ -1021,8 +1018,8 @@ class DIDService:
         """
         try:
             return self._vault_svc.get_active_signing_key_fragment(division)
-        except SigningKeyNotFoundError:
-            raise DivisionKeysNotFound(division=division)
+        except SigningKeyNotFoundError as e:
+            raise DivisionKeysNotFoundError(division=division) from e
 
     def division_did_doc(self, division: str) -> dict:
         """Generates the DID document in JSON-LD format for a given division.
@@ -1345,9 +1342,9 @@ class DIDService:
 
         try:
             collection.insert_one(doc)
-        except DuplicateKeyError:
+        except DuplicateKeyError as e:
             # A VC already exists for this version_uid
-            raise VCAlreadyExistsError(version_uid)
+            raise VCAlreadyExistsError(version_uid) from e
 
         return IssuedVCRecord(
             vc_uid=vc_uid,
@@ -1406,8 +1403,8 @@ class DIDService:
                     verification_method=verification_method,
                     created=issuance_date,
                 )
-        except SigningKeyNotFoundError:
-            raise SigningKeyNotAvailableError(division=division, fragment=signing_key_fragment)
+        except SigningKeyNotFoundError as e:
+            raise SigningKeyNotAvailableError(division=division, fragment=signing_key_fragment) from e
         except Exception as e:
             raise HTTPException(
                 status_code=500,
@@ -1509,8 +1506,8 @@ class DIDService:
         # Get the active signing key for this division
         try:
             fragment = self._get_active_signing_key_fragment(division)
-        except SigningKeyNotFoundError:
-            raise DivisionKeysNotFound(division=division)
+        except SigningKeyNotFoundError as e:
+            raise DivisionKeysNotFoundError(division=division) from e
 
         # Generate the VC
         vc = self._generate_vc_internal(

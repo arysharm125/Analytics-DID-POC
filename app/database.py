@@ -23,9 +23,10 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from pymongo import MongoClient
-from pymongo.synchronous import database
 
 if TYPE_CHECKING:
+    from pymongo.synchronous import database
+
     from app.services.vault_service import VaultService
 
 # -----------------------------------------------------------
@@ -146,6 +147,10 @@ class MigrationSet:
 
     def __len__(self) -> int:
         return len(self._migrations)
+
+    def __iter__(self):
+        """Iterate over migration names in the set."""
+        return iter(self._migrations.keys())
 
 # ===========================================================
 # MongoConnector Class
@@ -409,7 +414,7 @@ class MongoConnector:
         # Filter to migrations not yet applied, then sort by full name
         applied_strs = self._get_applied_migrations()
         pending = sorted(
-            [m for m in migration_set.keys() if migration_set.full_name(m) not in applied_strs],
+            [m for m in migration_set if migration_set.full_name(m) not in applied_strs],
             key=lambda m: migration_set.full_name(m)
         )
 

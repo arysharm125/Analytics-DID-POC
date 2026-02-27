@@ -213,10 +213,7 @@ def main():
     baseline = create_baseline_json(args, endpoints)
 
     # Determine output file
-    if args.output:
-        output_file = Path(args.output)
-    else:
-        output_file = Path(__file__).parent.parent / "results" / "current.json"
+    output_file = Path(args.output) if args.output else Path(__file__).parent.parent / "results" / "current.json"
 
     # Ensure output directory exists
     output_file.parent.mkdir(exist_ok=True)

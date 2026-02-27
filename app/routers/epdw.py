@@ -51,7 +51,7 @@ async def startup_did_router():
 # ==========================
 class CreateSutRequest(BaseModel):
     """Request model for creating SUT DIDs."""
-    benchmarkExecutionID: UUIDString = Field(
+    benchmarkExecutionID: UUIDString = Field(  # noqa: N815
         ...,
         description="Unique identifier for the benchmark execution",
         examples=["95da4dd5-6e48-4c5b-bb91-935983c16d9c"]
@@ -60,14 +60,14 @@ class CreateSutRequest(BaseModel):
 
 class IterationDIDInfo(BaseModel):
     """Information about a created iteration DID."""
-    iterationID: str
+    iterationID: str  # noqa: N815
     did: str
 
 
 class CreateSutResponse(BaseModel):
     """Response model for create-sut-did endpoint."""
     status: str = Field(description="'created' or 'exists'")
-    benchmarkExecutionID: str
+    benchmarkExecutionID: str  # noqa: N815
     mode: str = Field(description="'single' or 'multi'")
     master_did: str
     iterations: list[IterationDIDInfo]
@@ -76,12 +76,12 @@ class CreateSutResponse(BaseModel):
 
 class DIDAppendRequest(BaseModel):
     """Request model for appending data to a DID."""
-    benchmarkExecutionID: UUIDString = Field(
+    benchmarkExecutionID: UUIDString = Field(  # noqa: N815
         ...,
         description="Benchmark execution ID",
         examples=["95da4dd5-6e48-4c5b-bb91-935983c16d9c"]
     )
-    iterationID: UUIDString = Field(
+    iterationID: UUIDString = Field(  # noqa: N815
         ...,
         description="Iteration ID to update",
         json_schema_extra={"example": "43f418f6-3808-4e81-bf42-6e8d11def355"},
@@ -96,8 +96,8 @@ class DIDAppendRequest(BaseModel):
 class AppendDIDResponse(BaseModel):
     """Response model for append-did endpoint."""
     status: str
-    benchmarkExecutionID: str
-    iterationID: str
+    benchmarkExecutionID: str  # noqa: N815
+    iterationID: str  # noqa: N815
     did: str
     previous_did: str | None
     version: int
@@ -348,7 +348,7 @@ async def append_did(
 
 
 @app.get("/epdw/did.json")
-async def epdw_DID(did_svc: DIDServiceDep):
+async def epdw_did(did_svc: DIDServiceDep):
     """Return the DID document that corresponds to the EPDW division.
 
     This DID document contains the keys that are used to verify digital artefacts

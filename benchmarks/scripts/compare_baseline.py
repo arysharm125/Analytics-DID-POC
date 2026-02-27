@@ -111,10 +111,7 @@ def compare_endpoint(
         baseline_value = baseline_stats.get(metric, 0)
         current_value = current_stats.get(metric, 0)
 
-        if baseline_value == 0:
-            change_pct = 0.0
-        else:
-            change_pct = (current_value - baseline_value) / baseline_value
+        change_pct = 0.0 if baseline_value == 0 else (current_value - baseline_value) / baseline_value
 
         is_regression = change_pct > threshold
 

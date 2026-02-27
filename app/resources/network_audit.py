@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 
-class colors:
+class Colors:
     WARNING = '\033[91m'
     INFO = '\033[94m'
     HEADER = '\033[95m'
@@ -20,7 +20,7 @@ def check_dependencies():
     missing_tools = [tool for tool in required_tools if not shutil.which(tool)]
     if missing_tools:
         # This shouldn't happen if the wrapper bash script did its job
-        print(f"{colors.WARNING}Error: Missing required tools: {', '.join(missing_tools)}.{colors.ENDC}", file=sys.stderr)
+        print(f"{Colors.WARNING}Error: Missing required tools: {', '.join(missing_tools)}.{Colors.ENDC}", file=sys.stderr)
         sys.exit(1)
 
 def run_command(command, timeout=10):
@@ -53,11 +53,13 @@ def get_nic_data():
 
             vendor = "N/A"
             if os.path.exists(vendor_path):
-                with open(vendor_path) as f: vendor = f.read().strip()
+                with open(vendor_path) as f:
+                    vendor = f.read().strip()
 
             model = "N/A"
             if os.path.exists(device_id_path):
-                with open(device_id_path) as f: model = f.read().strip()
+                with open(device_id_path) as f:
+                    model = f.read().strip()
 
             # Get max speed / capacity (best effort)
             capacity_path = f'/sys/class/net/{interface}/speed'
@@ -66,8 +68,10 @@ def get_nic_data():
                 try:
                     with open(capacity_path) as f:
                         speed = int(f.read().strip())
-                        if speed > 0: max_speed_str = f"{speed} Gbit/s" if speed >= 1000 else f"{speed} Mbit/s"
-                except: pass
+                        if speed > 0:
+                            max_speed_str = f"{speed} Gbit/s" if speed >= 1000 else f"{speed} Mbit/s"
+                except Exception:
+                    pass
 
             physical_nics[bus_info] = {
                 'oem': vendor,
@@ -118,7 +122,8 @@ def get_metadata():
         try:
             with open(turbo_path) as f:
                 metadata['turbo_status'] = "Enabled" if f.read().strip() == "1" else "Disabled"
-        except: metadata['turbo_status'] = "N/A"
+        except Exception:
+            metadata['turbo_status'] = "N/A"
     else:
         metadata['turbo_status'] = "N/A"
 
@@ -138,9 +143,12 @@ def get_metadata():
             try:
                 with open(file_path) as f:
                     val = f.read().strip()
-                    if dmi_file == 'product_name': metadata[meta_key] = val
-                    else: bios_info[dmi_file.replace('bios_', '')] = val
-            except: pass
+                    if dmi_file == 'product_name':
+                        metadata[meta_key] = val
+                    else:
+                        bios_info[dmi_file.replace('bios_', '')] = val
+            except Exception:
+                pass
 
     # Fallback for bios_info if /sys fails
     if not bios_info:
@@ -199,11 +207,10 @@ def get_metadata():
 
 def main():
     # Root check (Linux/Unix only)
-    if hasattr(os, "geteuid"):
-        if os.geteuid() != 0:
-            print("This script must be run as root.", file=sys.stderr)
-            print(json.dumps({"error": "Script not run as root"}))
-            sys.exit(1)
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        print("This script must be run as root.", file=sys.stderr)
+        print(json.dumps({"error": "Script not run as root"}))
+        sys.exit(1)
 
     try:
         check_dependencies()

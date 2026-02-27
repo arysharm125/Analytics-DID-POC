@@ -73,7 +73,7 @@ class MockKVv2:
             return stored
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in secret file {secret_path}: {e}")
-            raise hvac.exceptions.InvalidPath(f"Corrupted secret at {mount_point}/{path}")
+            raise hvac.exceptions.InvalidPath(f"Corrupted secret at {mount_point}/{path}") from e
 
     def create_or_update_secret(
         self,
@@ -159,7 +159,7 @@ class MockKVv2:
                         keys.append(entry.name + "/")
         except PermissionError as e:
             logger.error(f"Permission denied listing {list_dir}: {e}")
-            raise hvac.exceptions.InvalidPath(f"Cannot list {mount_point}/{path}")
+            raise hvac.exceptions.InvalidPath(f"Cannot list {mount_point}/{path}") from e
 
         return {
             "data": {"keys": sorted(keys)},

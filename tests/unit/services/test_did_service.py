@@ -27,7 +27,7 @@ from app.services.did_service import (
 from app.services.exceptions import (
     ArtefactNoChangesError,
     ArtefactNotFoundError,
-    DivisionKeysNotFound,
+    DivisionKeysNotFoundError,
     DivisionMismatchError,
     ProvenanceNotFoundError,
     SigningKeyNotAvailableError,
@@ -1199,7 +1199,7 @@ class TestGetArtefactOverview:
             )
         )
 
-        artefact, latest = did_service.get_artefact_overview(created.version_uid)
+        artefact, _latest = did_service.get_artefact_overview(created.version_uid)
         assert artefact["version_uid"] == created.version_uid
         assert artefact["version"] == 1
 
@@ -1248,7 +1248,7 @@ class TestGetArtefactOverview:
             ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2")
         )
 
-        artefact, latest = did_service.get_artefact_overview(v1.version_uid)
+        artefact, _latest = did_service.get_artefact_overview(v1.version_uid)
         assert artefact["version"] == 1
 
     def test_overview_by_external_uid(self, did_service_no_migrations):
@@ -1263,7 +1263,7 @@ class TestGetArtefactOverview:
             ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2")
         )
 
-        artefact, latest = did_service.get_artefact_overview(external_uid)
+        artefact, _latest = did_service.get_artefact_overview(external_uid)
         assert artefact["version"] == 2
 
     def test_overview_not_found_raises(self, did_service_no_migrations):
@@ -1488,12 +1488,12 @@ class TestFetchDivisionPubKeys:
         assert "public_key_multibase" in keys[0]
 
     def test_fetch_missing_keys_raises(self, did_service_no_migrations, vault_service):
-        """Fetching missing keys should raise DivisionKeysNotFound."""
+        """Fetching missing keys should raise DivisionKeysNotFoundError."""
         did_service = did_service_no_migrations
         # Clear vault
         vault_service._client.clear()
 
-        with pytest.raises(DivisionKeysNotFound) as exc:
+        with pytest.raises(DivisionKeysNotFoundError) as exc:
             did_service._fetch_division_pub_keys("nonexistent")
         assert "nonexistent" in str(exc.value)
 
@@ -1528,7 +1528,7 @@ class TestGetActiveSigningKeyFragment:
         did_service = did_service_no_migrations
         vault_service._client.clear()
 
-        with pytest.raises(DivisionKeysNotFound):
+        with pytest.raises(DivisionKeysNotFoundError):
             did_service._get_active_signing_key_fragment("nonexistent")
 
 
@@ -1589,11 +1589,11 @@ class TestDivisionDidDoc:
         assert all(ref.startswith("did:web:did.amd.com:epdw#") for ref in did_doc["assertionMethod"])
 
     def test_missing_keys_raises(self, did_service_no_migrations, vault_service):
-        """Division with no keys should raise DivisionKeysNotFound."""
+        """Division with no keys should raise DivisionKeysNotFoundError."""
         did_service = did_service_no_migrations
         vault_service._client.clear()
 
-        with pytest.raises(DivisionKeysNotFound):
+        with pytest.raises(DivisionKeysNotFoundError):
             did_service.division_did_doc("nonexistent")
 
 
@@ -2086,7 +2086,7 @@ class TestRegenerateAndVerifyVc:
         did_service.issue_artefact_vc("epdw", artefact.version_uid)
 
         # Regenerate
-        regenerated_vc, matches = did_service.regenerate_and_verify_vc(artefact.version_uid)
+        _regenerated_vc, matches = did_service.regenerate_and_verify_vc(artefact.version_uid)
 
         assert matches is True
 
@@ -2124,7 +2124,7 @@ class TestRegenerateAndVerifyVc:
         )
 
         # Regenerate and verify - should detect mismatch
-        regenerated_vc, matches = did_service.regenerate_and_verify_vc(artefact.version_uid)
+        _regenerated_vc, matches = did_service.regenerate_and_verify_vc(artefact.version_uid)
 
         assert matches is False
 
