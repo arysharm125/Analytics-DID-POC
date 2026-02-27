@@ -155,6 +155,7 @@ class TestArtefactVCNquads:
                 didcheck_router=True,
                 debug_vc_nquads=False,  # Disabled
             ),
+            expose_error_details=True,
         )
 
         override_config(config_disabled)

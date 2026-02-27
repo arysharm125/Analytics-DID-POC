@@ -192,6 +192,7 @@ def test_config() -> AppConfig:
             didcheck_router=True,
             debug_vc_nquads=True,
         ),
+        expose_error_details=True,
     )
 
 
