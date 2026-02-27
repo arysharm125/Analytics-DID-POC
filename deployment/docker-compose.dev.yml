@@ -1,13 +1,17 @@
 # Docker compose file for use in DEV environment (no SSL/TLS).
 # Mounts the nginx reverse proxy to port 8092.
 
+networks:
+  default:
+    name: didsvc-dev
+
 services:
   api:
     container_name: didsvc-api
     build:
       context: ..
       dockerfile: deployment/Dockerfile
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log
     env_file:
       - ../.env
     restart: always

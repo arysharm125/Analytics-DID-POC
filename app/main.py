@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 
 from app.config import get_config
 from app.middlewares import exception_handler_middleware, http_exception_handler
+from app.request_id import AccessLogMiddleware, RequestIdFilter, RequestIdMiddleware
 
 # from app.routers.policy import router as policy_router
 from app.routers.advisory_router import router as advisory_router
@@ -22,6 +23,13 @@ from app.version import VERSION
 # Logging
 # ==========================
 logging.config.fileConfig("deployment/logging.ini", disable_existing_loggers=False)
+
+# Apply RequestIdFilter to all handlers programmatically
+# This ensures all loggers (including uvicorn) have the filter
+request_id_filter = RequestIdFilter()
+for handler in logging.root.handlers:
+    handler.addFilter(request_id_filter)
+
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logger = logging.getLogger("deployment")
@@ -33,16 +41,68 @@ logger = logging.getLogger("deployment")
 
 @asynccontextmanager
 async def _app_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-  """App lifespan generator. Controls the lifetime of global/singleton objects."""
+  """App lifespan generator with startup validation and graceful shutdown."""
   async with AsyncExitStack() as stack:
+    # === STARTUP VALIDATION ===
+    logger.info("Starting application - validating dependencies...")
+
+    # 1. Validate vault connectivity
+    try:
+      from app.routers.dependencies import get_vault
+      get_vault()
+      # Vault is initialized - test basic connectivity
+      logger.info("✓ Vault connection established")
+    except Exception as e:
+      logger.critical(f"✗ Vault connection failed: {e}")
+      raise RuntimeError("Failed to connect to vault - aborting startup") from e
+
+    # 2. Validate database connectivity
+    try:
+      from app.routers.dependencies import get_db
+      db = get_db()
+      if db.client is not None:
+        db.client.admin.command("ping")
+        logger.info("✓ MongoDB connection established")
+      else:
+        raise RuntimeError("MongoDB client is None")
+    except Exception as e:
+      logger.critical(f"✗ MongoDB connection failed: {e}")
+      raise RuntimeError("Failed to connect to MongoDB - aborting startup") from e
+
+    # 3. Run migrations and other initialization
     await startup_did_router()
     await stack.enter_async_context(did_service_lifespan())
+
+    logger.info("Application startup complete")
 
     # Add additional lifespans above this point.
     yield
 
+    # === GRACEFUL SHUTDOWN ===
+    logger.info("Shutting down application...")
+
+    # Close database connections
+    try:
+      from app.routers.dependencies import _db_connector
+      if _db_connector and _db_connector.client:
+        _db_connector.close_connection()
+        logger.info("✓ MongoDB connection closed")
+    except Exception as e:
+      logger.warning(f"Error closing MongoDB connection: {e}")
+
+    logger.info("Application shutdown complete")
+
 
 app = FastAPI(docs_url=None, redoc_url=None, lifespan=_app_lifespan, version=VERSION)
+
+# ==========================
+# Middleware
+# ==========================
+# Access logging middleware (must be first to wrap entire request/response cycle)
+app.add_middleware(AccessLogMiddleware)
+
+# Request ID middleware (must be early to ensure all logs have request_id)
+app.add_middleware(RequestIdMiddleware)
 
 # ==========================
 # Exception Handling

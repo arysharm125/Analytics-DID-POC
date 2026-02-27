@@ -89,4 +89,4 @@ USER appuser
 
 EXPOSE 45603
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "45603", "--log-level", "info", "--access-log"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "45603", "--log-level", "info", "--no-access-log"]
