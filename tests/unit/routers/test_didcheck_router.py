@@ -3,6 +3,8 @@
 Tests the generic DID router endpoints including the debug VC N-Quads endpoint.
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -393,3 +395,227 @@ class TestArtefactVersions:
         )
 
         assert response.status_code == 422
+
+
+# =============================================================================
+# Test Artefact Descendants Endpoint
+# =============================================================================
+
+
+class TestArtefactDescendants:
+    """Tests for the /{uid}/descendants endpoint."""
+
+    @pytest.fixture
+    def parent_with_descendants(self, did_service_no_migrations, sample_uuid, sample_multihash):
+        """Create a parent artefact with multiple descendants."""
+        from app.services.did_service import ArtefactInput
+
+        # Create parent
+        parent = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash=sample_multihash,
+                artefact_type="report",
+            )
+        )
+
+        # Create multiple descendants (omit artefact_hash to avoid invalid multihash)
+        descendants = []
+        for i in range(5):
+            desc = did_service_no_migrations.upsert_artefact(
+                ArtefactInput(
+                    external_uid=f"95da4dd5-6e48-{i:04d}-bb91-000000000100",
+                    division="epdw",
+                    artefact_metadata={"index": i},
+                    artefact_type="benchmark",
+                    provenance=[parent.version_uid],
+                    created_at=datetime(2026, 2, i+1, 12, 0, 0, tzinfo=timezone.utc),
+                )
+            )
+            descendants.append(desc)
+
+        return {
+            "parent_uid": parent.version_uid,
+            "parent_external_uid": parent.external_uid,
+            "descendants": descendants,
+        }
+
+    @pytest.fixture
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+        """Create a test client with DIDService dependency override and auth headers."""
+        set_did_service_dependency(did_service_no_migrations)
+        vault_service.ensure_division_signing_key("epdw")
+        client = TestClient(app)
+        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+
+    def test_returns_descendants_for_existing_artefact(
+        self, client_with_service, parent_with_descendants
+    ):
+        """Endpoint should return descendants when they exist."""
+        response = client_with_service.get(
+            f"/didcheck/{parent_with_descendants['parent_uid']}/descendants"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["root_uid"] == parent_with_descendants["parent_uid"]
+        assert len(data["descendants"]) == 5
+        assert data["total_count"] == 5
+
+    def test_pagination_parameters_work(
+        self, client_with_service, parent_with_descendants
+    ):
+        """Endpoint should respect page and page_size parameters."""
+        response = client_with_service.get(
+            f"/didcheck/{parent_with_descendants['parent_uid']}/descendants?page=1&page_size=2"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["page"] == 1
+        assert data["page_size"] == 2
+        assert len(data["descendants"]) == 2
+        assert data["total_count"] == 5
+        assert data["has_more"] is True
+
+    def test_default_pagination_values(
+        self, client_with_service, parent_with_descendants
+    ):
+        """Endpoint should use default pagination values when not specified."""
+        response = client_with_service.get(
+            f"/didcheck/{parent_with_descendants['parent_uid']}/descendants"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["page"] == 1
+        assert data["page_size"] == 20
+
+    def test_descendant_info_contains_required_fields(
+        self, client_with_service, parent_with_descendants
+    ):
+        """Each descendant should contain all required fields."""
+        response = client_with_service.get(
+            f"/didcheck/{parent_with_descendants['parent_uid']}/descendants"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        for descendant in data["descendants"]:
+            assert "uid" in descendant
+            assert "external_uid" in descendant
+            assert "division" in descendant
+            assert "version" in descendant
+            assert "creation_date" in descendant
+            # artefact_type is optional
+            assert isinstance(descendant["version"], int)
+
+    def test_returns_empty_when_no_descendants(
+        self, client_with_service, did_service_no_migrations, sample_uuid_2
+    ):
+        """Endpoint should return empty list when artefact has no descendants."""
+        from app.services.did_service import ArtefactInput
+
+        # Create artefact with no descendants
+        artefact = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid_2,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        response = client_with_service.get(f"/didcheck/{artefact.version_uid}/descendants")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["descendants"] == []
+        assert data["total_count"] == 0
+        assert data["has_more"] is False
+
+    def test_returns_404_when_artefact_not_found(
+        self, client_with_service, sample_uuid_2
+    ):
+        """Endpoint should return 404 for non-existent artefact."""
+        response = client_with_service.get(f"/didcheck/{sample_uuid_2}/descendants")
+
+        assert response.status_code == 404
+
+    def test_returns_401_with_wrong_token(
+        self, client_with_service, parent_with_descendants
+    ):
+        """Endpoint should return 401 when provided with an invalid token."""
+        response = client_with_service.get(
+            f"/didcheck/{parent_with_descendants['parent_uid']}/descendants",
+            headers={"X-API-Token": "wrong-token"}
+        )
+
+        assert response.status_code == 401
+
+    def test_returns_422_with_missing_token(
+        self, client_with_service, parent_with_descendants
+    ):
+        """Endpoint should return 422 when authentication token is missing."""
+        response = client_with_service.raw.get(
+            f"/didcheck/{parent_with_descendants['parent_uid']}/descendants"
+        )
+
+        assert response.status_code == 422
+
+    def test_page_size_max_enforced(
+        self, client_with_service, parent_with_descendants
+    ):
+        """Endpoint should reject page_size > 100."""
+        response = client_with_service.get(
+            f"/didcheck/{parent_with_descendants['parent_uid']}/descendants?page_size=101"
+        )
+
+        assert response.status_code == 422
+        assert "Page size must be between 1 and 100" in response.json()["detail"]
+
+    def test_page_minimum_enforced(
+        self, client_with_service, parent_with_descendants
+    ):
+        """Endpoint should reject page < 1."""
+        response = client_with_service.get(
+            f"/didcheck/{parent_with_descendants['parent_uid']}/descendants?page=0"
+        )
+
+        assert response.status_code == 422
+        assert "Page must be >= 1" in response.json()["detail"]
+
+    def test_descendants_sorted_by_creation_date(
+        self, client_with_service, parent_with_descendants
+    ):
+        """Descendants should be sorted by creation date (newest first)."""
+        response = client_with_service.get(
+            f"/didcheck/{parent_with_descendants['parent_uid']}/descendants"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Descendants should be sorted newest first
+        # Created with dates 2026-02-05, 04, 03, 02, 01
+        dates = [d["creation_date"] for d in data["descendants"]]
+        # Verify they're in descending order
+        assert dates == sorted(dates, reverse=True)
+
+    def test_works_with_external_uid(
+        self, client_with_service, parent_with_descendants
+    ):
+        """Endpoint should work with external_uid as well as version_uid."""
+        response = client_with_service.get(
+            f"/didcheck/{parent_with_descendants['parent_external_uid']}/descendants"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total_count"] == 5

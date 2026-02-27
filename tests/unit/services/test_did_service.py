@@ -792,6 +792,395 @@ class TestGetDescendants:
         assert descendants == []
 
 
+class TestGetDescendantsPaginated:
+    """Tests for get_descendants_paginated method."""
+
+    def test_returns_empty_for_no_descendants(self, did_service_no_migrations):
+        """Artefact with no descendants should return empty result."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+
+        result = did_service.get_descendants_paginated(parent.version_uid)
+
+        assert result.root_uid == parent.version_uid
+        assert result.descendants == []
+        assert result.total_count == 0
+        assert result.page == 1
+        assert result.page_size == 20
+        assert result.has_more is False
+
+    def test_returns_descendants_with_correct_structure(self, did_service_no_migrations):
+        """Descendants should have correct DescendantNode structure."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+        child = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000002",
+                division="advisory",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Chi1d1",
+                artefact_type="report",
+                provenance=[parent.version_uid],
+            )
+        )
+
+        result = did_service.get_descendants_paginated(parent.version_uid)
+
+        assert len(result.descendants) == 1
+        desc = result.descendants[0]
+        assert desc.uid == child.version_uid
+        assert desc.external_uid == child.external_uid
+        assert desc.division == "advisory"
+        assert desc.artefact_type == "report"
+        assert desc.version == 1
+        # MongoDB stores timestamps with millisecond precision (not microseconds)
+        # Compare timestamps to millisecond precision
+        desc_ms = desc.creation_date.replace(microsecond=desc.creation_date.microsecond // 1000 * 1000, tzinfo=None)
+        child_ms = child.created_at.replace(microsecond=child.created_at.microsecond // 1000 * 1000, tzinfo=None)
+        assert desc_ms == child_ms
+
+    def test_pagination_first_page(self, did_service_no_migrations):
+        """First page should return correct items."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+
+        # Create 25 descendants (omit artefact_hash to avoid invalid multihash)
+        for i in range(25):
+            did_service.upsert_artefact(
+                ArtefactInput(
+                    external_uid=f"95da4dd5-6e48-{i:04d}-bb91-000000000100",
+                    division="epdw",
+                    artefact_metadata={"index": i},
+                    provenance=[parent.version_uid],
+                )
+            )
+
+        result = did_service.get_descendants_paginated(parent.version_uid, page=1, page_size=20)
+
+        assert len(result.descendants) == 20
+        assert result.total_count == 25
+        assert result.page == 1
+        assert result.page_size == 20
+        assert result.has_more is True
+
+    def test_pagination_subsequent_pages(self, did_service_no_migrations):
+        """Subsequent pages should return remaining items."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+
+        # Create 25 descendants
+        for i in range(25):
+            did_service.upsert_artefact(
+                ArtefactInput(
+                    external_uid=f"95da4dd5-6e48-{i:04d}-bb91-000000000100",
+                    division="epdw",
+                    artefact_metadata={"index": i},
+                    provenance=[parent.version_uid],
+                )
+            )
+
+        result = did_service.get_descendants_paginated(parent.version_uid, page=2, page_size=20)
+
+        assert len(result.descendants) == 5  # 25 - 20 = 5 remaining
+        assert result.total_count == 25
+        assert result.page == 2
+        assert result.has_more is False
+
+    def test_pagination_last_page_has_more_false(self, did_service_no_migrations):
+        """Last page should have has_more=False."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+
+        # Create exactly 20 descendants
+        for i in range(20):
+            did_service.upsert_artefact(
+                ArtefactInput(
+                    external_uid=f"95da4dd5-6e48-{i:04d}-bb91-000000000100",
+                    division="epdw",
+                    artefact_metadata={"index": i},
+                    provenance=[parent.version_uid],
+                )
+            )
+
+        result = did_service.get_descendants_paginated(parent.version_uid, page=1, page_size=20)
+
+        assert len(result.descendants) == 20
+        assert result.total_count == 20
+        assert result.has_more is False
+
+    def test_returns_only_latest_version_of_each_descendant(self, did_service_no_migrations):
+        """Should return only the latest version of each descendant."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+
+        # Create child with multiple versions
+        child_external_uid = "95da4dd5-6e48-0000-bb91-000000000002"
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=child_external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Chi1d1",
+                provenance=[parent.version_uid],
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=child_external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Chi1d2",
+                provenance=[parent.version_uid],
+            )
+        )
+        v3 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=child_external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Chi1d3",
+                provenance=[parent.version_uid],
+            )
+        )
+
+        result = did_service.get_descendants_paginated(parent.version_uid)
+
+        # Should return only 1 descendant (the latest version)
+        assert len(result.descendants) == 1
+        assert result.total_count == 1
+        assert result.descendants[0].uid == v3.version_uid
+        assert result.descendants[0].version == 3
+
+    def test_respects_page_size_limit(self, did_service_no_migrations):
+        """Custom page_size should be respected."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+
+        # Create 15 descendants
+        for i in range(15):
+            did_service.upsert_artefact(
+                ArtefactInput(
+                    external_uid=f"95da4dd5-6e48-{i:04d}-bb91-000000000100",
+                    division="epdw",
+                    artefact_metadata={"index": i},
+                    provenance=[parent.version_uid],
+                )
+            )
+
+        result = did_service.get_descendants_paginated(parent.version_uid, page=1, page_size=5)
+
+        assert len(result.descendants) == 5
+        assert result.total_count == 15
+        assert result.page_size == 5
+        assert result.has_more is True
+
+    def test_total_count_is_accurate(self, did_service_no_migrations):
+        """Total count should reflect all descendants across pages."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+
+        # Create 42 descendants
+        for i in range(42):
+            did_service.upsert_artefact(
+                ArtefactInput(
+                    external_uid=f"95da4dd5-6e48-{i:04d}-bb91-000000000100",
+                    division="epdw",
+                    artefact_metadata={"index": i},
+                    provenance=[parent.version_uid],
+                )
+            )
+
+        # Check first page
+        result_p1 = did_service.get_descendants_paginated(parent.version_uid, page=1, page_size=20)
+        assert result_p1.total_count == 42
+
+        # Check second page - total should be same
+        result_p2 = did_service.get_descendants_paginated(parent.version_uid, page=2, page_size=20)
+        assert result_p2.total_count == 42
+
+    def test_sorted_by_creation_date_newest_first(self, did_service_no_migrations):
+        """Descendants should be sorted by creation date (newest first)."""
+        from datetime import timezone
+
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+
+        # Create descendants with specific creation dates
+        child1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000002",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Chi1d1",
+                provenance=[parent.version_uid],
+                created_at=datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            )
+        )
+        child2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000003",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Chi1d2",
+                provenance=[parent.version_uid],
+                created_at=datetime(2026, 3, 1, 12, 0, 0, tzinfo=timezone.utc),  # Newest
+            )
+        )
+        child3 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000004",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Chi1d3",
+                provenance=[parent.version_uid],
+                created_at=datetime(2026, 2, 1, 12, 0, 0, tzinfo=timezone.utc),
+            )
+        )
+
+        result = did_service.get_descendants_paginated(parent.version_uid)
+
+        # Should be sorted newest first: child2, child3, child1
+        assert len(result.descendants) == 3
+        assert result.descendants[0].external_uid == child2.external_uid
+        assert result.descendants[1].external_uid == child3.external_uid
+        assert result.descendants[2].external_uid == child1.external_uid
+
+    def test_not_found_raises_artefact_not_found_error(self, did_service_no_migrations):
+        """Non-existent artefact should raise ArtefactNotFoundError."""
+        did_service = did_service_no_migrations
+
+        with pytest.raises(ArtefactNotFoundError):
+            did_service.get_descendants_paginated("nonexistent-uuid")
+
+    def test_custom_page_size(self, did_service_no_migrations):
+        """Custom page_size parameter should work."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+
+        # Create 30 descendants
+        for i in range(30):
+            did_service.upsert_artefact(
+                ArtefactInput(
+                    external_uid=f"95da4dd5-6e48-{i:04d}-bb91-000000000100",
+                    division="epdw",
+                    artefact_metadata={"index": i},
+                    provenance=[parent.version_uid],
+                )
+            )
+
+        result = did_service.get_descendants_paginated(parent.version_uid, page=1, page_size=10)
+
+        assert len(result.descendants) == 10
+        assert result.total_count == 30
+        assert result.page_size == 10
+        assert result.has_more is True
+
+    def test_finds_descendants_by_external_uid(self, did_service_no_migrations):
+        """Finding descendants by external_uid should work."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+        child = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000002",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Chi1d1",
+                provenance=[parent.external_uid],  # Using external_uid
+            )
+        )
+
+        result = did_service.get_descendants_paginated(parent.external_uid)
+
+        assert len(result.descendants) == 1
+        assert result.descendants[0].external_uid == child.external_uid
+
+    def test_page_beyond_results_returns_empty(self, did_service_no_migrations):
+        """Requesting page beyond available results should return empty."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+
+        # Create 5 descendants
+        for i in range(5):
+            did_service.upsert_artefact(
+                ArtefactInput(
+                    external_uid=f"95da4dd5-6e48-{i:04d}-bb91-000000000100",
+                    division="epdw",
+                    artefact_metadata={"index": i},
+                    provenance=[parent.version_uid],
+                )
+            )
+
+        result = did_service.get_descendants_paginated(parent.version_uid, page=10, page_size=20)
+
+        assert len(result.descendants) == 0
+        assert result.total_count == 5
+        assert result.has_more is False
+
+
 # =============================================================================
 # Artefact Overview & Provenance Tree Tests
 # =============================================================================

@@ -238,6 +238,74 @@ class ArtefactVersionsResponse(BaseModel):
     )
 
 
+class DescendantInfo(BaseModel):
+    """Information about a single descendant artefact."""
+
+    uid: UUIDString = Field(
+        ...,
+        description="Version UID of the descendant",
+        examples=["d9ff5c91-a85h-6hc1-a6dc-2289885h4d26"],
+    )
+    external_uid: UUIDString = Field(
+        ...,
+        description="External UID of the descendant",
+        examples=[_example_random_uuid],
+    )
+    division: DivisionStr = Field(
+        ...,
+        description="Division of the descendant",
+        examples=["advisory", "epdw"],
+    )
+    artefact_type: Optional[ArtefactTypeStr] = Field(
+        default=None,
+        description="Artefact type of the descendant",
+        examples=["report", "benchmark"],
+    )
+    version: int = Field(
+        ...,
+        description="Version number of the descendant",
+        examples=[1, 2, 3],
+    )
+    creation_date: datetime = Field(
+        ...,
+        description="When this descendant version was created",
+    )
+
+
+class DescendantsResponse(BaseModel):
+    """Response model for descendants endpoint with pagination."""
+
+    root_uid: UUIDString = Field(
+        ...,
+        description="The UID that was queried for descendants",
+        examples=[_example_random_uuid],
+    )
+    descendants: list[DescendantInfo] = Field(
+        ...,
+        description="List of descendant artefacts for this page",
+    )
+    total_count: int = Field(
+        ...,
+        description="Total number of descendants across all pages",
+        examples=[42, 150],
+    )
+    page: int = Field(
+        ...,
+        description="Current page number (1-indexed)",
+        examples=[1, 2, 3],
+    )
+    page_size: int = Field(
+        ...,
+        description="Number of items per page",
+        examples=[20, 50],
+    )
+    has_more: bool = Field(
+        ...,
+        description="Whether there are more pages available",
+        examples=[True, False],
+    )
+
+
 class DIDOverviewResponse(BaseModel):
     """Response model for DID overview endpoint."""
 
@@ -457,6 +525,67 @@ def artefact_versions(
     return ArtefactVersionsResponse(
         external_uid=external_uid,
         versions=version_infos,
+    )
+
+
+@app.get(
+    "/{uid}/descendants",
+    responses={**APITokenDep401Response, **NotFoundResponse},
+)
+def artefact_descendants(
+    uid: PathUUID,
+    api_token: DIDCheckTokenDep,
+    did_svc: DIDServiceDep,
+    page: int = 1,
+    page_size: int = 20,
+) -> DescendantsResponse:
+    """Return paginated descendants of a digital artefact.
+
+    Returns artefacts that have this UID in their provenance (i.e., objects
+    derived from this artefact). Only the latest version of each descendant
+    is returned, sorted by creation date (newest first).
+
+    Args:
+        uid: The artefact's version_uid or external_uid
+        page: Page number (1-indexed, default: 1)
+        page_size: Number of items per page (1-100, default: 20)
+
+    Returns:
+        DescendantsResponse with paginated list of descendants and metadata
+    """
+    # Validate pagination parameters
+    if page < 1:
+        raise HTTPException(status_code=422, detail="Page must be >= 1")
+    if page_size < 1 or page_size > 100:
+        raise HTTPException(status_code=422, detail="Page size must be between 1 and 100")
+
+    # Get paginated descendants from service
+    result = did_svc.get_descendants_paginated(
+        uid=uid,
+        page=page,
+        page_size=page_size,
+    )
+
+    # Convert DescendantNode dataclasses to Pydantic models
+    descendant_infos = [
+        DescendantInfo(
+            uid=desc.uid,
+            external_uid=desc.external_uid,
+            division=desc.division,
+            artefact_type=desc.artefact_type,
+            version=desc.version,
+            creation_date=desc.creation_date,
+        )
+        for desc in result.descendants
+    ]
+
+    return DescendantsResponse(
+        root_uid=result.root_uid,
+        descendants=descendant_infos,
+        total_count=result.total_count,
+        page=result.page,
+        page_size=result.page_size,
+        has_more=result.has_more,
     )
 
 

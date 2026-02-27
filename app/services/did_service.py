@@ -112,6 +112,46 @@ class ProvenanceNode:
 
 
 @dataclass
+class DescendantNode:
+    """Represents a descendant artefact.
+
+    Attributes:
+        uid: The version_uid of the descendant
+        external_uid: The external_uid of the descendant
+        division: The division identifier of the descendant
+        artefact_type: The artefact type, if any
+        version: The version number
+        creation_date: When this version was created
+    """
+    uid: str
+    external_uid: str
+    division: str
+    artefact_type: Optional[str]
+    version: int
+    creation_date: datetime
+
+
+@dataclass
+class DescendantsResult:
+    """Paginated result for descendants query.
+
+    Attributes:
+        root_uid: The UID that was queried for descendants
+        descendants: List of descendant nodes for this page
+        total_count: Total number of descendants across all pages
+        page: Current page number (1-indexed)
+        page_size: Number of items per page
+        has_more: Whether there are more pages available
+    """
+    root_uid: str
+    descendants: list[DescendantNode]
+    total_count: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
+@dataclass
 class IssuedVCRecord:
     """Record of an issued VC stored in the database.
 
@@ -777,6 +817,105 @@ class DIDService:
         })
 
         return list(cursor)
+
+    def get_descendants_paginated(
+        self,
+        uid: CanonicalizedUUID,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> DescendantsResult:
+        """
+        Get paginated descendants of an artefact.
+
+        Returns only the latest version of each descendant artefact,
+        sorted by creation date (newest first).
+
+        Args:
+            uid: The canonicalized UUID to find descendants of (version_uid or external_uid)
+            page: Page number (1-indexed)
+            page_size: Number of items per page (max 100)
+
+        Returns:
+            DescendantsResult with paginated descendants and metadata
+
+        Raises:
+            ArtefactNotFoundError: If the root artefact is not found
+        """
+        collection = self.db.get_collection(self._artefacts_col_name)
+
+        # Find the artefact to get both version_uid and external_uid
+        artefact = self._find_artefact_by_uid(uid, collection)
+        if artefact is None:
+            raise ArtefactNotFoundError(uid=uid, division=None)
+
+        # Query for documents that reference either the version_uid or external_uid
+        # in their provenance array
+        uids_to_search = [artefact["version_uid"], artefact["external_uid"]]
+
+        # Use aggregation to get only the latest version of each descendant
+        # and paginate the results
+        pipeline = [
+            # Match documents that have this uid in provenance
+            {"$match": {"provenance": {"$in": uids_to_search}}},
+            # Sort by external_uid and version (for grouping)
+            {"$sort": {"external_uid": 1, "version": -1}},
+            # Group by external_uid and take the first (latest version)
+            {
+                "$group": {
+                    "_id": "$external_uid",
+                    "doc": {"$first": "$$ROOT"}
+                }
+            },
+            # Replace root with the document
+            {"$replaceRoot": {"newRoot": "$doc"}},
+            # Sort by creation date (newest first)
+            {"$sort": {"created_at": -1}},
+            # Add pagination metadata using $facet
+            {
+                "$facet": {
+                    "metadata": [{"$count": "total"}],
+                    "data": [
+                        {"$skip": (page - 1) * page_size},
+                        {"$limit": page_size}
+                    ]
+                }
+            }
+        ]
+
+        result = list(collection.aggregate(pipeline))
+
+        # Extract results from facet
+        if not result:
+            total_count = 0
+            descendants_docs = []
+        else:
+            metadata = result[0]["metadata"]
+            total_count = metadata[0]["total"] if metadata else 0
+            descendants_docs = result[0]["data"]
+
+        # Convert to DescendantNode objects
+        descendants = []
+        for doc in descendants_docs:
+            descendants.append(DescendantNode(
+                uid=doc["version_uid"],
+                external_uid=doc["external_uid"],
+                division=doc["division"],
+                artefact_type=doc.get("artefact_type"),
+                version=doc["version"],
+                creation_date=doc["created_at"],
+            ))
+
+        # Calculate has_more
+        has_more = (page * page_size) < total_count
+
+        return DescendantsResult(
+            root_uid=uid,
+            descendants=descendants,
+            total_count=total_count,
+            page=page,
+            page_size=page_size,
+            has_more=has_more,
+        )
 
     def find_by_external_uid(
         self, external_uid: UUIDString, division: DivisionStr | None = None

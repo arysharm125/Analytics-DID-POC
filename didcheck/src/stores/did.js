@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { fetchArtefactOverview, fetchVC, fetchArtefact as fetchArtefactApi, fetchProvenance as fetchProvenanceApi, fetchArtefactVersions as fetchArtefactVersionsApi } from '@/services/api'
+import { fetchArtefactOverview, fetchVC, fetchArtefact as fetchArtefactApi, fetchProvenance as fetchProvenanceApi, fetchArtefactVersions as fetchArtefactVersionsApi, fetchDescendants as fetchDescendantsApi } from '@/services/api'
 
 export const useDIDStore = defineStore('did', () => {
   // State
@@ -82,6 +82,18 @@ export const useDIDStore = defineStore('did', () => {
   }
 
   /**
+   * Fetch paginated descendants of an artefact for the given identifier
+   * @param {string} identifier - DID string or UID
+   * @param {Object} [options] - Optional query parameters
+   * @param {number} [options.page=1] - Page number (1-indexed)
+   * @param {number} [options.pageSize=20] - Items per page (1-100)
+   * @returns {Promise<Object>} The descendants response with descendants array and pagination metadata
+   */
+  async function fetchDescendants(identifier, options = {}) {
+    return await fetchDescendantsApi(identifier, options)
+  }
+
+  /**
    * Clear the current overview data
    */
   function clearCurrent() {
@@ -108,6 +120,7 @@ export const useDIDStore = defineStore('did', () => {
     fetchArtefact,
     fetchProvenance,
     fetchVersions,
+    fetchDescendants,
     clearCurrent,
     clearCache
   }

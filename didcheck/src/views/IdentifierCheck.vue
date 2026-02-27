@@ -26,6 +26,9 @@ const fetchingProvenance = ref(false)
 const fetchedProvenance = ref(null)
 const fetchingVersions = ref(false)
 const fetchedVersions = ref(null)
+const fetchingDescendants = ref(false)
+const fetchedDescendants = ref(null)
+const descendantsPage = ref(1)
 
 // Binary file verification state
 const selectedFile = ref(null)
@@ -182,6 +185,36 @@ const fetchVersionsData = async () => {
     error.value = err.message || 'Failed to fetch versions data'
   } finally {
     fetchingVersions.value = false
+  }
+}
+
+const fetchDescendantsData = async (page = 1) => {
+  if (!digitalArtefact.value?.version_uid) return
+
+  fetchingDescendants.value = true
+  descendantsPage.value = page
+  try {
+    const descendants = await didStore.fetchDescendants(digitalArtefact.value.version_uid, {
+      page: page,
+      pageSize: 20
+    })
+    fetchedDescendants.value = descendants
+  } catch (err) {
+    error.value = err.message || 'Failed to fetch descendants data'
+  } finally {
+    fetchingDescendants.value = false
+  }
+}
+
+const loadNextDescendantsPage = () => {
+  if (fetchedDescendants.value?.has_more) {
+    fetchDescendantsData(descendantsPage.value + 1)
+  }
+}
+
+const loadPreviousDescendantsPage = () => {
+  if (descendantsPage.value > 1) {
+    fetchDescendantsData(descendantsPage.value - 1)
   }
 }
 
@@ -693,6 +726,112 @@ watch(() => props.identifier, () => {
                   </tr>
                 </tbody>
               </v-table>
+            </v-card-text>
+          </v-card>
+
+          <!-- Descendants Card -->
+          <v-card class="mb-4">
+            <v-card-title class="d-flex align-center justify-space-between">
+              <div class="d-flex align-center">
+                <v-icon start>mdi-source-branch-sync</v-icon>
+                Descendants
+              </div>
+              <!-- Load Descendants button (before descendants are fetched) -->
+              <v-btn
+                v-if="!fetchedDescendants"
+                color="primary"
+                variant="elevated"
+                :loading="fetchingDescendants"
+                @click="fetchDescendantsData(1)"
+              >
+                <v-icon start>mdi-source-branch-sync</v-icon>
+                Load Descendants
+              </v-btn>
+            </v-card-title>
+
+            <!-- Descendants list (shown after fetch) -->
+            <v-card-text v-if="fetchedDescendants">
+              <!-- No descendants message -->
+              <div v-if="fetchedDescendants.total_count === 0" class="text-grey text-center py-4">
+                No descendants found for this artefact.
+              </div>
+
+              <!-- Descendants table -->
+              <template v-else>
+                <!-- Pagination info -->
+                <div class="d-flex align-center justify-space-between mb-3 text-body-2 text-grey">
+                  <div>
+                    Showing {{ fetchedDescendants.descendants.length }} of {{ fetchedDescendants.total_count }} descendant{{ fetchedDescendants.total_count !== 1 ? 's' : '' }}
+                  </div>
+                  <div v-if="fetchedDescendants.total_count > fetchedDescendants.page_size">
+                    Page {{ fetchedDescendants.page }}
+                  </div>
+                </div>
+
+                <v-table density="compact">
+                  <thead>
+                    <tr>
+                      <th>Division</th>
+                      <th>Type</th>
+                      <th>Version</th>
+                      <th>Creation Date</th>
+                      <th>External UID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="descendant in fetchedDescendants.descendants" :key="descendant.uid">
+                      <td>
+                        <v-chip size="x-small" variant="outlined">
+                          {{ descendant.division }}
+                        </v-chip>
+                      </td>
+                      <td>
+                        <v-chip
+                          v-if="descendant.artefact_type"
+                          size="x-small"
+                          color="primary"
+                          variant="outlined"
+                        >
+                          {{ descendant.artefact_type }}
+                        </v-chip>
+                        <span v-else class="text-grey">—</span>
+                      </td>
+                      <td class="font-weight-medium">v{{ descendant.version }}</td>
+                      <td>{{ new Date(descendant.creation_date).toLocaleDateString() }}</td>
+                      <td>
+                        <router-link
+                          :to="`/${descendant.external_uid}`"
+                          class="text-primary text-mono version-link"
+                        >
+                          {{ descendant.external_uid }}
+                        </router-link>
+                      </td>
+                    </tr>
+                  </tbody>
+                </v-table>
+
+                <!-- Pagination controls -->
+                <div v-if="fetchedDescendants.total_count > fetchedDescendants.page_size" class="d-flex justify-center mt-4">
+                  <v-btn
+                    :disabled="descendantsPage <= 1"
+                    variant="text"
+                    color="primary"
+                    @click="loadPreviousDescendantsPage"
+                  >
+                    <v-icon start>mdi-chevron-left</v-icon>
+                    Previous
+                  </v-btn>
+                  <v-btn
+                    :disabled="!fetchedDescendants.has_more"
+                    variant="text"
+                    color="primary"
+                    @click="loadNextDescendantsPage"
+                  >
+                    Next
+                    <v-icon end>mdi-chevron-right</v-icon>
+                  </v-btn>
+                </div>
+              </template>
             </v-card-text>
           </v-card>
         </template>

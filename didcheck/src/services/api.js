@@ -98,6 +98,27 @@ export async function fetchArtefactVersions(did_or_uid) {
 }
 
 /**
+ * Fetch paginated descendants of an artefact by DID or UID.
+ * @param {string} did_or_uid - The artefact identifier
+ * @param {Object} [options] - Optional query parameters
+ * @param {number} [options.page=1] - Page number (1-indexed)
+ * @param {number} [options.pageSize=20] - Items per page (1-100)
+ * @returns {Promise<Object>} The descendants response with descendants array and pagination metadata
+ */
+export async function fetchDescendants(did_or_uid, options = {}) {
+  const params = new URLSearchParams()
+  if (options.page !== undefined) {
+    params.append('page', options.page)
+  }
+  if (options.pageSize !== undefined) {
+    params.append('page_size', options.pageSize)
+  }
+  const queryString = params.toString()
+  const endpoint = `/didcheck/${encodeURIComponent(did_or_uid)}/descendants${queryString ? `?${queryString}` : ''}`
+  return request(endpoint)
+}
+
+/**
  * Check the status of a DID
  * @param {string} identifier - DID or UID
  * @returns {Promise<Object>} Status information
