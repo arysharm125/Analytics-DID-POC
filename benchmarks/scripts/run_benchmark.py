@@ -28,7 +28,7 @@ from app.version import full_version
 
 
 # Default test configuration
-DEFAULT_USERS = 50
+DEFAULT_USERS = 200
 DEFAULT_SPAWN_RATE = 10
 DEFAULT_DURATION = "5m"
 DEFAULT_HOST = "http://localhost:8432"

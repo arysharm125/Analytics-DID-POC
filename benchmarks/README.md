@@ -45,6 +45,9 @@ Access Locust web UI: http://localhost:8433
 # Install dependencies (if running outside Docker)
 pip install -r benchmarks/requirements.txt
 
+# Quick sanity check run.
+python benchmarks/scripts/run_benchmark.py --users 50 --duration 1m  --spawn-rate 5
+
 # Run with default settings (50 users, 5 minutes)
 python benchmarks/scripts/run_benchmark.py
 

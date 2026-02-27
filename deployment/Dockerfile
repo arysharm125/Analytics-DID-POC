@@ -72,6 +72,7 @@ RUN pip install --no-cache-dir /wheels/* \
 # Copy application code (allowlist approach)
 COPY app/ /app/app/
 COPY requirements.txt /app/
+COPY contexts/ /app/contexts/
 COPY deployment/logging.ini /app/deployment/
 
 # Copy generated version_metadata.py from build stage

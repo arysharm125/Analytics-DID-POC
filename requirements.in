@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pymongo
+hvac
+pynacl
+base58
+requests
+certifi
+urllib3==2.6.0
+pydantic==2.9.2
+python-dotenv
+pyld>=2.0.4
