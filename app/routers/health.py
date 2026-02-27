@@ -1,4 +1,4 @@
-from attr import dataclass
+from dataclasses import dataclass
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from app.services.vault import vault_is_authenticated

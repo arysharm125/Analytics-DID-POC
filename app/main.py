@@ -3,10 +3,11 @@ from typing import AsyncGenerator
 import logging
 import logging.config
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
 
 from app.config import get_config
+from app.middlewares import exception_handler_middleware, http_exception_handler
 from app.routers.dependencies import did_service_lifespan
 from app.version import VERSION
 
@@ -35,6 +36,12 @@ async def _app_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(docs_url=None, redoc_url=None, lifespan=_app_lifespan, version=VERSION)
+
+# ==========================
+# Exception Handling
+# ==========================
+app.exception_handler(HTTPException)(http_exception_handler)
+app.middleware("http")(exception_handler_middleware)
 
 # ==========================
 # Register Routers

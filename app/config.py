@@ -51,6 +51,7 @@ class AppConfig:
     tokens: TokenConfig
     collections: MongoCollectionConfig
     features: FeatureFlags
+    expose_error_details: bool
 
 
 def _load_config_from_env() -> AppConfig:
@@ -84,6 +85,7 @@ def _load_config_from_env() -> AppConfig:
             didcheck_router=bool(os.getenv("FEATURE_DIDCHECK_ROUTER", "")),
             debug_vc_nquads=bool(os.getenv("FEATURE_DEBUG_VC_NQUADS", "")),
         ),
+        expose_error_details=bool(os.getenv("EXPOSE_ERROR_DETAILS", "")),
     )
 
 

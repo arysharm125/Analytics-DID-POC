@@ -10,10 +10,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from attr import dataclass
+from dataclasses import dataclass
 from pyld import jsonld
 
-from app.routers.basetypes import DIDList, DIDOrUUIDList, DivisionStr, Multihash, UUIDString, did_from_uuid, did_list_from_uuid_list, division_did_from_division
+from app.routers.basetypes import DIDList, DivisionStr, Multihash, UUIDString, did_from_uuid, did_list_from_uuid_list, division_did_from_division
 
 
 # Mapping of context URLs to local JSON files
