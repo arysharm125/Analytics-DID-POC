@@ -1,7 +1,6 @@
 import subprocess
 from pathlib import Path
 
-
 VERSION = "1.1.0"
 
 def get_git_sha(short: bool = True) -> str:

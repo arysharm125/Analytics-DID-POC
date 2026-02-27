@@ -1,10 +1,11 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
-from datetime import datetime
+
 import gzip
 import json
 import logging
-from typing import Any, ClassVar, Optional, TYPE_CHECKING
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, ClassVar
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -12,14 +13,15 @@ from pymongo.errors import DuplicateKeyError
 
 from app.database import MigrationSet, MongoConnector
 from app.did_utils.comparisons import deep_equals
+from app.did_utils.eddsa import sign_vc
 from app.did_utils.jsonld import DigitalArtefactVCInput, generate_digital_artefact_vc
 from app.routers.basetypes import (
-    UUIDString,
+    ArtefactTypeStr,
+    CanonicalizedUUID,
     DIDOrUUIDList,
     DivisionStr,
-    CanonicalizedUUID,
     Multihash,
-    ArtefactTypeStr,
+    UUIDString,
     division_did_from_division,
     division_from_str,
 )
@@ -31,16 +33,11 @@ from app.services.exceptions import (
     ProvenanceNotFoundError,
     VersionConflictError,
 )
-from app.did_utils.eddsa import sign_vc
 from app.services.vault_service import (
-    VaultService,
     DivisionPublicKeysNotFoundError,
     SigningKeyNotFoundError,
+    VaultService,
 )
-
-if TYPE_CHECKING:
-    pass
-
 
 # =============================================================================
 # Logging
@@ -64,16 +61,16 @@ class ArtefactInput(BaseModel):
         description="UUID identifying the artefact across versions"
     )
     division: DivisionStr = Field(..., description="Division identifier")
-    artefact_hash: Optional[Multihash] = Field(default=None, description="Multihash identifying artefact content")
-    artefact_metadata: Optional[Any] = Field(default=None, description="Optional JSON metadata for the artefact")
-    artefact_type: Optional[ArtefactTypeStr] = Field(default=None, description="Optional artefact type identifier")
-    backlink: Optional[str] = Field(default=None, description="Optional URL back to the object in the originating system")
-    provenance: Optional[DIDOrUUIDList] = Field(
+    artefact_hash: Multihash | None = Field(default=None, description="Multihash identifying artefact content")
+    artefact_metadata: Any | None = Field(default=None, description="Optional JSON metadata for the artefact")
+    artefact_type: ArtefactTypeStr | None = Field(default=None, description="Optional artefact type identifier")
+    backlink: str | None = Field(default=None, description="Optional URL back to the object in the originating system")
+    provenance: DIDOrUUIDList | None = Field(
         default=None,
         description="Optional list of provenance identifiers (UUIDs or DIDs). "
                     "Each item is validated and canonicalized to UUID format."
     )
-    created_at: Optional[datetime] = Field(default=None, description="Creation timestamp")
+    created_at: datetime | None = Field(default=None, description="Creation timestamp")
 
 
 # =============================================================================
@@ -88,11 +85,11 @@ class ArtefactRecord(BaseModel):
     revoked: bool = Field(..., description="Whether this artefact version is revoked")
     format_version: int = Field(..., description="Schema format version")
     created_at: datetime = Field(..., description="Timestamp when this artefact version was created")
-    artefact_hash: Optional[Multihash] = Field(None, description="Multihash identifying artefact content")
-    artefact_metadata: Optional[Any] = Field(None, description="Optional JSON metadata for the artefact")
-    artefact_type: Optional[ArtefactTypeStr] = Field(None, description="Optional artefact type identifier")
-    backlink: Optional[str] = Field(None, description="Optional URL back to the object in the originating system")
-    provenance: Optional[DIDOrUUIDList] = Field(None, description="Optional list of provenance identifiers (normalized to UUIDs)")
+    artefact_hash: Multihash | None = Field(None, description="Multihash identifying artefact content")
+    artefact_metadata: Any | None = Field(None, description="Optional JSON metadata for the artefact")
+    artefact_type: ArtefactTypeStr | None = Field(None, description="Optional artefact type identifier")
+    backlink: str | None = Field(None, description="Optional URL back to the object in the originating system")
+    provenance: DIDOrUUIDList | None = Field(None, description="Optional list of provenance identifiers (normalized to UUIDs)")
 
 
 @dataclass
@@ -106,9 +103,9 @@ class ProvenanceNode:
         children: List of child ProvenanceNodes, or None if no children or not recursed
     """
     uid: str
-    division: Optional[str]
+    division: str | None
     truncated: bool = False
-    children: Optional[list["ProvenanceNode"]] = field(default=None)
+    children: list[ProvenanceNode] | None = field(default=None)
 
 
 @dataclass
@@ -126,7 +123,7 @@ class DescendantNode:
     uid: str
     external_uid: str
     division: str
-    artefact_type: Optional[str]
+    artefact_type: str | None
     version: int
     creation_date: datetime
 
@@ -437,10 +434,10 @@ def migration_20260225003_artefact_type_backlink(db: MongoConnector) -> None:
 # =============================================================================
 def _artefact_has_changes(
     existing: dict[str, Any],
-    new_hash: Optional[str],
-    new_metadata: Optional[Any],
-    new_provenance: Optional[list[str]],
-    new_artefact_type: Optional[str],
+    new_hash: str | None,
+    new_metadata: Any | None,
+    new_provenance: list[str] | None,
+    new_artefact_type: str | None,
 ) -> bool:
     """Check if the new artefact data differs from the existing version.
 
@@ -589,7 +586,7 @@ class DIDService:
     def __init__(
         self,
         db: MongoConnector,
-        vault_svc: Optional[VaultService] = None,
+        vault_svc: VaultService | None = None,
         run_migrations: bool = True,
         ensure_signing_keys: bool = True,
     ):
@@ -647,7 +644,7 @@ class DIDService:
             if not exists:
                 raise ProvenanceNotFoundError(uuid_str)
 
-    def _find_artefact_by_uid(self, uid: CanonicalizedUUID, collection) -> Optional[dict]:
+    def _find_artefact_by_uid(self, uid: CanonicalizedUUID, collection) -> dict | None:
         """
         Find an artefact by version_uid or external_uid.
 
@@ -919,7 +916,7 @@ class DIDService:
 
     def find_by_external_uid(
         self, external_uid: UUIDString, division: DivisionStr | None = None
-    ) -> Optional[ArtefactRecord]:
+    ) -> ArtefactRecord | None:
         """
         Find the latest version of an artefact by external_uid.
 
@@ -1067,7 +1064,7 @@ class DIDService:
 
     def get_artefact_overview(
         self, uid: CanonicalizedUUID
-    ) -> tuple[dict, Optional[dict]]:
+    ) -> tuple[dict, dict | None]:
         """
         Get overview information for an artefact.
 
@@ -1251,7 +1248,7 @@ class DIDService:
 
         return nodes
 
-    def find_issued_vc(self, version_uid: UUIDString) -> Optional[IssuedVCRecord]:
+    def find_issued_vc(self, version_uid: UUIDString) -> IssuedVCRecord | None:
         """Find an existing issued VC for a DA version.
 
         Args:

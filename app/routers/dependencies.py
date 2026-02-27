@@ -1,9 +1,11 @@
 """Reusable dependencies for FastAPI routes."""
 
 from __future__ import annotations
-from contextlib import asynccontextmanager
+
 import secrets
-from typing import Annotated, TYPE_CHECKING, AsyncGenerator
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Header, HTTPException
 
@@ -12,8 +14,8 @@ from app.constants import EXAMPLE_API_TOKEN
 
 if TYPE_CHECKING:
     from app.database import MongoConnector
-    from app.services.vault_service import VaultService
     from app.services.did_service import DIDService
+    from app.services.vault_service import VaultService
 
 
 async def verify_epdw_token(
@@ -241,11 +243,11 @@ MongoConnectorDep = Annotated["MongoConnector", Depends(get_db)]
 # DIDService Dependency
 # =============================================================================
 
-_did_service: "DIDService | None" = None
+_did_service: DIDService | None = None
 _did_service_initialized: bool = False
 
 
-def get_did_service() -> "DIDService":
+def get_did_service() -> DIDService:
     """FastAPI dependency to get DIDService instance.
 
     The DIDService is lazily initialized on first access and cached
@@ -282,7 +284,7 @@ def reset_did_service_dependency() -> None:
     _did_service_initialized = False
 
 
-def set_did_service_dependency(did_svc: "DIDService") -> None:
+def set_did_service_dependency(did_svc: DIDService) -> None:
     """Set the DIDService dependency directly.
 
     Use this in tests to inject a mock or test DIDService.

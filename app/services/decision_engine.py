@@ -1,8 +1,11 @@
 # decision_engine.py
-import time, json, logging
+import json
+import logging
+import time
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-from bson import json_util, ObjectId
+from typing import Any
+
+from bson import ObjectId, json_util
 
 logger = logging.getLogger("decision_engine")
 logger.setLevel(logging.INFO)
@@ -41,12 +44,12 @@ class Rule:
         self.terminal = bool(terminal)
         self.description = description
 
-    def matches(self, facts: Dict[str, Any]) -> bool:
+    def matches(self, facts: dict[str, Any]) -> bool:
         return safe_eval(self.condition, facts)
 
 # ---------- Decision Engine ----------
 class DecisionEngine:
-    def __init__(self, rules: Optional[List[Rule]] = None, db_connector = None, audit_collection_name: str = "did_audit_log"):
+    def __init__(self, rules: list[Rule] | None = None, db_connector = None, audit_collection_name: str = "did_audit_log"):
         """
         rules: list of Rule objects (if None, start empty)
         db_connector: optional MongoConnector instance for auditing
@@ -56,7 +59,7 @@ class DecisionEngine:
         self.audit_collection_name = audit_collection_name
 
     def load_rules_from_json(self, json_path: str):
-        with open(json_path, "r") as fh:
+        with open(json_path) as fh:
             payload = json.load(fh)
         rules = []
         for r in payload.get("rules", []):
@@ -67,7 +70,7 @@ class DecisionEngine:
             ))
         self.rules = sorted(rules, key=lambda r: -r.priority)
 
-    def evaluate(self, facts: Dict[str, Any], correlation_id: Optional[str] = None) -> Dict[str, Any]:
+    def evaluate(self, facts: dict[str, Any], correlation_id: str | None = None) -> dict[str, Any]:
         """
         Evaluate rules against facts. Returns dict:
         {
@@ -123,7 +126,7 @@ class DecisionEngine:
         logger.debug("Decision details: %s", result)
         return result
 
-    def _sanitize_facts(self, facts: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_facts(self, facts: dict[str, Any]) -> dict[str, Any]:
         # Convert ObjectId and other BSON -> string for safe eval and readability
         def conv(v):
             if isinstance(v, ObjectId):
@@ -135,7 +138,7 @@ class DecisionEngine:
             return v
         return conv(facts)
 
-    def _audit(self, facts: Dict[str, Any], result: Dict[str, Any]):
+    def _audit(self, facts: dict[str, Any], result: dict[str, Any]):
         if not self.db:
             return
         try:

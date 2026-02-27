@@ -12,7 +12,6 @@ from app.config import AppConfig, FeatureFlags, override_config
 from app.main import app
 from app.routers.dependencies import set_did_service_dependency
 
-
 # =============================================================================
 # Test Utilities
 # =============================================================================

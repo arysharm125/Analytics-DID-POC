@@ -23,7 +23,6 @@ import shutil
 import sys
 from pathlib import Path
 
-
 DEFAULT_INPUT = "benchmarks/results/current.json"
 BASELINES_DIR = "benchmarks/baselines"
 
@@ -57,7 +56,7 @@ def main():
         sys.exit(1)
 
     try:
-        with open(input_path, 'r') as f:
+        with open(input_path) as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
         print(f"Error: Invalid JSON in input file: {e}", file=sys.stderr)
@@ -85,12 +84,12 @@ def main():
     # Copy file
     shutil.copy2(input_path, output_path)
 
-    print(f"✓ Baseline exported successfully!")
+    print("✓ Baseline exported successfully!")
     print(f"  Version: {version}")
     print(f"  File: {output_path}")
-    print(f"\nTo use this baseline for comparisons:")
+    print("\nTo use this baseline for comparisons:")
     print(f"  python benchmarks/scripts/compare_baseline.py --baseline {output_path}")
-    print(f"\nTo commit this baseline to git:")
+    print("\nTo commit this baseline to git:")
     print(f"  git add {output_path}")
     print(f"  git commit -m 'Add benchmark baseline for {version}'")
 

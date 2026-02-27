@@ -2,8 +2,8 @@
 
 Provides base user classes, authentication helpers, and shared behaviors.
 """
+
 from locust import HttpUser
-from typing import Optional
 
 
 class BaseAPIUser(HttpUser):
@@ -82,6 +82,7 @@ def generate_multihash() -> str:
         Base58-encoded multihash string (SHA-256)
     """
     import hashlib
+
     import base58
 
     # Generate random data and hash it

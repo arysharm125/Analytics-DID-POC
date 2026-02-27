@@ -1,8 +1,10 @@
+import logging
+from typing import Annotated, Any
 from uuid import uuid4
+
 from fastapi import APIRouter, Path
 from pydantic import BaseModel, Field
-from typing import Annotated, Any, Optional
-import logging
+
 from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid
 from app.routers.dependencies import AdvisoryTokenDep, APITokenDep401Response, DIDServiceDep
 from app.services.did_service import ArtefactInput
@@ -21,24 +23,24 @@ class RecordReportRequest(BaseModel):
         json_schema_extra={"example": _example_random_uuid},
         examples=[_example_random_uuid],
     )
-    artefact_hash: Optional[Multihash] = Field(
+    artefact_hash: Multihash | None = Field(
         default=None,
         alias="artefact_hash",
         description="A multihash string for the hash of the artefact blob (optional)",
         json_schema_extra={"example": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"},
     )
-    artefact_metadata: Optional[dict[str, Any]] = Field(
+    artefact_metadata: dict[str, Any] | None = Field(
         default=None,
         alias="artefact_metadata",
         description="An object with properties set by the caller (corresponds to metadata about the artefact)",
         json_schema_extra={"example": {"filename": "cca-report-123761827584.xsls", "service": "cca"}},
     )
-    backlink: Optional[str] = Field(
+    backlink: str | None = Field(
         default=None,
         description="Optional URL back to the object in the originating system",
         json_schema_extra={"example": "https://example.com/reports/123"},
     )
-    provenance: Optional[DIDOrUUIDList] = Field(
+    provenance: DIDOrUUIDList | None = Field(
         default=None,
         description="List of provenance identifiers (DIDs or UUIDs). Each item is validated and "
                     "canonicalized to UUID format. Items must be unique after canonicalization."

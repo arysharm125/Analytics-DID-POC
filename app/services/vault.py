@@ -10,22 +10,23 @@ The lazy initialization pattern ensures no vault connections are made at import
 time, enabling tests to override configuration before any connections occur.
 """
 
-from contextlib import contextmanager
-from datetime import datetime, timedelta
-from typing import Any, Generator, List, Optional
 import logging
 import threading
 import time
+from collections.abc import Generator
+from contextlib import contextmanager
+from datetime import datetime, timedelta
+from typing import Any
 
 from nacl.signing import SigningKey
 
 from app.config import get_config
 from app.services.vault_protocol import VaultClientProtocol
 from app.services.vault_service import (
-    VaultService,
-    SecretNotFoundError,
     DivisionPublicKeysNotFoundError,
+    SecretNotFoundError,
     SigningKeyNotFoundError,
+    VaultService,
 )
 
 # Re-export exceptions for backward compatibility
@@ -79,7 +80,7 @@ class InvalidPathException(Exception):
 # Lazy Vault Client Initialization
 # =============================================================================
 
-_vault_client: Optional[VaultClientProtocol] = None
+_vault_client: VaultClientProtocol | None = None
 _vault_client_initialized: bool = False
 
 
@@ -138,7 +139,7 @@ def reset_vault_client() -> None:
 # Lazy VaultService Initialization
 # =============================================================================
 
-_vault_service: Optional[VaultService] = None
+_vault_service: VaultService | None = None
 _vault_service_initialized: bool = False
 
 
@@ -203,7 +204,7 @@ def vault_write(mount_point: str, path: str, secret: Any) -> None:
     client.write_secret(mount_point, path, secret)
 
 
-def vault_read(mount_point: str, path: str) -> List[Any]:
+def vault_read(mount_point: str, path: str) -> list[Any]:
     """
     Always returns clean value:
     - If stored as {"chain": [...] } → returns [...]
@@ -250,7 +251,7 @@ def vault_read_dict(mount_point: str, path: str) -> dict:
         return {}
 
 
-def vault_list(mount_point: str, path: str) -> List[str]:
+def vault_list(mount_point: str, path: str) -> list[str]:
     """List secrets at a given path."""
     client = get_vault_client()
     return client.list_secrets(mount_point, path)

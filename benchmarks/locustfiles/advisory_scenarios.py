@@ -5,8 +5,8 @@ Tests the following endpoints:
 - POST /advisory/record_report (requires token)
 - GET /advisory/{uid}/vc.json (requires token)
 """
-from locust import task, between
-from common import AdvisoryAPIUser, BaseAPIUser, generate_uuid, generate_multihash
+from common import AdvisoryAPIUser, BaseAPIUser, generate_multihash, generate_uuid
+from locust import between, task
 
 
 class AdvisoryDIDDocumentUser(BaseAPIUser):

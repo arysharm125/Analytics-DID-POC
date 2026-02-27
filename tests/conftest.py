@@ -11,16 +11,16 @@ to prevent test pollution. The reset order matters:
 import os
 import time
 import uuid
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
 
 from app.config import (
     AppConfig,
-    VaultConfig,
-    TokenConfig,
-    MongoCollectionConfig,
     FeatureFlags,
+    MongoCollectionConfig,
+    TokenConfig,
+    VaultConfig,
     override_config,
     reset_config_cache,
 )

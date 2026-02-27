@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from app.routers.advisory_router import RecordReportRequest, RecordReportResponse
 from app.services.exceptions import DuplicateProvenanceError
 
-
 # =============================================================================
 # Test RecordReportRequest Model
 # =============================================================================

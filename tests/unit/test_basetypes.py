@@ -3,29 +3,29 @@
 import pytest
 
 from app.routers.basetypes import (
-    validate_uuid,
-    validate_amd_web_did,
-    validate_amd_division_web_did,
-    did_from_uuid,
-    uuid_from_did,
-    division_did_from_division,
-    division_from_division_did,
-    _validate_multihash,
-    _validate_division,
-    _validate_did_or_uuid,
     _canonicalize_did_or_uuid,
     _validate_and_canonicalize_did_or_uuid,
-    _validate_did_or_uuid_list,
     _validate_did_list,
+    _validate_did_or_uuid,
+    _validate_did_or_uuid_list,
+    _validate_division,
+    _validate_multihash,
+    did_from_uuid,
     did_list_from_uuid_list,
-    multihash_from_str,
+    division_did_from_division,
+    division_from_division_did,
     division_from_str,
+    multihash_from_str,
+    uuid_from_did,
+    validate_amd_division_web_did,
+    validate_amd_web_did,
+    validate_uuid,
 )
 from app.services.exceptions import (
+    DuplicateProvenanceError,
+    InvalidDivisionError,
     InvalidIdentifierError,
     InvalidMultihashError,
-    InvalidDivisionError,
-    DuplicateProvenanceError,
 )
 
 

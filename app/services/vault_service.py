@@ -5,17 +5,16 @@ that wraps a VaultClientProtocol implementation. It provides business-logic-leve
 operations for managing secrets, division signing keys, and public keys.
 """
 
-from contextlib import contextmanager
-from datetime import datetime, timezone
-from typing import Generator, List, Optional, Any
 import gc
 import logging
 import secrets as python_secrets
+from collections.abc import Generator
+from contextlib import contextmanager
+from datetime import datetime, timezone
 
 from nacl.signing import SigningKey
 
 from app.services.vault_protocol import VaultClientProtocol
-
 
 logger = logging.getLogger("vault_service")
 
@@ -123,7 +122,7 @@ class VaultService:
         except Exception as e:
             raise SecretNotFoundError(path, self._mount) from e
 
-    def fetch_secret_or_default(self, path: str, default: Optional[dict] = None) -> dict:
+    def fetch_secret_or_default(self, path: str, default: dict | None = None) -> dict:
         """Fetch a secret from vault, returning a default if not found.
 
         Args:
@@ -147,7 +146,7 @@ class VaultService:
         """
         self._client.write_secret(self._mount, path, data)
 
-    def list_secrets(self, path: str) -> List[str]:
+    def list_secrets(self, path: str) -> list[str]:
         """List secrets at a path.
 
         Args:
@@ -173,7 +172,7 @@ class VaultService:
     # Division Public Key Operations
     # =========================================================================
 
-    def get_division_public_keys(self, division: str) -> List[dict]:
+    def get_division_public_keys(self, division: str) -> list[dict]:
         """Get all public keys for a division.
 
         Fetches from path: divisions/{division}/public_keys
@@ -209,7 +208,7 @@ class VaultService:
     # Division Signing Key Operations
     # =========================================================================
 
-    def list_division_signing_key_fragments(self, division: str) -> List[str]:
+    def list_division_signing_key_fragments(self, division: str) -> list[str]:
         """List available signing key fragments for a division.
 
         Lists keys at path: divisions/{division}/signing_keys/
@@ -273,7 +272,7 @@ class VaultService:
             SigningKeyNotFoundError: If the key doesn't exist
         """
         # Import here to avoid circular dependency
-        from app.did_utils.eddsa import sodium_memzero, secure_clear_signing_key
+        from app.did_utils.eddsa import secure_clear_signing_key, sodium_memzero
 
         key_bytes: bytearray | None = None
         signing_key: SigningKey | None = None

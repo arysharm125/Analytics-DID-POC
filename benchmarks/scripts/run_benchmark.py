@@ -15,17 +15,16 @@ Examples:
     python benchmarks/scripts/run_benchmark.py --output benchmarks/results/my_test.json
 """
 import argparse
+import csv
 import json
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-import csv
 
 # Add parent directory to path to import version module
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from app.version import full_version
-
 
 # Default test configuration
 DEFAULT_USERS = 200
@@ -139,7 +138,7 @@ def parse_locust_stats(csv_prefix):
 
     endpoints = {}
 
-    with open(stats_file, 'r') as f:
+    with open(stats_file) as f:
         reader = csv.DictReader(f)
         for row in reader:
             # Skip aggregated rows
@@ -226,10 +225,10 @@ def main():
     with open(output_file, 'w') as f:
         json.dump(baseline, f, indent=2)
 
-    print(f"\n✓ Benchmark complete!")
+    print("\n✓ Benchmark complete!")
     print(f"  Results saved to: {output_file}")
     print(f"  HTML report: {csv_prefix}_report.html")
-    print(f"\nKey metrics:")
+    print("\nKey metrics:")
     for endpoint, stats in endpoints.items():
         print(f"  {endpoint}:")
         print(f"    RPS: {stats['rps']:.1f}, p95: {stats['p95_ms']:.1f}ms, errors: {stats['failures']}")

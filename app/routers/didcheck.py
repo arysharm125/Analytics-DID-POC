@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Path
@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from app.config import get_config
 from app.did_utils.jsonld import canonicalize_document
 from app.routers.basetypes import ArtefactTypeStr, DivisionStr, Multihash, UUIDString
-from app.routers.dependencies import DIDCheckTokenDep, DIDServiceDep, APITokenDep401Response
+from app.routers.dependencies import APITokenDep401Response, DIDCheckTokenDep, DIDServiceDep
 from app.routers.epdw import PathUUID
 from app.services.did_service import ProvenanceNode as ServiceProvenanceNode
 
@@ -43,17 +43,17 @@ class DigitalArtefactInfo(BaseModel):
         description="Division identifier",
         examples=["advisory", "epdw"],
     )
-    artefact_hash: Optional[Multihash] = Field(
+    artefact_hash: Multihash | None = Field(
         default=None,
         description="Multihash identifying artefact content",
         examples=["QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"],
     )
-    artefact_type: Optional[ArtefactTypeStr] = Field(
+    artefact_type: ArtefactTypeStr | None = Field(
         default=None,
         description="Optional artefact type identifier",
         examples=["report", "benchmark", "benchmark_iteration"],
     )
-    backlink: Optional[str] = Field(
+    backlink: str | None = Field(
         default=None,
         description="Optional URL back to the object in the originating system",
         examples=["https://example.com/reports/123"],
@@ -82,7 +82,7 @@ class ProvenanceNode(BaseModel):
         description="UUID of the provenance artefact",
         examples=["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
     )
-    division: Optional[DivisionStr] = Field(
+    division: DivisionStr | None = Field(
         default=None,
         description="Division of the provenance artefact",
         examples=["advisory", "epdw"],
@@ -91,7 +91,7 @@ class ProvenanceNode(BaseModel):
         default=False,
         description="True if this node has children but wasn't recursed into (due to depth or count limits)",
     )
-    children: Optional[list["ProvenanceNode"]] = Field(
+    children: list["ProvenanceNode"] | None = Field(
         default=None,
         description="Nested provenance items (children of this node)",
     )
@@ -141,26 +141,26 @@ class FullArtefactInfo(BaseModel):
         description="Division identifier",
         examples=["advisory", "epdw"],
     )
-    artefact_hash: Optional[Multihash] = Field(
+    artefact_hash: Multihash | None = Field(
         default=None,
         description="Multihash identifying artefact content",
         examples=["QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"],
     )
-    artefact_metadata: Optional[Any] = Field(
+    artefact_metadata: Any | None = Field(
         default=None,
         description="Optional JSON metadata for the artefact",
     )
-    artefact_type: Optional[ArtefactTypeStr] = Field(
+    artefact_type: ArtefactTypeStr | None = Field(
         default=None,
         description="Optional artefact type identifier",
         examples=["report", "benchmark", "benchmark_iteration"],
     )
-    backlink: Optional[str] = Field(
+    backlink: str | None = Field(
         default=None,
         description="Optional URL back to the object in the originating system",
         examples=["https://example.com/reports/123"],
     )
-    provenance: Optional[list[UUIDString]] = Field(
+    provenance: list[UUIDString] | None = Field(
         default=None,
         description="List of provenance identifiers (normalized to UUIDs)",
         examples=[[]],
@@ -256,7 +256,7 @@ class DescendantInfo(BaseModel):
         description="Division of the descendant",
         examples=["advisory", "epdw"],
     )
-    artefact_type: Optional[ArtefactTypeStr] = Field(
+    artefact_type: ArtefactTypeStr | None = Field(
         default=None,
         description="Artefact type of the descendant",
         examples=["report", "benchmark"],
@@ -313,7 +313,7 @@ class DIDOverviewResponse(BaseModel):
         ...,
         description="Information about the queried digital artefact",
     )
-    latest_version: Optional[LatestVersionInfo] = Field(
+    latest_version: LatestVersionInfo | None = Field(
         default=None,
         description="Information about the latest version, if the queried version is not the latest",
     )

@@ -11,16 +11,19 @@ to create instances:
 For FastAPI applications, use the get_db() dependency from app.routers.dependencies.
 """
 from __future__ import annotations
-from typing import Callable, TYPE_CHECKING
-from dataclasses import dataclass
-from uuid import UUID, uuid4
-from pymongo import MongoClient
-from pymongo.synchronous import database
+
 import logging
+import re
 import sys
 import time
-import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
+
+from pymongo import MongoClient
+from pymongo.synchronous import database
 
 if TYPE_CHECKING:
     from app.services.vault_service import VaultService
@@ -210,7 +213,7 @@ class MongoConnector:
             RuntimeError: If connection fails after 3 attempts
         """
         logger.info(f"Mongo target DB: {db_name}")
-        logger.info(f"Connecting to MongoDB...")
+        logger.info("Connecting to MongoDB...")
 
         self.client = None
 
@@ -244,7 +247,7 @@ class MongoConnector:
         raise RuntimeError("Could not connect to MongoDB after 3 attempts.")
 
     @classmethod
-    def from_uri(cls, conn_string: str, db_name: str) -> "MongoConnector":
+    def from_uri(cls, conn_string: str, db_name: str) -> MongoConnector:
         """Create connector from explicit connection URI.
 
         Use this for testing with a real MongoDB instance or testcontainers.
@@ -271,7 +274,7 @@ class MongoConnector:
         return instance
 
     @classmethod
-    def from_client(cls, client: MongoClient, db_name: str) -> "MongoConnector":
+    def from_client(cls, client: MongoClient, db_name: str) -> MongoConnector:
         """Create connector from existing MongoClient.
 
         Use this for testing with mongomock or other mock clients.

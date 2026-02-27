@@ -1,9 +1,8 @@
 """Application configuration with lazy loading and test override support."""
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Optional
-import os
 
 from dotenv import load_dotenv
 
@@ -90,7 +89,7 @@ def _load_config_from_env() -> AppConfig:
 
 
 # Storage for test override
-_config_override: Optional[AppConfig] = None
+_config_override: AppConfig | None = None
 
 
 def get_config() -> AppConfig:
@@ -114,7 +113,7 @@ def _get_cached_config() -> AppConfig:
     return _load_config_from_env()
 
 
-def override_config(config: Optional[AppConfig]) -> None:
+def override_config(config: AppConfig | None) -> None:
     """Override configuration for testing.
 
     Args:

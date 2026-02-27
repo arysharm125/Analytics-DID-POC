@@ -4,7 +4,7 @@ import logging
 import traceback
 import uuid
 
-from fastapi import Request, HTTPException
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.config import get_config

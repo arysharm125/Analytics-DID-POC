@@ -8,26 +8,25 @@ from nacl.signing import SigningKey
 
 from app.did_utils.eddsa import (
     EDDSA_RDFC_2022_CRYPTOSUITE,
-    MULTICODEC_ED25519_PUB,
     MULTIBASE_BASE58BTC_PREFIX,
     MULTIBASE_BASE64URL_PREFIX,
-    encode_multibase_base64url,
-    decode_multibase_base64url,
+    MULTICODEC_ED25519_PUB,
+    _create_verify_data,
     create_keypair_from_hex,
-    get_public_key_multibase,
+    decode_multibase_base64url,
+    encode_multibase_base64url,
     get_public_key_bytes,
-    sign_data,
-    verify_signature,
-    sodium_memzero,
+    get_public_key_multibase,
     secure_clear_signing_key,
     secure_signing_context,
-    _create_verify_data,
+    sign_data,
     sign_vc,
     sign_vp,
+    sodium_memzero,
+    verify_signature,
     verify_vc_signature,
     verify_vp_signature,
 )
-
 
 # =============================================================================
 # Fixtures

@@ -1,0 +1,79 @@
+# Ruff configuration for Analytics-DID-POC
+# See: https://docs.astral.sh/ruff/configuration/
+
+# Target Python version
+target-version = "py310"
+
+# Line length
+line-length = 120
+
+# Enable auto-fixing where possible
+fix = true
+
+# Exclude directories
+extend-exclude = [
+    ".venv",
+    "venv",
+    "node_modules",
+    "htmlcov",
+    ".pytest_cache",
+    ".git",
+    "__pycache__",
+    "*.egg-info",
+    ".cline_storage",
+    "000",  # Archive directory
+]
+
+[lint]
+# Enable rule sets
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort (import sorting)
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+    "TCH",   # flake8-type-checking
+    "RUF",   # Ruff-specific rules
+]
+
+# Disable specific rules
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "B008",   # Do not perform function call in argument defaults (FastAPI Depends pattern)
+    "UP007",  # Use X | Y for type annotations (optional, for Python 3.10+ union syntax)
+]
+
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[lint.per-file-ignores]
+# Test files can have unused imports and assertions
+"tests/**/*.py" = ["F401", "F841"]
+# __init__.py files may have unused imports (for re-exports)
+"__init__.py" = ["F401"]
+
+[lint.isort]
+# Configure import sorting
+known-first-party = ["app"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[lint.pep8-naming]
+# Allow uppercase constant-like names in FastAPI dependency injection
+classmethod-decorators = ["classmethod", "pydantic.validator", "pydantic.root_validator"]
+
+[format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Indent with spaces
+indent-style = "space"
+
+# Respect magic trailing comma
+skip-magic-trailing-comma = false
+
+# Auto-detect line ending
+line-ending = "auto"

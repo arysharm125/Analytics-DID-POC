@@ -4,7 +4,7 @@ This module defines the abstract interface for vault client implementations,
 enabling dependency injection and testability.
 """
 
-from typing import Protocol, List, Any, Dict
+from typing import Any, Protocol
 
 
 class VaultClientProtocol(Protocol):
@@ -27,7 +27,7 @@ class VaultClientProtocol(Protocol):
         """
         ...
 
-    def read_secret(self, mount_point: str, path: str) -> Dict[str, Any]:
+    def read_secret(self, mount_point: str, path: str) -> dict[str, Any]:
         """Read a secret from vault.
 
         Args:
@@ -42,7 +42,7 @@ class VaultClientProtocol(Protocol):
         """
         ...
 
-    def write_secret(self, mount_point: str, path: str, data: Dict[str, Any]) -> None:
+    def write_secret(self, mount_point: str, path: str, data: dict[str, Any]) -> None:
         """Write a secret to vault.
 
         Args:
@@ -52,7 +52,7 @@ class VaultClientProtocol(Protocol):
         """
         ...
 
-    def list_secrets(self, mount_point: str, path: str) -> List[str]:
+    def list_secrets(self, mount_point: str, path: str) -> list[str]:
         """List secrets at a path.
 
         Args:

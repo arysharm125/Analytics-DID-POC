@@ -4,20 +4,21 @@ Tests the DIDService class methods, helper functions, and business logic.
 Uses mongomock and InMemoryVaultClient for isolated unit testing.
 """
 
+import uuid
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import patch, MagicMock
-import uuid
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 
+from app.did_utils.jsonld import DigitalArtefactVCInput
 from app.services.did_service import (
-    DIDService,
     ArtefactInput,
     ArtefactRecord,
-    ProvenanceNode,
+    DIDService,
     IssuedVCRecord,
+    ProvenanceNode,
     _artefact_has_changes,
     _artefact_to_da_vc_input,
     compress_vc,
@@ -29,14 +30,12 @@ from app.services.exceptions import (
     DivisionKeysNotFound,
     DivisionMismatchError,
     ProvenanceNotFoundError,
-    VersionConflictError,
+    SigningKeyNotAvailableError,
     VCAlreadyExistsError,
     VCNotFoundError,
     VCRegenerationMismatchError,
-    SigningKeyNotAvailableError,
+    VersionConflictError,
 )
-from app.did_utils.jsonld import DigitalArtefactVCInput
-
 
 # =============================================================================
 # Helper Function Tests

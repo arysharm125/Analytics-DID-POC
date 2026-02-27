@@ -2,33 +2,32 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.did_utils.jsonld import (
-    _get_contexts_path,
-    _load_context,
-    _load_all_contexts,
-    _custom_document_loader,
-    _context_cache,
     _CONTEXT_FILES,
-    VC_CONTEXTS,
     DATA_INTEGRITY_V2_CONTEXT,
-    canonicalize_document,
+    VC_CONTEXTS,
+    DigitalArtefactVCInput,
+    _context_cache,
+    _custom_document_loader,
     _document_to_messages,
+    _get_contexts_path,
+    _load_all_contexts,
+    _load_context,
+    canonicalize_document,
+    create_proof_options,
+    generate_digital_artefact_vc,
     prepare_vc_for_signing,
     prepare_vp_for_signing,
-    create_proof_options,
     proof_options_to_messages,
-    DigitalArtefactVCInput,
-    generate_digital_artefact_vc,
 )
 from app.routers.basetypes import (
     did_from_uuid,
     division_did_from_division,
 )
-
 
 # =============================================================================
 # Fixtures

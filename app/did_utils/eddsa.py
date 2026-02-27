@@ -8,20 +8,21 @@ following the W3C VC Data Integrity eddsa-rdfc-2022 cryptosuite specification.
 import base64
 import gc
 import hashlib
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Generator
 
 import base58
-from nacl.signing import SigningKey, VerifyKey
+from nacl._sodium import ffi as nacl_ffi
+from nacl._sodium import lib as nacl_lib
 from nacl.exceptions import BadSignatureError
-from nacl._sodium import ffi as nacl_ffi, lib as nacl_lib
+from nacl.signing import SigningKey, VerifyKey
 
 from app.did_utils.jsonld import (
+    canonicalize_document,
+    create_proof_options,
     prepare_vc_for_signing,
     prepare_vp_for_signing,
-    create_proof_options,
-    canonicalize_document,
 )
 
 # EdDSA cryptosuite identifier (W3C VC Data Integrity)

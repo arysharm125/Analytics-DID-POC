@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Annotated, Any, Dict, List, Optional, cast
+from typing import Annotated, Any, cast
 
 from fastapi import Depends
 
@@ -10,19 +10,18 @@ from app.config import get_config
 from app.database import MongoConnector
 from app.did_utils.comparisons import compute_diff, has_diff
 from app.routers.basetypes import UUIDString, did_from_uuid
-from app.services.did_service import DIDService, ArtefactInput
+from app.routers.dependencies import DIDServiceDep
+from app.services.did_service import ArtefactInput, DIDService
 from app.services.exceptions import (
     BenchmarkNotFoundError,
-    IterationNotFoundError,
-    NoIterationsFoundError,
     BlockedKeyUpdateError,
-    NoChangesDetectedError,
     InvalidUpdaterEmailError,
+    IterationNotFoundError,
+    NoChangesDetectedError,
+    NoIterationsFoundError,
     SUTRecordNotFoundError,
 )
 from app.utils import clean_mongo_doc
-from app.routers.dependencies import DIDServiceDep
-
 
 # ==========================
 # Constants
@@ -49,8 +48,8 @@ class CreateSutResult:
     benchmark_id: str
     mode: str  # "single" or "multi"
     master_did: str
-    iterations: List[IterationDIDInfo]
-    message: Optional[str] = None
+    iterations: list[IterationDIDInfo]
+    message: str | None = None
 
 
 @dataclass
@@ -60,16 +59,16 @@ class AppendDIDResult:
     benchmark_id: str
     iteration_id: str
     did: str
-    previous_did: Optional[str]
+    previous_did: str | None
     version: int
-    diff: Dict[str, Any]
+    diff: dict[str, Any]
     message: str
 
 
 # ==========================
 # Helper Functions (Pure)
 # ==========================
-def extract_iterations(doc: dict) -> List[str]:
+def extract_iterations(doc: dict) -> list[str]:
     """Extract iteration IDs from a benchmark document.
 
     Searches the nested structure: resultInfo -> runs -> iterations
@@ -80,7 +79,7 @@ def extract_iterations(doc: dict) -> List[str]:
     Returns:
         List of unique iteration IDs found
     """
-    iterations: List[str] = []
+    iterations: list[str] = []
 
     # Primary extraction path: resultInfo -> runs -> iterations
     for ri in doc.get("resultInfo", []):
@@ -97,9 +96,9 @@ def extract_iterations(doc: dict) -> List[str]:
     return list(dict.fromkeys(iterations))
 
 
-def _deep_find_iterations(obj: Any) -> List[str]:
+def _deep_find_iterations(obj: Any) -> list[str]:
     """Recursively search for iterationID fields."""
-    found: List[str] = []
+    found: list[str] = []
     if isinstance(obj, dict):
         if "iterationID" in obj and isinstance(obj["iterationID"], str):
             found.append(obj["iterationID"])
@@ -133,7 +132,7 @@ def select_master_metadata(doc: dict) -> dict:
         Selected metadata dictionary (cleaned for JSON serialization)
     """
     result = clean_mongo_doc(clean_special_keys(doc))
-    return cast(dict, result)
+    return cast("dict", result)
 
 
 def select_iteration_metadata(doc: dict) -> dict:
@@ -146,7 +145,7 @@ def select_iteration_metadata(doc: dict) -> dict:
         Selected metadata dictionary (cleaned for JSON serialization)
     """
     result = clean_mongo_doc(clean_special_keys(doc))
-    return cast(dict, result)
+    return cast("dict", result)
 
 
 def validate_amd_email(email: str) -> None:
@@ -375,7 +374,7 @@ class SUTService:
         master_did = did_from_uuid(master_record.external_uid)
 
         # Create child artefacts for each iteration
-        iterations: List[IterationDIDInfo] = []
+        iterations: list[IterationDIDInfo] = []
         for iter_id in found_iterations:
             iter_doc = self.fetch_iteration(iter_id)
             iter_metadata = select_iteration_metadata(iter_doc)
@@ -404,7 +403,7 @@ class SUTService:
         self,
         benchmark_id: UUIDString,
         iteration_id: UUIDString,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         update_message: str,
         updated_by: str,
     ) -> AppendDIDResult:
@@ -462,7 +461,7 @@ class SUTService:
         }
 
         # Compute diff using shared comparison utility
-        diff = cast(Dict[str, Any], compute_diff(old_metadata, new_metadata))
+        diff = cast("dict[str, Any]", compute_diff(old_metadata, new_metadata))
 
         if not has_diff(diff):
             raise NoChangesDetectedError()

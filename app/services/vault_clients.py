@@ -5,12 +5,10 @@ This module provides concrete implementations of VaultClientProtocol:
 - InMemoryVaultClient: In-memory mock for unit tests
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 import hvac
 import hvac.exceptions
-
-from app.services.vault_protocol import VaultClientProtocol
 
 
 class HvacVaultClient:
@@ -36,7 +34,7 @@ class HvacVaultClient:
         except Exception:
             return False
 
-    def read_secret(self, mount_point: str, path: str) -> Dict[str, Any]:
+    def read_secret(self, mount_point: str, path: str) -> dict[str, Any]:
         """Read a secret from vault KV v2.
 
         Args:
@@ -54,7 +52,7 @@ class HvacVaultClient:
         )
         return result.get("data", {}).get("data", {})
 
-    def write_secret(self, mount_point: str, path: str, data: Dict[str, Any]) -> None:
+    def write_secret(self, mount_point: str, path: str, data: dict[str, Any]) -> None:
         """Write a secret to vault KV v2.
 
         Args:
@@ -66,7 +64,7 @@ class HvacVaultClient:
             mount_point=mount_point, path=path, secret=data
         )
 
-    def list_secrets(self, mount_point: str, path: str) -> List[str]:
+    def list_secrets(self, mount_point: str, path: str) -> list[str]:
         """List secrets at a path in vault KV v2.
 
         Args:
@@ -101,14 +99,14 @@ class InMemoryVaultClient:
     or network dependencies.
     """
 
-    def __init__(self, initial_secrets: Dict[str, Dict[str, Any]] | None = None):
+    def __init__(self, initial_secrets: dict[str, dict[str, Any]] | None = None):
         """Initialize with optional pre-populated secrets.
 
         Args:
             initial_secrets: Dict mapping "mount/path" to secret data.
                 Example: {"secret/mongo": {"connection_string": "..."}}
         """
-        self._secrets: Dict[str, Dict[str, Any]] = initial_secrets.copy() if initial_secrets else {}
+        self._secrets: dict[str, dict[str, Any]] = initial_secrets.copy() if initial_secrets else {}
         self._authenticated = True
 
     def set_authenticated(self, value: bool) -> None:
@@ -127,7 +125,7 @@ class InMemoryVaultClient:
         """Build the internal storage key from mount point and path."""
         return f"{mount_point}/{path}"
 
-    def read_secret(self, mount_point: str, path: str) -> Dict[str, Any]:
+    def read_secret(self, mount_point: str, path: str) -> dict[str, Any]:
         """Read a secret from in-memory storage.
 
         Args:
@@ -145,7 +143,7 @@ class InMemoryVaultClient:
             raise KeyError(f"Secret not found: {key}")
         return self._secrets[key].copy()
 
-    def write_secret(self, mount_point: str, path: str, data: Dict[str, Any]) -> None:
+    def write_secret(self, mount_point: str, path: str, data: dict[str, Any]) -> None:
         """Write a secret to in-memory storage.
 
         Args:
@@ -156,7 +154,7 @@ class InMemoryVaultClient:
         key = self._key(mount_point, path)
         self._secrets[key] = data.copy()
 
-    def list_secrets(self, mount_point: str, path: str) -> List[str]:
+    def list_secrets(self, mount_point: str, path: str) -> list[str]:
         """List secrets at a path in in-memory storage.
 
         This mimics vault's list behavior:
@@ -200,7 +198,7 @@ class InMemoryVaultClient:
         """Clear all secrets from storage. Useful for test cleanup."""
         self._secrets.clear()
 
-    def get_all_secrets(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_secrets(self) -> dict[str, dict[str, Any]]:
         """Get all secrets in storage. Useful for test assertions.
 
         Returns:

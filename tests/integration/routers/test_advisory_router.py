@@ -6,11 +6,9 @@ work correctly with the full stack (FastAPI, DIDService, MongoDB, Vault).
 
 import base58
 import pytest
-
 from fastapi.testclient import TestClient
 
-from app.did_utils.eddsa import verify_vc_signature, MULTICODEC_ED25519_PUB
-
+from app.did_utils.eddsa import MULTICODEC_ED25519_PUB, verify_vc_signature
 
 # =============================================================================
 # Fixtures

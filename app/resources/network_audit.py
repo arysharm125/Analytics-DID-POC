@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
+import json
 import os
-import sys
-import subprocess
 import re
 import shutil
-import json
+import subprocess
+import sys
+
 
 class colors:
     WARNING = '\033[91m'
@@ -31,7 +32,7 @@ def run_command(command, timeout=10):
 
 def get_nic_data():
     print("Gathering NIC hardware, link, and neighbor information via /sys...", file=sys.stderr)
-    
+
     # Get all network interfaces except loopback
     interfaces = [d for d in os.listdir('/sys/class/net') if d != 'lo']
     physical_nics = {}
@@ -41,29 +42,29 @@ def get_nic_data():
         device_path = f'/sys/class/net/{interface}/device'
         if not os.path.exists(device_path):
             continue
-            
+
         # Get PCI Bus Info (e.g. 0000:01:00.0)
         bus_info = os.path.basename(os.readlink(device_path)) if os.path.islink(device_path) else interface
-        
+
         if bus_info not in physical_nics:
             # Try to get OEM/Model from /sys
             vendor_path = f'{device_path}/vendor'
             device_id_path = f'{device_path}/device'
-            
+
             vendor = "N/A"
             if os.path.exists(vendor_path):
-                with open(vendor_path, 'r') as f: vendor = f.read().strip()
-            
+                with open(vendor_path) as f: vendor = f.read().strip()
+
             model = "N/A"
             if os.path.exists(device_id_path):
-                with open(device_id_path, 'r') as f: model = f.read().strip()
-            
+                with open(device_id_path) as f: model = f.read().strip()
+
             # Get max speed / capacity (best effort)
             capacity_path = f'/sys/class/net/{interface}/speed'
             max_speed_str = "N/A"
             if os.path.exists(capacity_path):
                 try:
-                    with open(capacity_path, 'r') as f:
+                    with open(capacity_path) as f:
                         speed = int(f.read().strip())
                         if speed > 0: max_speed_str = f"{speed} Gbit/s" if speed >= 1000 else f"{speed} Mbit/s"
                 except: pass
@@ -74,18 +75,18 @@ def get_nic_data():
                 'max_speed': max_speed_str,
                 'ports': []
             }
-            
+
         # Port specific info
         port = {'name': interface}
-        
+
         # Ethtool for link speed
         ethtool_out = run_command(['ethtool', interface])
         speed_match = re.search(r'Speed:\s*(\S+)', ethtool_out)
         port['negotiated_speed'] = speed_match.group(1) if speed_match else 'Down'
-        
+
         advertised_match = re.search(r'Advertised link modes:(.*?)Supported ports:', ethtool_out, re.DOTALL)
         port['advertised_speeds'] = advertised_match.group(1).lower().strip() if advertised_match else ""
-        
+
         # LLDP for neighbors
         lldp_out = run_command(['lldpctl', interface, '-f', 'keyvalue'], timeout=5)
         lldp_dict = dict(re.findall(r'([^=]+)=(.*)', lldp_out))
@@ -93,34 +94,34 @@ def get_nic_data():
         sysname = lldp_dict.get('lldp.eth.chassis.name', 'N/A').strip()
         portid = lldp_dict.get('lldp.eth.port.id.value', 'N/A').strip()
         port['connected_to'] = f"{sysname} (Port: {portid})" if sysname != 'N/A' else 'N/A'
-        
+
         physical_nics[bus_info]['ports'].append(port)
-        
+
     return physical_nics
 
 def get_metadata():
     print("Gathering system metadata via /sys and lscpu...", file=sys.stderr)
     metadata = {}
-    
+
     # 1. CPU Model
     lscpu_out = run_command(['lscpu'])
     model_match = re.search(r'Model name:\s*(.*)', lscpu_out)
     metadata['cpu_model'] = model_match.group(1).strip() if model_match else "N/A"
-    
+
     # 2. SMT / Thread per core
     thread_match = re.search(r'Thread\(s\) per core:\s*(\d+)', lscpu_out)
     metadata['threads_per_core'] = thread_match.group(1) if thread_match else "1"
-    
+
     # 3. Turbo / CPB status
     turbo_path = "/sys/devices/system/cpu/cpufreq/boost"
     if os.path.exists(turbo_path):
         try:
-            with open(turbo_path, 'r') as f:
+            with open(turbo_path) as f:
                 metadata['turbo_status'] = "Enabled" if f.read().strip() == "1" else "Disabled"
         except: metadata['turbo_status'] = "N/A"
     else:
         metadata['turbo_status'] = "N/A"
-        
+
     # 4. System Metadata from /sys/class/dmi/id (Instant)
     dmi_path = "/sys/class/dmi/id"
     dmi_map = {
@@ -129,18 +130,18 @@ def get_metadata():
         'bios_version': 'bios_version',
         'bios_date': 'bios_date'
     }
-    
+
     bios_info = {}
     for dmi_file, meta_key in dmi_map.items():
         file_path = os.path.join(dmi_path, dmi_file)
         if os.path.exists(file_path):
             try:
-                with open(file_path, 'r') as f:
+                with open(file_path) as f:
                     val = f.read().strip()
                     if dmi_file == 'product_name': metadata[meta_key] = val
                     else: bios_info[dmi_file.replace('bios_', '')] = val
             except: pass
-            
+
     # Fallback for bios_info if /sys fails
     if not bios_info:
         bios_info = {
@@ -149,11 +150,11 @@ def get_metadata():
             'release_date': run_command(['dmidecode', '-s', 'bios-release-date'], timeout=5).strip() or "N/A",
         }
     metadata['bios_info'] = bios_info
-        
+
     # 5. GRUB Parameters
     cmdline_path = '/proc/cmdline'
     if os.path.exists(cmdline_path):
-        with open(cmdline_path, 'r') as f:
+        with open(cmdline_path) as f:
             metadata['grub_cmdline'] = f.read().strip()
     else:
         metadata['grub_cmdline'] = "N/A"
@@ -171,7 +172,7 @@ def get_metadata():
     metadata['iommu_status'] = "Enabled" if os.path.exists('/sys/class/iommu') and os.listdir('/sys/class/iommu') else "Disabled"
 
     # 9. Virtualization / SVM
-    with open('/proc/cpuinfo', 'r') as f:
+    with open('/proc/cpuinfo') as f:
         cpu_info_content = f.read()
         metadata['virtualization'] = "Enabled" if 'svm' in cpu_info_content or 'vmx' in cpu_info_content else "Disabled"
 
@@ -181,7 +182,7 @@ def get_metadata():
     # 11. Scaling Governor (Infers Power Profile)
     gov_path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
     if os.path.exists(gov_path):
-        with open(gov_path, 'r') as f:
+        with open(gov_path) as f:
             metadata['scaling_governor'] = f.read().strip()
     else:
         metadata['scaling_governor'] = "N/A"
@@ -189,11 +190,11 @@ def get_metadata():
     # 12. Energy Performance Preference (EPP)
     epp_path = "/sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference"
     if os.path.exists(epp_path):
-        with open(epp_path, 'r') as f:
+        with open(epp_path) as f:
             metadata['epp'] = f.read().strip()
     else:
         metadata['epp'] = "N/A"
-    
+
     return metadata
 
 def main():
@@ -203,19 +204,19 @@ def main():
             print("This script must be run as root.", file=sys.stderr)
             print(json.dumps({"error": "Script not run as root"}))
             sys.exit(1)
-    
+
     try:
         check_dependencies()
         nic_data = get_nic_data()
         metadata = get_metadata()
-        
+
         output = {
             "network_data": nic_data,
             "metadata": metadata
         }
-        
+
         print(json.dumps(output, indent=2))
-        
+
     except Exception as e:
         print(json.dumps({"error": str(e)}))
         sys.exit(1)

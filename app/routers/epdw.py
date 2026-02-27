@@ -1,7 +1,7 @@
 """DID Router for SUT (System Under Test) DID operations."""
 
 import logging
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Path, Query
@@ -9,11 +9,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid
-from app.routers.dependencies import EPDWTokenDep, APITokenDep401Response, DIDServiceDep
+from app.routers.dependencies import APITokenDep401Response, DIDServiceDep, EPDWTokenDep
 from app.services.did_service import ArtefactInput
 from app.services.exceptions import DuplicateIterationIdsError
 from app.services.sut_service import SUTServiceDep
-
 
 # ==========================
 # Constants
@@ -71,7 +70,7 @@ class CreateSutResponse(BaseModel):
     benchmarkExecutionID: str
     mode: str = Field(description="'single' or 'multi'")
     master_did: str
-    iterations: List[IterationDIDInfo]
+    iterations: list[IterationDIDInfo]
     vc_status: str = Field(default="separate_endpoint")
 
 
@@ -87,7 +86,7 @@ class DIDAppendRequest(BaseModel):
         description="Iteration ID to update",
         json_schema_extra={"example": "43f418f6-3808-4e81-bf42-6e8d11def355"},
     )
-    data: Dict[str, Any] = Field(
+    data: dict[str, Any] = Field(
         ...,
         description="Data to merge/update. Protected keys like '_id', 'did' are blocked.",
         examples=[{"key": "value", "otherkey": "othervalue"}]
@@ -100,9 +99,9 @@ class AppendDIDResponse(BaseModel):
     benchmarkExecutionID: str
     iterationID: str
     did: str
-    previous_did: Optional[str]
+    previous_did: str | None
     version: int
-    diff: Dict[str, Any]
+    diff: dict[str, Any]
     message: str
 
 
@@ -114,22 +113,22 @@ class BenchmarkIterationInput(BaseModel):
         json_schema_extra={"example": _example_iteration_id_1},
         examples=[_example_iteration_id_1],
     )
-    artefact_hash: Optional[Multihash] = Field(
+    artefact_hash: Multihash | None = Field(
         default=None,
         description="Optional multihash of iteration data",
         json_schema_extra={"example": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"},
     )
-    artefact_metadata: Optional[dict[str, Any]] = Field(
+    artefact_metadata: dict[str, Any] | None = Field(
         default=None,
         description="Optional metadata for the iteration",
         json_schema_extra={"example": {"run": 1, "score": 123.45, "runtime_seconds": 342}},
     )
-    backlink: Optional[str] = Field(
+    backlink: str | None = Field(
         default=None,
         description="Optional URL back to the iteration in the originating system",
         json_schema_extra={"example": "https://epdw.example.com/iterations/iter-1"},
     )
-    provenance: Optional[DIDOrUUIDList] = Field(
+    provenance: DIDOrUUIDList | None = Field(
         default=None,
         description="Optional additional provenance identifiers (beyond the benchmark itself)",
         json_schema_extra={"example": []},
@@ -144,34 +143,34 @@ class RecordBenchmarkRequest(BaseModel):
         json_schema_extra={"example": _example_benchmark_id},
         examples=[_example_benchmark_id],
     )
-    artefact_hash: Optional[Multihash] = Field(
+    artefact_hash: Multihash | None = Field(
         default=None,
         description="Optional multihash of benchmark data",
         json_schema_extra={"example": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"},
     )
-    artefact_metadata: Optional[dict[str, Any]] = Field(
+    artefact_metadata: dict[str, Any] | None = Field(
         default=None,
         description="Optional metadata for the benchmark",
         json_schema_extra={"example": {"name": "SPEC CPU 2017", "config": "base", "system": "EPYC 9004"}},
     )
-    backlink: Optional[str] = Field(
+    backlink: str | None = Field(
         default=None,
         description="Optional URL back to the benchmark in the originating system",
         json_schema_extra={"example": "https://epdw.example.com/benchmarks/bench-123"},
     )
-    provenance: Optional[DIDOrUUIDList] = Field(
+    provenance: DIDOrUUIDList | None = Field(
         default=None,
         description="Optional list of provenance identifiers for the benchmark itself",
         json_schema_extra={"example": []},
     )
-    iterations: List[BenchmarkIterationInput] = Field(
+    iterations: list[BenchmarkIterationInput] = Field(
         ...,
         description="List of iterations for this benchmark (at least 1 required)"
     )
 
     @field_validator('iterations')
     @classmethod
-    def validate_iterations_not_empty(cls, v: List[BenchmarkIterationInput]) -> List[BenchmarkIterationInput]:
+    def validate_iterations_not_empty(cls, v: list[BenchmarkIterationInput]) -> list[BenchmarkIterationInput]:
         """Ensure at least one iteration is provided."""
         if not v:
             raise ValueError("At least one iteration is required")
@@ -191,7 +190,7 @@ class IterationDIDResult(BaseModel):
     status: str = Field(
         description="Status: 'created', 'updated', or 'error'"
     )
-    error: Optional[str] = Field(
+    error: str | None = Field(
         default=None,
         description="Error message if status is 'error'"
     )
@@ -206,7 +205,7 @@ class RecordBenchmarkResponse(BaseModel):
         description="DID for the specific benchmark version created"
     )
     benchmark_version: int
-    iterations: List[IterationDIDResult]
+    iterations: list[IterationDIDResult]
     partial_failure: bool = Field(
         description="True if any iteration failed to be created"
     )
@@ -480,7 +479,7 @@ async def record_benchmark(
     )
 
     # CREATE ITERATION ARTEFACTS (partial-success mode)
-    iteration_results: List[IterationDIDResult] = []
+    iteration_results: list[IterationDIDResult] = []
     partial_failure = False
 
     for iteration in request.iterations:

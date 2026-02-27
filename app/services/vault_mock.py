@@ -11,11 +11,11 @@ Usage:
 """
 
 import json
-import os
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import hvac.exceptions
 
@@ -45,9 +45,9 @@ class MockKVv2:
         self,
         path: str,
         mount_point: str = "secret",
-        version: Optional[int] = None,
+        version: int | None = None,
         raise_on_deleted_version: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Read a secret from disk.
 
@@ -68,7 +68,7 @@ class MockKVv2:
             raise hvac.exceptions.InvalidPath(f"No secret at {mount_point}/{path}")
 
         try:
-            with open(secret_path, "r") as f:
+            with open(secret_path) as f:
                 stored = json.load(f)
             return stored
         except json.JSONDecodeError as e:
@@ -78,10 +78,10 @@ class MockKVv2:
     def create_or_update_secret(
         self,
         path: str,
-        secret: Dict[str, Any],
+        secret: dict[str, Any],
         mount_point: str = "secret",
-        cas: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        cas: int | None = None,
+    ) -> dict[str, Any]:
         """
         Create or update a secret on disk.
 
@@ -93,7 +93,7 @@ class MockKVv2:
         version = 1
         if secret_path.exists():
             try:
-                with open(secret_path, "r") as f:
+                with open(secret_path) as f:
                     existing = json.load(f)
                 version = existing.get("data", {}).get("metadata", {}).get("version", 0) + 1
             except (json.JSONDecodeError, KeyError):
@@ -132,7 +132,7 @@ class MockKVv2:
 
     def list_secrets(
         self, path: str = "", mount_point: str = "secret"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         List secrets at a given path.
 
@@ -146,7 +146,7 @@ class MockKVv2:
         if not list_dir.exists():
             raise hvac.exceptions.InvalidPath(f"No secrets at {mount_point}/{path}")
 
-        keys: List[str] = []
+        keys: list[str] = []
         try:
             for entry in list_dir.iterdir():
                 if entry.is_dir():
@@ -209,15 +209,15 @@ class MockKVv1:
 
     def read_secret(
         self, path: str, mount_point: str = "secret"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Read a secret (v1 style response)."""
         result = self._v2.read_secret_version(path=path, mount_point=mount_point)
         # v1 returns data directly under "data", not nested
         return {"data": result.get("data", {}).get("data", {})}
 
     def create_or_update_secret(
-        self, path: str, secret: Dict[str, Any], mount_point: str = "secret"
-    ) -> Dict[str, Any]:
+        self, path: str, secret: dict[str, Any], mount_point: str = "secret"
+    ) -> dict[str, Any]:
         """Create or update a secret."""
         return self._v2.create_or_update_secret(
             path=path, secret=secret, mount_point=mount_point
@@ -225,7 +225,7 @@ class MockKVv1:
 
     def list_secrets(
         self, path: str = "", mount_point: str = "secret"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """List secrets at a path."""
         return self._v2.list_secrets(path=path, mount_point=mount_point)
 
@@ -252,7 +252,7 @@ class MockSys:
         self.root_dir = Path(root_dir)
         self.default_mount = default_mount
 
-    def list_mounted_secrets_engines(self) -> Dict[str, Any]:
+    def list_mounted_secrets_engines(self) -> dict[str, Any]:
         """
         Return mock mounted secrets engines.
 
@@ -323,7 +323,7 @@ class MockVaultClient:
     # VaultClientProtocol implementation
     # =========================================================================
 
-    def read_secret(self, mount_point: str, path: str) -> Dict[str, Any]:
+    def read_secret(self, mount_point: str, path: str) -> dict[str, Any]:
         """Read a secret from the file-based mock vault.
 
         Args:
@@ -341,7 +341,7 @@ class MockVaultClient:
         )
         return result.get("data", {}).get("data", {})
 
-    def write_secret(self, mount_point: str, path: str, data: Dict[str, Any]) -> None:
+    def write_secret(self, mount_point: str, path: str, data: dict[str, Any]) -> None:
         """Write a secret to the file-based mock vault.
 
         Args:
@@ -353,7 +353,7 @@ class MockVaultClient:
             mount_point=mount_point, path=path, secret=data
         )
 
-    def list_secrets(self, mount_point: str, path: str) -> List[str]:
+    def list_secrets(self, mount_point: str, path: str) -> list[str]:
         """List secrets at a path in the file-based mock vault.
 
         Args:

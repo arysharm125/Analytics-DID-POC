@@ -3,8 +3,8 @@
 This provides a baseline reference for system responsiveness without
 database or authentication overhead.
 """
-from locust import task, between
 from common import BaseAPIUser
+from locust import between, task
 
 
 class HealthUser(BaseAPIUser):

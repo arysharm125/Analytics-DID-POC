@@ -3,10 +3,9 @@
 This module provides stubs for data seeding that can be implemented
 when needed for more complex benchmark scenarios.
 """
-from typing import List
 
 
-def seed_advisory_data(db_url: str, count: int = 100) -> List[str]:
+def seed_advisory_data(db_url: str, count: int = 100) -> list[str]:
     """Pre-populate MongoDB with advisory artefacts for read testing.
 
     This is a stub for future implementation when read-heavy scenarios
@@ -49,7 +48,7 @@ def seed_epdw_data(db_url: str, benchmark_count: int = 10) -> dict:
     )
 
 
-def get_test_artefact_uids() -> List[str]:
+def get_test_artefact_uids() -> list[str]:
     """Return list of artefact UIDs for vc.json endpoint testing.
 
     For now, returns empty list since advisory scenarios create their own data.

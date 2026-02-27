@@ -3,7 +3,7 @@
 This module provides functions for comparing nested dicts, lists, and primitives,
 supporting both detailed diff computation and efficient equality checks.
 """
-from typing import Any, Dict, Union, cast
+from typing import Any, Union, cast
 
 
 def compute_diff(
@@ -11,7 +11,7 @@ def compute_diff(
     new: Any,
     path: str = "",
     early_exit: bool = False,
-) -> Union[Dict[str, Any], bool]:
+) -> Union[dict[str, Any], bool]:
     """Compute the difference between two values.
 
     Recursively compares nested dicts, lists, and primitives to identify
@@ -31,7 +31,7 @@ def compute_diff(
     """
     # Initialize diff structure (only used when early_exit=False)
     if not early_exit:
-        diff: Dict[str, Dict[str, Any]] = {"added": {}, "removed": {}, "modified": {}}
+        diff: dict[str, dict[str, Any]] = {"added": {}, "removed": {}, "modified": {}}
 
     # Same value - no difference
     if old == new:
@@ -73,7 +73,7 @@ def compute_diff(
                     return True
             else:
                 # Merge sub-diffs (sub_result is a dict when early_exit=False)
-                sub_diff = cast(Dict[str, Dict[str, Any]], sub_result)
+                sub_diff = cast("dict[str, dict[str, Any]]", sub_result)
                 for t in ("added", "removed", "modified"):
                     diff[t].update(sub_diff[t])
 
@@ -105,7 +105,7 @@ def compute_diff(
                         return True
                 else:
                     # Merge sub-diffs (sub_result is a dict when early_exit=False)
-                    sub_diff = cast(Dict[str, Dict[str, Any]], sub_result)
+                    sub_diff = cast("dict[str, dict[str, Any]]", sub_result)
                     for t in ("added", "removed", "modified"):
                         diff[t].update(sub_diff[t])
 
@@ -135,7 +135,7 @@ def deep_equals(a: Any, b: Any) -> bool:
     return compute_diff(a, b, early_exit=True) is False
 
 
-def has_diff(diff: Dict[str, Any]) -> bool:
+def has_diff(diff: dict[str, Any]) -> bool:
     """Check if a diff result contains any changes.
 
     Args:

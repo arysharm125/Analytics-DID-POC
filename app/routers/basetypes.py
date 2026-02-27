@@ -8,12 +8,11 @@ from pydantic import AfterValidator
 
 from app.services.exceptions import (
     DuplicateProvenanceError,
-    InvalidIdentifierError,
-    InvalidDivisionError,
-    InvalidMultihashError,
     InvalidArtefactTypeError,
+    InvalidDivisionError,
+    InvalidIdentifierError,
+    InvalidMultihashError,
 )
-
 
 # =============================================================================
 # UUID Validation

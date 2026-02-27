@@ -1,16 +1,18 @@
 # policy_orchestrator.py
 import json
 import logging
-from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Body, Depends
-from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Any
+
 from bson import json_util
+from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from app.database import MongoConnector
+from app.routers.dependencies import get_db
 
 # Import your DecisionEngine and MongoConnector
 from app.services.decision_engine import DecisionEngine, Rule
-from app.database import MongoConnector
-from app.routers.dependencies import get_db
 
 logger = logging.getLogger("policy_orchestrator")
 logger.setLevel(logging.INFO)
@@ -26,29 +28,29 @@ class RuleIn(BaseModel):
     id: str = Field(..., description="Unique rule id")
     priority: int = Field(0, description="Higher numbers evaluated first")
     condition: str = Field(..., description="Python expression using `facts` dict")
-    action: Dict[str, Any] = Field(..., description="Action metadata {decision,score,...}")
+    action: dict[str, Any] = Field(..., description="Action metadata {decision,score,...}")
     terminal: bool = Field(False, description="Stop evaluation if matched")
-    description: Optional[str] = Field("", description="Human description")
+    description: str | None = Field("", description="Human description")
 
 class RuleUpdate(BaseModel):
-    priority: Optional[int]
-    condition: Optional[str]
-    action: Optional[Dict[str, Any]]
-    terminal: Optional[bool]
-    description: Optional[str]
+    priority: int | None
+    condition: str | None
+    action: dict[str, Any] | None
+    terminal: bool | None
+    description: str | None
 
 class EvaluateRequest(BaseModel):
-    facts: Dict[str, Any]
-    correlation_id: Optional[str] = None
+    facts: dict[str, Any]
+    correlation_id: str | None = None
 
 class EvaluateResponse(BaseModel):
     decision: str
     score: int
-    matched_rules: List[Dict[str, Any]]
-    actions: List[Dict[str, Any]]
+    matched_rules: list[dict[str, Any]]
+    actions: list[dict[str, Any]]
     explanation: str
     timestamp: str
-    correlation_id: Optional[str]
+    correlation_id: str | None
 
 # Manager
 class PolicyOrchestrator:
@@ -92,7 +94,7 @@ class PolicyOrchestrator:
     def get_rule(self, rule_id: str):
         return self.db.get_collection(RULES_COLL).find_one({"id": rule_id}, {"_id": 0})
 
-    def add_rule(self, rule_data: Dict[str, Any]):
+    def add_rule(self, rule_data: dict[str, Any]):
         coll = self.db.get_collection(RULES_COLL)
         existing = coll.find_one({"id": rule_data["id"]})
         if existing:
@@ -102,7 +104,7 @@ class PolicyOrchestrator:
         self.reload()
         return rule_data
 
-    def update_rule(self, rule_id: str, update_data: Dict[str, Any]):
+    def update_rule(self, rule_id: str, update_data: dict[str, Any]):
         coll = self.db.get_collection(RULES_COLL)
         res = coll.update_one({"id": rule_id}, {"$set": update_data})
         if res.matched_count == 0:
@@ -118,7 +120,7 @@ class PolicyOrchestrator:
         self.reload()
         return {"deleted": rule_id}
 
-    def evaluate(self, facts: Dict[str, Any], correlation_id: Optional[str] = None) -> Dict[str, Any]:
+    def evaluate(self, facts: dict[str, Any], correlation_id: str | None = None) -> dict[str, Any]:
         return self.engine.evaluate(facts, correlation_id=correlation_id)
 
 

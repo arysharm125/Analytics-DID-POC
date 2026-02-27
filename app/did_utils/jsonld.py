@@ -5,16 +5,23 @@ Verifiable Presentations to canonical N-Quads format for Data Integrity
 signatures using the W3C VC Data Integrity specification.
 """
 
-from datetime import datetime
 import json
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from dataclasses import dataclass
 from pyld import jsonld
 
-from app.routers.basetypes import DIDList, DivisionStr, Multihash, UUIDString, did_from_uuid, did_list_from_uuid_list, division_did_from_division
-
+from app.routers.basetypes import (
+    DIDList,
+    DivisionStr,
+    Multihash,
+    UUIDString,
+    did_from_uuid,
+    did_list_from_uuid_list,
+    division_did_from_division,
+)
 
 # Mapping of context URLs to local JSON files
 _CONTEXT_FILES = {
@@ -55,7 +62,7 @@ def _load_context(url: str) -> dict | None:
     if not context_path.exists():
         return None
 
-    with open(context_path, "r", encoding="utf-8") as f:
+    with open(context_path, encoding="utf-8") as f:
         context = json.load(f)
 
     _context_cache[url] = context

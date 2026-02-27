@@ -25,8 +25,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, Any, Tuple
-
+from typing import Any
 
 # Default configuration
 DEFAULT_THRESHOLD = 0.20  # 20% regression threshold
@@ -63,7 +62,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_baseline(filepath: str) -> Dict[str, Any]:
+def load_baseline(filepath: str) -> dict[str, Any]:
     """Load baseline JSON file.
 
     Args:
@@ -80,16 +79,16 @@ def load_baseline(filepath: str) -> Dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Baseline file not found: {filepath}")
 
-    with open(path, 'r') as f:
+    with open(path) as f:
         return json.load(f)
 
 
 def compare_endpoint(
     endpoint: str,
-    baseline_stats: Dict[str, float],
-    current_stats: Dict[str, float],
+    baseline_stats: dict[str, float],
+    current_stats: dict[str, float],
     threshold: float
-) -> Tuple[bool, Dict[str, Any]]:
+) -> tuple[bool, dict[str, Any]]:
     """Compare statistics for a single endpoint.
 
     Args:
@@ -148,7 +147,7 @@ def compare_endpoint(
     return has_regression, comparison
 
 
-def print_comparison(comparison: Dict[str, Any], verbose: bool = False):
+def print_comparison(comparison: dict[str, Any], verbose: bool = False):
     """Print formatted comparison results.
 
     Args:

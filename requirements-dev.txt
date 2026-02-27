@@ -13,5 +13,8 @@ pytest-cov>=4.1.0
 mongomock>=4.1.2
 httpx>=0.24.0
 
+# Linting and formatting
+ruff>=0.8.0
+
 # Container-based testing (requires Docker)
 testcontainers[mongodb]>=3.7.0

@@ -1,9 +1,9 @@
-from contextlib import AsyncExitStack, asynccontextmanager
-from typing import AsyncGenerator
 import logging
 import logging.config
+from collections.abc import AsyncGenerator
+from contextlib import AsyncExitStack, asynccontextmanager
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.config import get_config
@@ -47,9 +47,10 @@ app.middleware("http")(exception_handler_middleware)
 # Register Routers
 # ==========================
 # from app.routers.policy import router as policy_router
-from app.routers.epdw import app as did_router, startup_did_router
 from app.routers.advisory_router import router as advisory_router
 from app.routers.didcheck import app as didcheck_router
+from app.routers.epdw import app as did_router
+from app.routers.epdw import startup_did_router
 from app.routers.health import app as health_router
 
 # app.include_router(policy_router)

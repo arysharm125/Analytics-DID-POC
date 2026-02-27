@@ -228,12 +228,13 @@ async def report_details(artefact_id: str):
     in DIDCheck, they come here to see the report DID with a link back to DIDCheck
     for full verification details.
     """
-    from fastapi.responses import HTMLResponse
     from string import Template
+
+    from fastapi.responses import HTMLResponse
 
     # Read the template file
     template_path = STATIC_DIR / "report_details.html"
-    with open(template_path, "r") as f:
+    with open(template_path) as f:
         template_content = f.read()
 
     # Prepare the data
