@@ -1,0 +1,60 @@
+{
+  "version": "1.1.0-local+06dfed",
+  "timestamp": "2026-02-27T11:40:32.474664+00:00",
+  "environment": {
+    "type": "docker-local",
+    "host": "http://localhost:8432"
+  },
+  "test_config": {
+    "users": 200,
+    "spawn_rate": 10,
+    "duration": "5m",
+    "locustfile": "locustfiles"
+  },
+  "endpoints": {
+    "GET /advisory/did.json": {
+      "requests": 7734,
+      "failures": 0,
+      "p50_ms": 5.0,
+      "p95_ms": 41.0,
+      "p99_ms": 65.0,
+      "average_ms": 10.652136516027893,
+      "min_ms": 2.4353099997824756,
+      "max_ms": 106.7648989992449,
+      "rps": 25.82803242999369
+    },
+    "POST /advisory/record_report": {
+      "requests": 16096,
+      "failures": 0,
+      "p50_ms": 6.0,
+      "p95_ms": 47.0,
+      "p99_ms": 79.0,
+      "average_ms": 12.015961586839609,
+      "min_ms": 2.419738999378751,
+      "max_ms": 145.956260001185,
+      "rps": 53.75329842166776
+    },
+    "GET /advisory/{uid}/vc.json": {
+      "requests": 5642,
+      "failures": 0,
+      "p50_ms": 7.0,
+      "p95_ms": 52.0,
+      "p99_ms": 82.0,
+      "average_ms": 17.427735121958428,
+      "min_ms": 3.468101000180468,
+      "max_ms": 137.22957100071653,
+      "rps": 18.841706616243133
+    },
+    "GET /health": {
+      "requests": 13770,
+      "failures": 0,
+      "p50_ms": 8.0,
+      "p95_ms": 53.0,
+      "p99_ms": 89.0,
+      "average_ms": 14.26614960871518,
+      "min_ms": 3.5172049992979737,
+      "max_ms": 153.5201970000344,
+      "rps": 45.9855193381191
+    }
+  }
+}
