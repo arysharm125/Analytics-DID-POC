@@ -15,6 +15,9 @@ This suite provides comprehensive load testing capabilities for the FastAPI back
 ### 1. Start the Load Test Environment
 
 ```bash
+# Rebuild the API image (pick up latest changes)
+docker compose -f deployment/docker-compose.loadtest.yml build api
+
 # Start all services (API, MongoDB, Vault, Locust)
 docker compose -f deployment/docker-compose.loadtest.yml up -d
 
@@ -48,8 +51,11 @@ pip install -r benchmarks/requirements.txt
 # Quick sanity check run.
 python benchmarks/scripts/run_benchmark.py --users 50 --duration 1m  --spawn-rate 5
 
-# Run with default settings (50 users, 5 minutes)
+# Run with default settings (200 users, 5 minutes)
 python benchmarks/scripts/run_benchmark.py
+
+# Run a stress test to find breaking points.
+python benchmarks/scripts/run_benchmark.py --users 1000  --duration 5m  --spawn-rate 5
 
 # Custom configuration
 python benchmarks/scripts/run_benchmark.py \
