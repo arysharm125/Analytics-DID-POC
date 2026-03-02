@@ -27,6 +27,17 @@ class TokenConfig:
 
 
 @dataclass(frozen=True)
+class MongoPoolConfig:
+    """MongoDB connection pool configuration."""
+
+    max_pool_size: int
+    min_pool_size: int
+    max_idle_time_ms: int
+    wait_queue_timeout_ms: int
+    pool_monitor_interval_s: int
+
+
+@dataclass(frozen=True)
 class MongoCollectionConfig:
     """MongoDB collection names."""
 
@@ -49,6 +60,7 @@ class AppConfig:
     vault: VaultConfig
     tokens: TokenConfig
     collections: MongoCollectionConfig
+    mongo_pool: MongoPoolConfig
     features: FeatureFlags
     expose_error_details: bool
 
@@ -79,6 +91,13 @@ def _load_config_from_env() -> AppConfig:
             qa_benchmark_iterations=os.getenv(
                 "QA_COLLECTION_ITER", "benchmark_iterations"
             ),
+        ),
+        mongo_pool=MongoPoolConfig(
+            max_pool_size=int(os.getenv("MONGO_MAX_POOL_SIZE", "100")),
+            min_pool_size=int(os.getenv("MONGO_MIN_POOL_SIZE", "5")),
+            max_idle_time_ms=int(os.getenv("MONGO_MAX_IDLE_TIME_MS", "30000")),
+            wait_queue_timeout_ms=int(os.getenv("MONGO_WAIT_QUEUE_TIMEOUT_MS", "5000")),
+            pool_monitor_interval_s=int(os.getenv("MONGO_POOL_MONITOR_INTERVAL", "60")),
         ),
         features=FeatureFlags(
             didcheck_router=bool(os.getenv("FEATURE_DIDCHECK_ROUTER", "")),

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import logging.config
 from collections.abc import AsyncGenerator
@@ -39,6 +40,42 @@ logger = logging.getLogger("deployment")
 # FastAPI App
 # ==========================
 
+async def _pool_monitor_task(interval: int) -> None:
+    """Background task to periodically log MongoDB pool statistics.
+
+    Args:
+        interval: Time in seconds between each pool stats log
+    """
+    from app.routers.dependencies import get_db
+
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            db = get_db()
+            stats = db.get_pool_stats()
+            if stats:
+                logger.info(
+                    f"MongoDB Pool: {stats.in_use_count}/{stats.max_pool_size} in use, "
+                    f"{stats.available_count} available, "
+                    f"wait_queue={stats.wait_queue_size}, "
+                    f"health={stats.pool_health}"
+                )
+                # Log warning if pool health is not healthy
+                if stats.pool_health == "warning":
+                    logger.warning(
+                        f"Pool health WARNING: {stats.in_use_count}/{stats.max_pool_size} "
+                        f"({stats.in_use_count * 100 / stats.max_pool_size:.1f}%) in use"
+                    )
+                elif stats.pool_health == "critical":
+                    logger.error(
+                        f"Pool health CRITICAL: {stats.in_use_count}/{stats.max_pool_size} "
+                        f"({stats.in_use_count * 100 / stats.max_pool_size:.1f}%) in use, "
+                        f"wait_queue={stats.wait_queue_size}"
+                    )
+        except Exception as e:
+            logger.debug(f"Pool stats monitoring error: {e}")
+
+
 @asynccontextmanager
 async def _app_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
   """App lifespan generator with startup validation and graceful shutdown."""
@@ -73,6 +110,12 @@ async def _app_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await startup_did_router()
     await stack.enter_async_context(did_service_lifespan())
 
+    # 4. Start background pool monitoring task
+    config = get_config()
+    pool_monitor_interval = config.mongo_pool.pool_monitor_interval_s
+    pool_monitor = asyncio.create_task(_pool_monitor_task(pool_monitor_interval))
+    logger.info(f"✓ Pool monitoring task started (interval: {pool_monitor_interval}s)")
+
     logger.info("Application startup complete")
 
     # Add additional lifespans above this point.
@@ -80,6 +123,13 @@ async def _app_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # === GRACEFUL SHUTDOWN ===
     logger.info("Shutting down application...")
+
+    # Cancel background monitoring task
+    pool_monitor.cancel()
+    try:
+        await pool_monitor
+    except asyncio.CancelledError:
+        logger.info("✓ Pool monitoring task stopped")
 
     # Close database connections
     try:

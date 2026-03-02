@@ -19,6 +19,7 @@ from app.config import (
     AppConfig,
     FeatureFlags,
     MongoCollectionConfig,
+    MongoPoolConfig,
     TokenConfig,
     VaultConfig,
     override_config,
@@ -187,6 +188,13 @@ def test_config() -> AppConfig:
         collections=MongoCollectionConfig(
             qa_benchmark_collection="test_benchmark_executions",
             qa_benchmark_iterations="test_benchmark_iterations",
+        ),
+        mongo_pool=MongoPoolConfig(
+            max_pool_size=100,
+            min_pool_size=5,
+            max_idle_time_ms=30000,
+            wait_queue_timeout_ms=5000,
+            pool_monitor_interval_s=60,
         ),
         features=FeatureFlags(
             didcheck_router=True,

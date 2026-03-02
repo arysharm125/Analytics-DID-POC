@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 
     from app.services.vault_service import VaultService
 
+# Import config for pool settings
+from app.config import get_config
+
 # -----------------------------------------------------------
 # Logging
 # -----------------------------------------------------------
@@ -41,6 +44,22 @@ logger = logging.getLogger("db_connector")
 
 # Type alias for migration functions
 MigrationFunc = Callable[["MongoConnector"], None]
+
+
+@dataclass(frozen=True)
+class ConnectionPoolStats:
+    """MongoDB connection pool statistics.
+
+    Provides visibility into the current state of the connection pool,
+    useful for monitoring connection usage and detecting potential exhaustion.
+    """
+    max_pool_size: int
+    min_pool_size: int
+    current_size: int
+    available_count: int
+    in_use_count: int
+    wait_queue_size: int
+    pool_health: str  # "healthy", "warning", "critical"
 
 # Validation patterns for MigrationName
 _RE_DATE_SLUG = re.compile(r"^\d{8}\d{3}$")
@@ -227,6 +246,10 @@ class MongoConnector:
             or "mongodb.net" in conn_string
         )
 
+        # Get pool configuration
+        config = get_config()
+        pool_config = config.mongo_pool
+
         # Retry logic
         for attempt in range(3):
             try:
@@ -238,12 +261,19 @@ class MongoConnector:
                     serverSelectionTimeoutMS=10000,
                     connectTimeoutMS=10000,
                     tz_aware=True,
+                    maxPoolSize=pool_config.max_pool_size,
+                    minPoolSize=pool_config.min_pool_size,
+                    maxIdleTimeMS=pool_config.max_idle_time_ms,
+                    waitQueueTimeoutMS=pool_config.wait_queue_timeout_ms,
                 )
                 # Force connection test
                 self.client.admin.command("ping")
 
                 self.db = self.client[db_name]
-                logger.info(f"Connected to MongoDB: {db_name}")
+                logger.info(
+                    f"Connected to MongoDB: {db_name} "
+                    f"(pool: {pool_config.min_pool_size}-{pool_config.max_pool_size})"
+                )
                 return
             except Exception as e:
                 logger.error(f"[Attempt {attempt+1}/3] Mongo connection failed → {e}")
@@ -365,6 +395,92 @@ class MongoConnector:
 
     def fetch_docs(self, collection_name: str, query=None, limit=20):
         return list(self.get_collection(collection_name).find(query or {}).limit(limit))
+
+    def get_pool_stats(self) -> ConnectionPoolStats | None:
+        """Get current connection pool statistics.
+
+        Returns:
+            ConnectionPoolStats with current pool metrics, or None if stats unavailable
+            (e.g., when using mongomock or if client is not initialized).
+
+        Note:
+            Pool health is calculated as:
+            - "healthy": in_use < 70% of max AND wait_queue == 0
+            - "warning": in_use >= 70% of max OR wait_queue > 0
+            - "critical": in_use >= 90% of max OR wait_queue > 5
+        """
+        if self.client is None:
+            return None
+
+        try:
+            # Access PyMongo internal pool stats
+            # The topology provides access to servers and their connection pools
+            topology = self.client._topology
+
+            # Get pool config
+            config = get_config()
+            pool_config = config.mongo_pool
+
+            max_pool_size = pool_config.max_pool_size
+            min_pool_size = pool_config.min_pool_size
+
+            # Aggregate stats across all servers in the topology
+            total_in_use = 0
+            total_available = 0
+            total_current = 0
+            wait_queue_size = 0
+
+            # Iterate over all servers in the topology
+            for server in topology._servers.values():
+                # Each server has a pool
+                pool = server._pool
+
+                # Get pool statistics
+                # Note: These attributes may vary by PyMongo version
+                # Using getattr with defaults for safety
+                pool_state = getattr(pool, 'opts', None)
+                if pool_state:
+                    # The pool tracks connections
+                    generation = getattr(pool, 'generation', None)
+                    if generation is not None:
+                        # Access the actual connection counts
+                        # Pool has sockets organized by generation
+                        sockets = getattr(pool, 'sockets', set())
+                        active_sockets = getattr(pool, 'active_sockets', set())
+
+                        total_current += len(sockets)
+                        total_in_use += len(active_sockets)
+                        total_available += len(sockets) - len(active_sockets)
+
+                        # Wait queue size
+                        wait_queue = getattr(pool, '_check_condition_cv', None)
+                        if wait_queue and hasattr(wait_queue, '_waiters'):
+                            wait_queue_size += len(wait_queue._waiters) if wait_queue._waiters else 0
+
+            # Calculate pool health
+            utilization_pct = (total_in_use / max_pool_size * 100) if max_pool_size > 0 else 0
+
+            if utilization_pct >= 90 or wait_queue_size > 5:
+                pool_health = "critical"
+            elif utilization_pct >= 70 or wait_queue_size > 0:
+                pool_health = "warning"
+            else:
+                pool_health = "healthy"
+
+            return ConnectionPoolStats(
+                max_pool_size=max_pool_size,
+                min_pool_size=min_pool_size,
+                current_size=total_current,
+                available_count=total_available,
+                in_use_count=total_in_use,
+                wait_queue_size=wait_queue_size,
+                pool_health=pool_health,
+            )
+
+        except Exception as e:
+            # If we can't access pool stats (e.g., mongomock, version incompatibility)
+            logger.debug(f"Unable to retrieve pool stats: {e}")
+            return None
 
     def close_connection(self):
         if self.client:

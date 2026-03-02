@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from app.database import ConnectionPoolStats
 from app.routers.dependencies import MongoConnectorDep
 from app.services.vault import vault_is_authenticated
 from app.version import VERSION, full_version
@@ -21,6 +22,10 @@ class HealthResponse(BaseModel):
     db_connected: bool = Field(
         ...,
         description="Whether the service can connect to MongoDB",
+    )
+    pool_stats: ConnectionPoolStats | None = Field(
+        None,
+        description="MongoDB connection pool statistics (None if unavailable)",
     )
     version: str = Field(
         ...,
@@ -54,19 +59,25 @@ def health(db: MongoConnectorDep) -> HealthResponse:
     except Exception:
         vault_ok = False
 
-    # Check MongoDB connectivity
+    # Check MongoDB connectivity and get pool stats
+    pool_stats = None
     try:
         if db.client is not None:
             db.client.admin.command("ping")
             db_ok = True
+
+            # Get pool statistics
+            pool_stats = db.get_pool_stats()
         else:
             db_ok = False
     except Exception:
         db_ok = False
 
     # Determine overall status
+    # Factor in pool health if available
     if vault_ok and db_ok:
-        status = "ok"
+        # Check pool health if stats available
+        status = "degraded" if pool_stats and pool_stats.pool_health == "critical" else "ok"
     elif db_ok:  # DB up but vault down - can still serve some requests
         status = "degraded"
     else:
@@ -76,6 +87,7 @@ def health(db: MongoConnectorDep) -> HealthResponse:
         status=status,
         vault_authenticated=vault_ok,
         db_connected=db_ok,
+        pool_stats=pool_stats,
         version=VERSION,
         full_version=full_version(),
     )
