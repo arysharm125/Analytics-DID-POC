@@ -3,11 +3,12 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid
 from app.routers.dependencies import AdvisoryTokenDep, APITokenDep401Response, DIDServiceDep
 from app.services.did_service import ArtefactInput
+from app.services.exceptions import InvalidUpdaterEmailError
 
 _ADVISORY_DIVISION = "advisory"
 
@@ -47,6 +48,24 @@ class RecordReportRequest(BaseModel):
                     "For example: `[\"did:web:did.amd.com:b8ff3b79-863f-4fa9-84ba-0067663f2b04\", \"b8ff3b79-863f-4fa9-84ba-0067663f2b04\"]`",
         json_schema_extra={"example": []},
     )
+    update_message: str | None = Field(
+        default=None,
+        description="Optional message describing this update",
+        json_schema_extra={"example": "Initial report submission"},
+    )
+    updated_by: str | None = Field(
+        default=None,
+        description="Optional AMD email of the person who made this update",
+        json_schema_extra={"example": "user@amd.com"},
+    )
+
+    @field_validator('updated_by')
+    @classmethod
+    def validate_amd_email(cls, v: str | None) -> str | None:
+        """Validate that updated_by is an AMD email address."""
+        if v is not None and not v.lower().endswith("@amd.com"):
+            raise InvalidUpdaterEmailError()
+        return v
 
 class RecordReportResponse(BaseModel):
     artefact_did: AMDWebDID = Field(
@@ -143,6 +162,8 @@ async def record_report(request: RecordReportRequest, api_token: AdvisoryTokenDe
         artefact_type="report",  # Advisory reports are always type "report"
         backlink=request.backlink,
         provenance=request.provenance,
+        update_message=request.update_message,
+        updated_by=request.updated_by,
     )
 
     # Upsert the artefact

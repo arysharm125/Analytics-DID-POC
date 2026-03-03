@@ -686,3 +686,82 @@ class TestGenerateDigitalArtefactVC:
         # Should be parseable
         datetime.fromisoformat(creation_date_str)
         assert creation_date_str == sample_digital_artefact_input.created_at.isoformat()
+
+    def test_generate_vc_with_update_message(self, sample_uuid, sample_version_uid):
+        """Verify updateMessage is included when provided."""
+        da_input = DigitalArtefactVCInput(
+            uid=sample_uuid,
+            version=1,
+            version_uid=sample_version_uid,
+            hash=None,
+            metadata=None,
+            created_at=datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+            division="epdw",
+            provenance=None,
+            update_message="Updated report data",
+        )
+        issuance_date = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+        vc = generate_digital_artefact_vc(1, da_input, issuance_date)
+
+        assert "updateMessage" in vc["credentialSubject"]
+        assert vc["credentialSubject"]["updateMessage"] == "Updated report data"
+
+    def test_generate_vc_without_update_message(self, sample_digital_artefact_input_minimal):
+        """Verify updateMessage is omitted when None."""
+        issuance_date = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+        vc = generate_digital_artefact_vc(1, sample_digital_artefact_input_minimal, issuance_date)
+
+        assert "updateMessage" not in vc["credentialSubject"]
+
+    def test_generate_vc_with_updated_by(self, sample_uuid, sample_version_uid):
+        """Verify updatedBy is included when provided."""
+        da_input = DigitalArtefactVCInput(
+            uid=sample_uuid,
+            version=1,
+            version_uid=sample_version_uid,
+            hash=None,
+            metadata=None,
+            created_at=datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+            division="epdw",
+            provenance=None,
+            updated_by="user@amd.com",
+        )
+        issuance_date = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+        vc = generate_digital_artefact_vc(1, da_input, issuance_date)
+
+        assert "updatedBy" in vc["credentialSubject"]
+        assert vc["credentialSubject"]["updatedBy"] == "user@amd.com"
+
+    def test_generate_vc_without_updated_by(self, sample_digital_artefact_input_minimal):
+        """Verify updatedBy is omitted when None."""
+        issuance_date = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+        vc = generate_digital_artefact_vc(1, sample_digital_artefact_input_minimal, issuance_date)
+
+        assert "updatedBy" not in vc["credentialSubject"]
+
+    def test_generate_vc_with_both_update_fields(self, sample_uuid, sample_version_uid):
+        """Verify both update fields are included when provided."""
+        da_input = DigitalArtefactVCInput(
+            uid=sample_uuid,
+            version=1,
+            version_uid=sample_version_uid,
+            hash=None,
+            metadata=None,
+            created_at=datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+            division="epdw",
+            provenance=None,
+            update_message="Updated report",
+            updated_by="user@amd.com",
+        )
+        issuance_date = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+        vc = generate_digital_artefact_vc(1, da_input, issuance_date)
+
+        assert "updateMessage" in vc["credentialSubject"]
+        assert "updatedBy" in vc["credentialSubject"]
+        assert vc["credentialSubject"]["updateMessage"] == "Updated report"
+        assert vc["credentialSubject"]["updatedBy"] == "user@amd.com"

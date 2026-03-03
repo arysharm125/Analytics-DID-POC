@@ -195,6 +195,71 @@ class TestRecordReportRequestModel:
 
         assert request.provenance == []
 
+    def test_update_message_accepts_string(self):
+        """Valid update message should be accepted."""
+        request = RecordReportRequest(
+            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            update_message="Initial report submission",
+        )
+
+        assert request.update_message == "Initial report submission"
+
+    def test_update_message_accepts_none(self):
+        """None for update_message should be accepted."""
+        request = RecordReportRequest(
+            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            update_message=None,
+        )
+
+        assert request.update_message is None
+
+    def test_updated_by_accepts_amd_email(self):
+        """Valid AMD email should be accepted for updated_by."""
+        request = RecordReportRequest(
+            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            updated_by="user@amd.com",
+        )
+
+        assert request.updated_by == "user@amd.com"
+
+    def test_updated_by_accepts_none(self):
+        """None for updated_by should be accepted."""
+        request = RecordReportRequest(
+            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            updated_by=None,
+        )
+
+        assert request.updated_by is None
+
+    def test_updated_by_rejects_non_amd_email(self):
+        """Non-AMD email should raise InvalidUpdaterEmailError."""
+        from app.services.exceptions import InvalidUpdaterEmailError
+
+        with pytest.raises(InvalidUpdaterEmailError):
+            RecordReportRequest(
+                artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                updated_by="user@example.com",
+            )
+
+    def test_updated_by_rejects_invalid_email_format(self):
+        """Invalid email format should raise InvalidUpdaterEmailError."""
+        from app.services.exceptions import InvalidUpdaterEmailError
+
+        with pytest.raises(InvalidUpdaterEmailError):
+            RecordReportRequest(
+                artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                updated_by="not-an-email",
+            )
+
+    def test_updated_by_case_insensitive(self):
+        """AMD email check should be case-insensitive."""
+        request = RecordReportRequest(
+            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            updated_by="USER@AMD.COM",
+        )
+
+        assert request.updated_by == "USER@AMD.COM"
+
 
 # =============================================================================
 # Test RecordReportResponse Model

@@ -72,6 +72,16 @@ class DigitalArtefactInfo(BaseModel):
         description="Whether this artefact has provenance records",
         examples=[True, False],
     )
+    update_message: str | None = Field(
+        default=None,
+        description="Optional message describing this update",
+        examples=["Updated report data"],
+    )
+    updated_by: str | None = Field(
+        default=None,
+        description="Optional email of the person who made this update",
+        examples=["user@amd.com"],
+    )
 
 
 class ProvenanceNode(BaseModel):
@@ -173,6 +183,16 @@ class FullArtefactInfo(BaseModel):
         ...,
         description="Whether this artefact version is revoked",
         examples=[False],
+    )
+    update_message: str | None = Field(
+        default=None,
+        description="Optional message describing this update",
+        examples=["Updated report data"],
+    )
+    updated_by: str | None = Field(
+        default=None,
+        description="Optional email of the person who made this update",
+        examples=["user@amd.com"],
     )
 
 
@@ -386,6 +406,8 @@ def did_overview(
         creation_date=artefact["created_at"],
         revoked=artefact.get("revoked", False),
         has_provenance=has_provenance,
+        update_message=artefact.get("update_message"),
+        updated_by=artefact.get("updated_by"),
     )
 
     # Build latest_version response if applicable
@@ -434,6 +456,8 @@ def artefact_full(
         provenance=artefact.get("provenance"),
         creation_date=artefact["created_at"],
         revoked=artefact.get("revoked", False),
+        update_message=artefact.get("update_message"),
+        updated_by=artefact.get("updated_by"),
     )
 
 

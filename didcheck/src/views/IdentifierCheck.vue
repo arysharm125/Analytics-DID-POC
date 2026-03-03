@@ -397,6 +397,19 @@ watch(() => props.identifier, () => {
                 </v-col>
               </v-row>
 
+              <!-- Row 2.5: Update Message and Updated By -->
+              <v-row v-if="digitalArtefact.update_message || digitalArtefact.updated_by" class="mt-2">
+                <v-col v-if="digitalArtefact.updated_by" cols="12" sm="6">
+                  <div class="text-subtitle-2 text-grey">Updated By</div>
+                  <div class="text-body-1 mt-1">{{ digitalArtefact.updated_by }}</div>
+                </v-col>
+
+                <v-col v-if="digitalArtefact.update_message" cols="12" :sm="digitalArtefact.updated_by ? 6 : 12">
+                  <div class="text-subtitle-2 text-grey">Update Message</div>
+                  <div class="text-body-1 mt-1">{{ digitalArtefact.update_message }}</div>
+                </v-col>
+              </v-row>
+
               <!-- Row 3: Artefact Hash -->
               <v-row v-if="digitalArtefact.artefact_hash" class="mt-2">
                 <v-col cols="12">

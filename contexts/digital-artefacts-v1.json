@@ -10,6 +10,8 @@
     "version": "https://did.amd.com/contexts/digitalArtefacts/v1#version",
     "versionUid": "https://did.amd.com/contexts/digitalArtefacts/v1#versionUid",
     "division": "https://did.amd.com/contexts/digitalArtefacts/v1#division",
-    "provenance": { "@id": "https://did.amd.com/contexts/digitalArtefacts/v1#provenance", "@type": "@json", "@container": "@set" }
+    "provenance": { "@id": "https://did.amd.com/contexts/digitalArtefacts/v1#provenance", "@type": "@json", "@container": "@set" },
+    "updateMessage": "https://did.amd.com/contexts/digitalArtefacts/v1#updateMessage",
+    "updatedBy": "https://did.amd.com/contexts/digitalArtefacts/v1#updatedBy"
   }
 }

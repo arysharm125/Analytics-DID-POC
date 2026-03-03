@@ -194,6 +194,63 @@ class TestArtefactHasChanges:
         )
         assert result is False
 
+    def test_update_message_not_in_change_detection(self):
+        """Changing only update_message should not trigger version change."""
+        existing = {
+            "artefact_hash": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            "artefact_metadata": {"key": "value"},
+            "provenance": None,
+            "artefact_type": "report",
+            "update_message": "Old message",
+        }
+        # update_message is not a parameter to artefact_has_changes
+        result = artefact_has_changes(
+            existing=existing,
+            new_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            new_metadata={"key": "value"},
+            new_provenance=None,
+            new_artefact_type="report",
+        )
+        assert result is False
+
+    def test_updated_by_not_in_change_detection(self):
+        """Changing only updated_by should not trigger version change."""
+        existing = {
+            "artefact_hash": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            "artefact_metadata": {"key": "value"},
+            "provenance": None,
+            "artefact_type": "report",
+            "updated_by": "old@amd.com",
+        }
+        # updated_by is not a parameter to artefact_has_changes
+        result = artefact_has_changes(
+            existing=existing,
+            new_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            new_metadata={"key": "value"},
+            new_provenance=None,
+            new_artefact_type="report",
+        )
+        assert result is False
+
+    def test_update_fields_alone_dont_trigger_change(self):
+        """Changing only update_message and updated_by should not trigger version change."""
+        existing = {
+            "artefact_hash": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            "artefact_metadata": {"key": "value"},
+            "provenance": None,
+            "artefact_type": "report",
+            "update_message": "Old message",
+            "updated_by": "old@amd.com",
+        }
+        result = artefact_has_changes(
+            existing=existing,
+            new_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            new_metadata={"key": "value"},
+            new_provenance=None,
+            new_artefact_type="report",
+        )
+        assert result is False
+
 
 class TestArtefactToDaVcInput:
     """Tests for _artefact_to_da_vc_input helper function."""
@@ -563,6 +620,91 @@ class TestUpsertArtefact:
 
         assert v2.version == 2
         assert v2.artefact_type == "benchmark_iteration"
+
+    def test_create_with_update_message(self, did_service_no_migrations):
+        """Creating artefact with update_message should store it."""
+        did_service = did_service_no_migrations
+        result = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="advisory",
+                update_message="Initial creation",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+        assert result.update_message == "Initial creation"
+
+    def test_create_with_updated_by(self, did_service_no_migrations):
+        """Creating artefact with updated_by should store it."""
+        did_service = did_service_no_migrations
+        result = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="advisory",
+                updated_by="user@amd.com",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+        assert result.updated_by == "user@amd.com"
+
+    def test_update_only_update_fields_raises_no_changes(self, did_service_no_migrations):
+        """Updating only update_message and updated_by should raise ArtefactNoChangesError."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        # Create initial version
+        did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+                artefact_metadata={"key": "value"},
+                update_message="First version",
+                updated_by="user1@amd.com",
+            )
+        )
+
+        # Try to update only the update fields - should raise ArtefactNoChangesError
+        with pytest.raises(ArtefactNoChangesError):
+            did_service.upsert_artefact(
+                ArtefactInput(
+                    external_uid=external_uid,
+                    division="epdw",
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+                    artefact_metadata={"key": "value"},
+                    update_message="Different message",
+                    updated_by="user2@amd.com",
+                )
+            )
+
+    def test_update_with_real_change_and_update_fields(self, did_service_no_migrations):
+        """Updating with real changes plus update fields should create new version."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+                update_message="First version",
+                updated_by="user1@amd.com",
+            )
+        )
+
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+                update_message="Updated hash",
+                updated_by="user2@amd.com",
+            )
+        )
+
+        assert v2.version == 2
+        assert v2.update_message == "Updated hash"
+        assert v2.updated_by == "user2@amd.com"
 
 
 class TestFindByExternalUid:

@@ -16,6 +16,7 @@ from app.services.exceptions import (
     ArtefactsNotFoundError,
     DuplicateExternalUidsError,
     DuplicateIterationIdsError,
+    InvalidUpdaterEmailError,
     IterationIdMatchesBenchmarkIdError,
 )
 from app.services.sut_service import SUTServiceDep
@@ -141,6 +142,24 @@ class BenchmarkIterationInput(BaseModel):
         description="Optional additional provenance identifiers (beyond the benchmark itself)",
         json_schema_extra={"example": []},
     )
+    update_message: str | None = Field(
+        default=None,
+        description="Optional message describing this update",
+        json_schema_extra={"example": "Updated benchmark results"},
+    )
+    updated_by: str | None = Field(
+        default=None,
+        description="Optional AMD email of the person who made this update",
+        json_schema_extra={"example": "user@amd.com"},
+    )
+
+    @field_validator('updated_by')
+    @classmethod
+    def validate_amd_email(cls, v: str | None) -> str | None:
+        """Validate that updated_by is an AMD email address."""
+        if v is not None and not v.lower().endswith("@amd.com"):
+            raise InvalidUpdaterEmailError()
+        return v
 
 
 class RecordBenchmarkRequest(BaseModel):
@@ -171,10 +190,28 @@ class RecordBenchmarkRequest(BaseModel):
         description="Optional list of provenance identifiers for the benchmark itself",
         json_schema_extra={"example": []},
     )
+    update_message: str | None = Field(
+        default=None,
+        description="Optional message describing this update",
+        json_schema_extra={"example": "Initial benchmark recording"},
+    )
+    updated_by: str | None = Field(
+        default=None,
+        description="Optional AMD email of the person who made this update",
+        json_schema_extra={"example": "user@amd.com"},
+    )
     iterations: list[BenchmarkIterationInput] = Field(
         ...,
         description="List of iterations for this benchmark (at least 1 required)"
     )
+
+    @field_validator('updated_by')
+    @classmethod
+    def validate_amd_email(cls, v: str | None) -> str | None:
+        """Validate that updated_by is an AMD email address."""
+        if v is not None and not v.lower().endswith("@amd.com"):
+            raise InvalidUpdaterEmailError()
+        return v
 
     @field_validator('iterations')
     @classmethod
@@ -249,6 +286,24 @@ class ArtefactUpdateInput(BaseModel):
         description="Optional provenance identifiers",
         json_schema_extra={"example": []},
     )
+    update_message: str | None = Field(
+        default=None,
+        description="Optional message describing this update",
+        json_schema_extra={"example": "Updated metadata"},
+    )
+    updated_by: str | None = Field(
+        default=None,
+        description="Optional AMD email of the person who made this update",
+        json_schema_extra={"example": "user@amd.com"},
+    )
+
+    @field_validator('updated_by')
+    @classmethod
+    def validate_amd_email(cls, v: str | None) -> str | None:
+        """Validate that updated_by is an AMD email address."""
+        if v is not None and not v.lower().endswith("@amd.com"):
+            raise InvalidUpdaterEmailError()
+        return v
 
 
 class UpdateMultipleArtefactsRequest(BaseModel):
@@ -573,6 +628,8 @@ async def record_benchmark(
                 artefact_type=_ARTEFACT_TYPE_BENCHMARK,
                 backlink=request.backlink,
                 provenance=request.provenance,
+                update_message=request.update_message,
+                updated_by=request.updated_by,
             ))
             benchmark_status = "updated"
         else:
@@ -589,6 +646,8 @@ async def record_benchmark(
             artefact_type=_ARTEFACT_TYPE_BENCHMARK,
             backlink=request.backlink,
             provenance=request.provenance,
+            update_message=request.update_message,
+            updated_by=request.updated_by,
         ))
         benchmark_status = "created"
 
@@ -623,6 +682,8 @@ async def record_benchmark(
                 artefact_type=_ARTEFACT_TYPE_BENCHMARK_ITERATION,
                 backlink=iteration.backlink,
                 provenance=iteration_provenance,
+                update_message=iteration.update_message,
+                updated_by=iteration.updated_by,
             ))
 
             # Determine status
@@ -832,6 +893,8 @@ async def update_multiple_artefacts(
                 artefact_type=existing.artefact_type,  # Preserve existing type
                 backlink=update.backlink,
                 provenance=final_provenance if final_provenance else None,
+                update_message=update.update_message,
+                updated_by=update.updated_by,
             ))
 
             # Determine status

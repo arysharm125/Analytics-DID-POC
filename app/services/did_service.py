@@ -71,6 +71,8 @@ class ArtefactInput(BaseModel):
                     "Each item is validated and canonicalized to UUID format."
     )
     created_at: datetime | None = Field(default=None, description="Creation timestamp")
+    update_message: str | None = Field(default=None, description="Optional message describing this update")
+    updated_by: str | None = Field(default=None, description="Optional email of the person who made this update")
 
 
 # =============================================================================
@@ -90,6 +92,8 @@ class ArtefactRecord(BaseModel):
     artefact_type: ArtefactTypeStr | None = Field(None, description="Optional artefact type identifier")
     backlink: str | None = Field(None, description="Optional URL back to the object in the originating system")
     provenance: DIDOrUUIDList | None = Field(None, description="Optional list of provenance identifiers (normalized to UUIDs)")
+    update_message: str | None = Field(None, description="Optional message describing this update")
+    updated_by: str | None = Field(None, description="Optional email of the person who made this update")
 
 
 @dataclass
@@ -429,6 +433,96 @@ def migration_20260225003_artefact_type_backlink(db: MongoConnector) -> None:
     })
 
 
+@_did_service_migrations.migration
+def migration_20260303004_update_message_fields(db: MongoConnector) -> None:
+    """
+    Add update_message and updated_by fields to did_artefacts collection.
+
+    Design notes:
+    - update_message: Optional string describing the update
+    - updated_by: Optional string (email of the person who made the update)
+    - Both fields are completely optional with no validation at database level
+    """
+    collection_name = "did_artefacts"
+    db.get_collection(collection_name)
+
+    # Update validator to add new optional fields
+    db.db.command({
+        "collMod": collection_name,
+        "validator": {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["version_uid", "external_uid", "version", "division", "format_version"],
+                "properties": {
+                    "version_uid": {
+                        "bsonType": "string",
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                        "description": "UUID identifying this specific version"
+                    },
+                    "external_uid": {
+                        "bsonType": "string",
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                        "description": "UUID identifying the artefact across versions"
+                    },
+                    "version": {
+                        "bsonType": "int",
+                        "minimum": 1,
+                        "description": "Monotonically increasing version number"
+                    },
+                    "artefact_hash": {
+                        "bsonType": "string",
+                        "description": "Hash-like string identifying artefact content"
+                    },
+                    "division": {
+                        "bsonType": "string",
+                        "description": "Division identifier"
+                    },
+                    "artefact_metadata": {
+                        "description": "Optional JSON metadata for the artefact"
+                    },
+                    "artefact_type": {
+                        "bsonType": "string",
+                        "pattern": "^[a-z][a-z0-9_:/-]*$",
+                        "description": "Optional artefact type identifier (lowercase alphanumeric + _-:/)"
+                    },
+                    "backlink": {
+                        "bsonType": "string",
+                        "description": "Optional URL back to the object in the originating system"
+                    },
+                    "provenance": {
+                        "bsonType": "array",
+                        "items": {"bsonType": "string"},
+                        "description": "List of provenance identifiers (normalized to UUIDs)"
+                    },
+                    "revoked": {
+                        "bsonType": "bool",
+                        "description": "Whether this artefact version is revoked (defaults to false)"
+                    },
+                    "format_version": {
+                        "bsonType": "int",
+                        "minimum": 1,
+                        "description": "Schema format version (defaults to 1)"
+                    },
+                    "created_at": {
+                        "bsonType": "date",
+                        "description": "Timestamp when this artefact version was created"
+                    },
+                    "update_message": {
+                        "bsonType": "string",
+                        "description": "Optional message describing this update"
+                    },
+                    "updated_by": {
+                        "bsonType": "string",
+                        "description": "Optional email of the person who made this update"
+                    }
+                }
+            }
+        },
+        "validationLevel": "moderate",
+        "validationAction": "error"
+    })
+
+
 # =============================================================================
 # Utils/helpers
 # =============================================================================
@@ -489,6 +583,8 @@ def _artefact_to_da_vc_input(artefact : dict[str, Any]) -> DigitalArtefactVCInpu
             division=artefact["division"],
             provenance=artefact.get("provenance"),
             artefact_type=artefact.get("artefact_type"),
+            update_message=artefact.get("update_message"),
+            updated_by=artefact.get("updated_by"),
         )
 
 
@@ -748,6 +844,10 @@ class DIDService:
             new_doc["backlink"] = artefact.backlink
         if artefact.provenance is not None and len(artefact.provenance) > 0:
             new_doc["provenance"] = artefact.provenance
+        if artefact.update_message is not None:
+            new_doc["update_message"] = artefact.update_message
+        if artefact.updated_by is not None:
+            new_doc["updated_by"] = artefact.updated_by
 
         # Insert the new version, handling potential concurrent update conflicts
         try:
