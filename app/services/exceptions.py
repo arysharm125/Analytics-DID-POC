@@ -259,3 +259,24 @@ class DuplicateIterationIdsError(DIDServiceError, HTTPException):
             status_code=400,
             detail=f"Duplicate iteration IDs found: {', '.join(duplicate_ids)}"
         )
+
+
+class DuplicateArtefactUidsError(DIDServiceError, HTTPException):
+    """Raised when duplicate artefact UIDs are found in an update request."""
+    def __init__(self, duplicate_uids: list[str]):
+        self.duplicate_uids = duplicate_uids
+        super().__init__(
+            status_code=400,
+            detail=f"Duplicate artefact UIDs found: {', '.join(duplicate_uids)}"
+        )
+
+
+class ArtefactsNotFoundError(DIDServiceError, HTTPException):
+    """Raised when one or more artefacts are not found in the specified division."""
+    def __init__(self, missing_uids: list[str], division: str = "epdw"):
+        self.missing_uids = missing_uids
+        self.division = division
+        super().__init__(
+            status_code=404,
+            detail=f"Artefacts not found in division '{division}': {', '.join(missing_uids)}"
+        )

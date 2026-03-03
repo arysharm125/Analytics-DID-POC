@@ -432,7 +432,7 @@ def migration_20260225003_artefact_type_backlink(db: MongoConnector) -> None:
 # =============================================================================
 # Utils/helpers
 # =============================================================================
-def _artefact_has_changes(
+def artefact_has_changes(
     existing: dict[str, Any],
     new_hash: str | None,
     new_metadata: Any | None,
@@ -702,7 +702,7 @@ class DIDService:
 
             # Validate at least one thing changed (either artefact_hash,
             # artefact_metadata (deep), provenance list, or artefact_type).
-            if not _artefact_has_changes(
+            if not artefact_has_changes(
                 existing=latest_doc,
                 new_hash=artefact.artefact_hash,
                 new_metadata=artefact.artefact_metadata,

@@ -19,8 +19,8 @@ from app.services.did_service import (
     DIDService,
     IssuedVCRecord,
     ProvenanceNode,
-    _artefact_has_changes,
     _artefact_to_da_vc_input,
+    artefact_has_changes,
     compress_vc,
     decompress_vc,
 )
@@ -43,7 +43,7 @@ from app.services.exceptions import (
 
 
 class TestArtefactHasChanges:
-    """Tests for _artefact_has_changes helper function."""
+    """Tests for artefact_has_changes helper function."""
 
     def test_no_changes_returns_false(self):
         """No changes in any field should return False."""
@@ -53,7 +53,7 @@ class TestArtefactHasChanges:
             "provenance": ["uuid-1", "uuid-2"],
             "artefact_type": "report",
         }
-        result = _artefact_has_changes(
+        result = artefact_has_changes(
             existing=existing,
             new_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
             new_metadata={"key": "value"},
@@ -69,7 +69,7 @@ class TestArtefactHasChanges:
             "artefact_metadata": {"key": "value"},
             "provenance": None,
         }
-        result = _artefact_has_changes(
+        result = artefact_has_changes(
             existing=existing,
             new_hash="QmNewHash",
             new_metadata={"key": "value"},
@@ -85,7 +85,7 @@ class TestArtefactHasChanges:
             "artefact_metadata": {"key": "value"},
             "provenance": None,
         }
-        result = _artefact_has_changes(
+        result = artefact_has_changes(
             existing=existing,
             new_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
             new_metadata={"key": "new_value"},
@@ -101,7 +101,7 @@ class TestArtefactHasChanges:
             "artefact_metadata": {"outer": {"inner": "value"}},
             "provenance": None,
         }
-        result = _artefact_has_changes(
+        result = artefact_has_changes(
             existing=existing,
             new_hash=None,
             new_metadata={"outer": {"inner": "new_value"}},
@@ -117,7 +117,7 @@ class TestArtefactHasChanges:
             "artefact_metadata": None,
             "provenance": ["uuid-1", "uuid-2"],
         }
-        result = _artefact_has_changes(
+        result = artefact_has_changes(
             existing=existing,
             new_hash=None,
             new_metadata=None,
@@ -133,7 +133,7 @@ class TestArtefactHasChanges:
             "artefact_metadata": None,
             "provenance": None,
         }
-        result = _artefact_has_changes(
+        result = artefact_has_changes(
             existing=existing,
             new_hash=None,
             new_metadata=None,
@@ -149,7 +149,7 @@ class TestArtefactHasChanges:
             "artefact_metadata": {"key": "old"},
             "provenance": ["uuid-1"],
         }
-        result = _artefact_has_changes(
+        result = artefact_has_changes(
             existing=existing,
             new_hash="QmNew",
             new_metadata={"key": "new"},
@@ -166,7 +166,7 @@ class TestArtefactHasChanges:
             "provenance": None,
             "artefact_type": "report",
         }
-        result = _artefact_has_changes(
+        result = artefact_has_changes(
             existing=existing,
             new_hash=None,
             new_metadata=None,
@@ -184,8 +184,8 @@ class TestArtefactHasChanges:
             "artefact_type": "report",
             "backlink": "https://old.example.com",
         }
-        # backlink is not a parameter to _artefact_has_changes, so changing it doesn't matter
-        result = _artefact_has_changes(
+        # backlink is not a parameter to artefact_has_changes, so changing it doesn't matter
+        result = artefact_has_changes(
             existing=existing,
             new_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
             new_metadata={"key": "value"},

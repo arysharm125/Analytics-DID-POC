@@ -10,14 +10,16 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid
 from app.routers.dependencies import APITokenDep401Response, DIDServiceDep, EPDWTokenDep
-from app.services.did_service import ArtefactInput
-from app.services.exceptions import DuplicateIterationIdsError
+from app.services.did_service import ArtefactInput, artefact_has_changes
+from app.services.exceptions import ArtefactsNotFoundError, DuplicateArtefactUidsError, DuplicateIterationIdsError
 from app.services.sut_service import SUTServiceDep
 
 # ==========================
 # Constants
 # ==========================
 _EPDW_DIVISION = "epdw"
+_ARTEFACT_TYPE_BENCHMARK = "benchmark"
+_ARTEFACT_TYPE_BENCHMARK_ITERATION = "benchmark_iteration"
 
 # Example UUIDs for OpenAPI documentation
 _example_benchmark_id = f"{uuid4()}"
@@ -211,6 +213,69 @@ class RecordBenchmarkResponse(BaseModel):
     )
 
 
+class ArtefactUpdateInput(BaseModel):
+    """Input for a single artefact update."""
+    artefact_uid: UUIDString = Field(
+        ...,
+        description="UUID of the existing artefact (external_uid)",
+        json_schema_extra={"example": "95da4dd5-6e48-4c5b-bb91-935983c16d9c"},
+    )
+    artefact_hash: Multihash | None = Field(
+        default=None,
+        description="Optional multihash of artefact content",
+        json_schema_extra={"example": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"},
+    )
+    artefact_metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Full metadata to set for this version",
+        json_schema_extra={"example": {"score": 456.78, "status": "completed"}},
+    )
+    backlink: str | None = Field(
+        default=None,
+        description="Optional URL back to the artefact in the originating system",
+        json_schema_extra={"example": "https://epdw.example.com/artefacts/art-123"},
+    )
+    provenance: DIDOrUUIDList | None = Field(
+        default=None,
+        description="Optional provenance identifiers",
+        json_schema_extra={"example": []},
+    )
+
+
+class UpdateMultipleArtefactsRequest(BaseModel):
+    """Request model for updating multiple artefacts."""
+    updates: list[ArtefactUpdateInput] = Field(
+        ...,
+        description="List of artefact updates (at least 1 required)",
+        min_length=1,
+    )
+
+
+class ArtefactUpdateResult(BaseModel):
+    """Result for a single artefact update."""
+    artefact_uid: str
+    artefact_did: AMDWebDID
+    version_did: AMDWebDID
+    version: int
+    previous_version: int | None
+    status: str = Field(description="Status: 'created', 'updated', 'unchanged', or 'error'")
+    error: str | None = Field(
+        default=None,
+        description="Error message if status is 'error'"
+    )
+
+
+class UpdateMultipleArtefactsResponse(BaseModel):
+    """Response model for update-multiple-artefacts endpoint."""
+    results: list[ArtefactUpdateResult]
+    partial_failure: bool = Field(
+        description="True if any update failed"
+    )
+    total: int
+    successful: int
+    failed: int
+
+
 # ==========================
 # Conflict Response Documentation
 # ==========================
@@ -395,7 +460,7 @@ BadRequestResponses = {
 }
 
 
-@app.post("/record-benchmark", responses={**APITokenDep401Response, **BadRequestResponses, **ConflictResponses})
+@app.post("/epdw/record-benchmark", responses={**APITokenDep401Response, **BadRequestResponses, **ConflictResponses})
 async def record_benchmark(
     request: RecordBenchmarkRequest,
     api_token: EPDWTokenDep,
@@ -465,7 +530,7 @@ async def record_benchmark(
         division=_EPDW_DIVISION,
         artefact_hash=request.artefact_hash,
         artefact_metadata=request.artefact_metadata,
-        artefact_type="benchmark",
+        artefact_type=_ARTEFACT_TYPE_BENCHMARK,
         backlink=request.backlink,
         provenance=request.provenance,
     ))
@@ -484,10 +549,13 @@ async def record_benchmark(
 
     for iteration in request.iterations:
         try:
-            # Build provenance: [benchmark_id] + optional additional provenance
-            iteration_provenance = [request.benchmark_id]
-            if iteration.provenance:
-                iteration_provenance.extend(iteration.provenance)
+            # Build provenance: parent benchmark first, then additional items (no duplicates)
+            iteration_provenance = list(iteration.provenance) if iteration.provenance else []
+            # Remove benchmark_id if already present (to avoid duplicates and ensure correct position)
+            if request.benchmark_id in iteration_provenance:
+                iteration_provenance.remove(request.benchmark_id)
+            # Insert at position 0
+            iteration_provenance.insert(0, request.benchmark_id)
 
             # Upsert iteration artefact
             iteration_record = did_svc.upsert_artefact(ArtefactInput(
@@ -495,7 +563,7 @@ async def record_benchmark(
                 division=_EPDW_DIVISION,
                 artefact_hash=iteration.artefact_hash,
                 artefact_metadata=iteration.artefact_metadata,
-                artefact_type="benchmark_iteration",
+                artefact_type=_ARTEFACT_TYPE_BENCHMARK_ITERATION,
                 backlink=iteration.backlink,
                 provenance=iteration_provenance,
             ))
@@ -543,4 +611,196 @@ async def record_benchmark(
         benchmark_version=benchmark_record.version,
         iterations=iteration_results,
         partial_failure=partial_failure,
+    )
+
+
+@app.post("/epdw/update-multiple-artefacts", responses={**APITokenDep401Response, **BadRequestResponses, **NotFoundResponses, **ConflictResponses})
+async def update_multiple_artefacts(
+    request: UpdateMultipleArtefactsRequest,
+    api_token: EPDWTokenDep,
+    did_svc: DIDServiceDep,
+) -> UpdateMultipleArtefactsResponse:
+    """
+    Update multiple existing artefacts with new data.
+
+    This endpoint updates existing Digital Artefacts by creating new versions
+    with the provided data. Unlike `/append-did` which merges data, this endpoint
+    replaces the full metadata. It operates independently without requiring access
+    to external databases.
+
+    **Pre-validation Phase:**
+    - Validates update list is non-empty
+    - Checks for duplicate artefact UIDs
+    - Verifies all artefacts exist in the EPDW division
+    - Validates all provenance items exist in did_artefacts
+
+    **Processing:**
+    Creates new versions for each artefact (with partial-success mode)
+
+    **Partial Success:**
+    If pre-validation passes but some updates fail during processing, the endpoint
+    returns 200 with `partial_failure=True` and error details in the results.
+
+    Args:
+        request: List of artefact updates
+        api_token: EPDW API token (injected)
+        did_svc: DID service (injected)
+
+    Returns:
+        UpdateMultipleArtefactsResponse with update results
+
+    Raises:
+        400: Empty updates list or duplicate artefact UIDs
+        404: One or more artefacts not found in division
+        409: Provenance not found, division mismatch, or version conflict
+    """
+    # PRE-VALIDATION: Check for duplicate artefact UIDs
+    artefact_uids = [update.artefact_uid for update in request.updates]
+    seen_uids = set()
+    duplicates = []
+    for uid in artefact_uids:
+        if uid in seen_uids:
+            duplicates.append(uid)
+        seen_uids.add(uid)
+
+    if duplicates:
+        raise DuplicateArtefactUidsError(duplicates)
+
+    # PRE-VALIDATION: Verify all artefacts exist in EPDW division
+    existing_artefacts = {}  # uid → ArtefactRecord (cached for later use)
+    missing = []
+    for update in request.updates:
+        artefact = did_svc.find_by_external_uid(update.artefact_uid, _EPDW_DIVISION)
+        if artefact is None:
+            missing.append(update.artefact_uid)
+        else:
+            existing_artefacts[update.artefact_uid] = artefact
+
+    if missing:
+        raise ArtefactsNotFoundError(missing, _EPDW_DIVISION)
+
+    # PRE-VALIDATION: Collect and validate all provenance UIDs
+    collection = did_svc.db.get_collection(did_svc._artefacts_col_name)
+    all_provenance_uids = set()
+    for update in request.updates:
+        if update.provenance:
+            all_provenance_uids.update(update.provenance)
+
+    # Validate each unique provenance item exists
+    for prov_uid in all_provenance_uids:
+        did_svc._validate_id_list_exists([prov_uid], collection)
+
+    # PROCESS UPDATES (partial-success mode)
+    results: list[ArtefactUpdateResult] = []
+    successful_count = 0
+    failed_count = 0
+
+    for update in request.updates:
+        try:
+            # Get the existing artefact to preserve artefact_type
+            existing = existing_artefacts[update.artefact_uid]
+
+            # Prepare final provenance
+            final_provenance = list(update.provenance) if update.provenance else []
+
+            # For benchmark_iteration, ensure parent benchmark UID is FIRST in provenance
+            if existing.artefact_type == _ARTEFACT_TYPE_BENCHMARK_ITERATION:
+                existing_prov = list(existing.provenance) if existing.provenance else []
+                if existing_prov:
+                    # First item in existing provenance is the parent benchmark
+                    parent_benchmark_uid = existing_prov[0]
+                    # Remove from current position if present (to avoid duplicates and ensure correct position)
+                    if parent_benchmark_uid in final_provenance:
+                        final_provenance.remove(parent_benchmark_uid)
+                    # Always insert at position 0
+                    final_provenance.insert(0, parent_benchmark_uid)
+
+            # CHECK FOR CHANGES: Use artefact_has_changes to detect if update is needed
+            # Convert ArtefactRecord to dict for comparison
+            existing_dict = existing.model_dump()
+            has_changes = artefact_has_changes(
+                existing=existing_dict,
+                new_hash=update.artefact_hash,
+                new_metadata=update.artefact_metadata,
+                new_provenance=final_provenance if final_provenance else None,
+                new_artefact_type=existing.artefact_type,  # Type is preserved, so compare against existing
+            )
+
+            if not has_changes:
+                # No changes detected - skip upsert and report as unchanged
+                results.append(ArtefactUpdateResult(
+                    artefact_uid=update.artefact_uid,
+                    artefact_did=did_from_uuid(existing.external_uid),
+                    version_did=did_from_uuid(existing.version_uid),
+                    version=existing.version,
+                    previous_version=None,
+                    status="unchanged",
+                    error=None,
+                ))
+
+                logger.info(
+                    f"Skipped artefact (no changes): uid={update.artefact_uid}, "
+                    f"version={existing.version}"
+                )
+                continue
+
+            # Upsert with new data, preserving artefact_type
+            updated_record = did_svc.upsert_artefact(ArtefactInput(
+                external_uid=update.artefact_uid,
+                division=_EPDW_DIVISION,
+                artefact_hash=update.artefact_hash,
+                artefact_metadata=update.artefact_metadata,
+                artefact_type=existing.artefact_type,  # Preserve existing type
+                backlink=update.backlink,
+                provenance=final_provenance if final_provenance else None,
+            ))
+
+            # Determine status
+            status = "created" if updated_record.version == 1 else "updated"
+            previous_version = updated_record.version - 1 if updated_record.version > 1 else None
+
+            results.append(ArtefactUpdateResult(
+                artefact_uid=update.artefact_uid,
+                artefact_did=did_from_uuid(updated_record.external_uid),
+                version_did=did_from_uuid(updated_record.version_uid),
+                version=updated_record.version,
+                previous_version=previous_version,
+                status=status,
+                error=None,
+            ))
+
+            successful_count += 1
+
+            logger.info(
+                f"Updated artefact: uid={update.artefact_uid}, "
+                f"version={updated_record.version}, status={status}"
+            )
+
+        except Exception as e:
+            # Record the error and continue with next update
+            failed_count += 1
+            error_msg = str(e)
+
+            results.append(ArtefactUpdateResult(
+                artefact_uid=update.artefact_uid,
+                artefact_did=did_from_uuid(update.artefact_uid),
+                version_did=did_from_uuid(update.artefact_uid),
+                version=0,
+                previous_version=None,
+                status="error",
+                error=error_msg,
+            ))
+
+            logger.error(
+                f"Failed to update artefact: uid={update.artefact_uid}, "
+                f"error={error_msg}"
+            )
+
+    # Return response
+    return UpdateMultipleArtefactsResponse(
+        results=results,
+        partial_failure=failed_count > 0,
+        total=len(request.updates),
+        successful=successful_count,
+        failed=failed_count,
     )
