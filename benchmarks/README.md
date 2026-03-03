@@ -96,7 +96,8 @@ benchmarks/
 ├── locustfiles/                     # Locust scenario definitions
 │   ├── common.py                    # Shared user classes, utilities
 │   ├── health_scenarios.py          # /health endpoint baseline
-│   └── advisory_scenarios.py        # Advisory API scenarios
+│   ├── advisory_scenarios.py        # Advisory API scenarios
+│   └── epdw_scenarios.py            # EPDW API scenarios
 │
 ├── baselines/                       # Git-tracked baseline results
 │   └── 1.1.0+e83d38.json           # Example baseline file
@@ -114,21 +115,25 @@ benchmarks/
 
 ## Test Scenarios
 
-### Current Implementation (Advisory API)
+### Advisory API
 
 | User Class | Endpoints Tested | Weight | Description |
 |------------|------------------|--------|-------------|
 | `HealthUser` | `GET /health` | N/A | Baseline reference (no auth, no DB) |
-| `AdvisoryDIDDocumentUser` | `GET /advisory/did.json` | N/A | Public DID document fetch |
-| `AdvisoryRecordReportUser` | `POST /advisory/record_report` | N/A | Create new reports |
-| `AdvisoryVCUser` | `GET /advisory/{uid}/vc.json` | N/A | Fetch verifiable credentials |
-| `AdvisoryMixedUser` | All advisory endpoints | 60/30/10 | Realistic mixed workload |
+| `AdvisoryDIDDocumentUser` | `GET /advisory/did.json` | 2 | Public DID document fetch |
+| `AdvisoryRecordReportUser` | `POST /advisory/record_report` | 5 | Create new reports |
+| `AdvisoryVCUser` | `GET /advisory/{uid}/vc.json` | 2 | Fetch verifiable credentials |
+| `AdvisoryMixedUser` | All advisory endpoints | 3 | Realistic mixed workload (60/30/10) |
 
-### Future: EPDW Scenarios (TODO)
+### EPDW API
 
-- `POST /create-sut-did`
-- `POST /append-did`
-- `GET /epdw/{uid}/vc.json`
+| User Class | Endpoints Tested | Weight | Description |
+|------------|------------------|--------|-------------|
+| `EPDWDIDDocumentUser` | `GET /epdw/did.json` | 2 | Public DID document fetch |
+| `EPDWRecordBenchmarkUser` | `POST /epdw/record-benchmark` | 5 | Record benchmarks with iterations |
+| `EPDWUpdateArtefactsUser` | `POST /epdw/update-multiple-artefacts` | 3 | Update existing artefacts |
+| `EPDWVCUser` | `GET /epdw/{uid}/vc.json` | 2 | Fetch verifiable credentials |
+| `EPDWMixedUser` | All EPDW endpoints | 3 | Realistic mixed workload (60/20/10/10) |
 
 ## Configuration
 
@@ -332,7 +337,6 @@ jobs:
 
 ## Future Enhancements
 
-- [ ] Add EPDW scenarios (create-sut-did, append-did)
 - [ ] Implement data seeding for read-heavy tests
 - [ ] Add Prometheus metrics export
 - [ ] Create Grafana dashboards

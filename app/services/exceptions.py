@@ -261,14 +261,28 @@ class DuplicateIterationIdsError(DIDServiceError, HTTPException):
         )
 
 
-class DuplicateArtefactUidsError(DIDServiceError, HTTPException):
-    """Raised when duplicate artefact UIDs are found in an update request."""
+class IterationIdMatchesBenchmarkIdError(DIDServiceError, HTTPException):
+    """Raised when an iteration ID matches the benchmark ID."""
+    def __init__(self, iteration_ids: list[str]):
+        self.iteration_ids = iteration_ids
+        super().__init__(
+            status_code=400,
+            detail=f"Iteration IDs cannot match benchmark ID: {', '.join(iteration_ids)}"
+        )
+
+
+class DuplicateExternalUidsError(DIDServiceError, HTTPException):
+    """Raised when duplicate external UIDs are found in an update request."""
     def __init__(self, duplicate_uids: list[str]):
         self.duplicate_uids = duplicate_uids
         super().__init__(
             status_code=400,
-            detail=f"Duplicate artefact UIDs found: {', '.join(duplicate_uids)}"
+            detail=f"Duplicate external UIDs found: {', '.join(duplicate_uids)}"
         )
+
+
+# Backward compatibility alias
+DuplicateArtefactUidsError = DuplicateExternalUidsError
 
 
 class ArtefactsNotFoundError(DIDServiceError, HTTPException):

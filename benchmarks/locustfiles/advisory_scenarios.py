@@ -14,7 +14,7 @@ class AdvisoryDIDDocumentUser(BaseAPIUser):
 
     This is a public endpoint (no auth required).
     """
-    weight = 2
+    weight = 20
     wait_time = between(0.5, 2.0)
 
     @task
@@ -37,7 +37,7 @@ class AdvisoryRecordReportUser(AdvisoryAPIUser):
 
     This is the main write operation for the Advisory API.
     """
-    weight = 5
+    weight = 500
     wait_time = between(1.0, 3.0)
 
     @task
@@ -80,7 +80,7 @@ class AdvisoryVCUser(AdvisoryAPIUser):
     Note: This requires artefacts to exist. In a real scenario, this would
     query pre-seeded data or data created by other users.
     """
-    weight = 2
+    weight = 200
     wait_time = between(1.0, 3.0)
 
     def on_start(self):
@@ -125,7 +125,7 @@ class AdvisoryMixedUser(AdvisoryAPIUser):
     - Fetching VCs (30%)
     - Fetching DID documents (10%)
     """
-    weight = 3  # Higher weight allocates more users to this scenario
+    weight = 300  # Higher weight allocates more users to this scenario
     wait_time = between(1.0, 3.0)
 
     def on_start(self):

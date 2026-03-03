@@ -12,7 +12,7 @@ class HealthUser(BaseAPIUser):
 
     This serves as a baseline metric for minimal API latency.
     """
-    weight = 1
+    weight = 5
     wait_time = between(0.1, 0.5)  # Wait 100-500ms between requests
 
     @task
