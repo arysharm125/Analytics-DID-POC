@@ -1,10 +1,11 @@
 """Base types for route requests and responses."""
 
 import re
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import AfterValidator
+from fastapi import Path
+from pydantic import AfterValidator, BaseModel, Field
 
 from app.services.exceptions import (
     DuplicateProvenanceError,
@@ -12,6 +13,7 @@ from app.services.exceptions import (
     InvalidDivisionError,
     InvalidIdentifierError,
     InvalidMultihashError,
+    InvalidUpdaterEmailError,
 )
 
 # =============================================================================
@@ -468,3 +470,109 @@ def division_from_division_did(did: AMDDivisionWebDID) -> DivisionStr:
             f"Expected format: {_AMD_DIVISION_WEB_DID_PREFIX}<division>"
         )
     return match.group(1)
+
+
+# =============================================================================
+# AMD Email Validation
+# =============================================================================
+
+def _validate_amd_email(value: str | None) -> str | None:
+    """
+    Validate that a string is an AMD email address.
+
+    AMD email addresses must end with '@amd.com' (case-insensitive).
+
+    Args:
+        value: The email string to validate, or None
+
+    Returns:
+        The validated email string (unchanged), or None if input was None
+
+    Raises:
+        InvalidUpdaterEmailError: If the email is not an AMD email address
+    """
+    if value is not None and not value.lower().endswith("@amd.com"):
+        raise InvalidUpdaterEmailError()
+    return value
+
+
+# Annotated type for AMD email validation
+AMDEmail = Annotated[str | None, AfterValidator(_validate_amd_email)]
+
+
+# =============================================================================
+# Common Artefact Fields Mixin
+# =============================================================================
+
+class ArtefactFieldsMixin(BaseModel):
+    """
+    Mixin providing common fields for artefact-related request models.
+
+    This mixin contains fields that are shared across multiple artefact creation
+    and update endpoints. Models can inherit from this mixin to avoid duplicating
+    these field definitions.
+
+    Fields:
+        artefact_hash: Optional multihash of the artefact content
+        artefact_metadata: Optional metadata dictionary
+        backlink: Optional URL to the artefact in the originating system
+        provenance: Optional list of provenance identifiers (DIDs or UUIDs)
+        update_message: Optional message describing the update
+        updated_by: Optional AMD email of the person making the update
+    """
+
+    artefact_hash: Multihash | None = Field(
+        default=None,
+        description=(
+            "A multihash string for the hash of the artefact blob (optional). "
+            "Currently, the only allowed format is a Base58-Bitcoin encoded string "
+            "containing a SHA-256 hash (i.e. the result of the function `Base58Bitcoin(Multihash(SHA256(data)))`)"
+        ),
+        json_schema_extra={"example": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"},
+    )
+    artefact_metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="An object with properties set by the caller (metadata about the artefact)",
+        json_schema_extra={"example": {"key": "value"}},
+    )
+    backlink: str | None = Field(
+        default=None,
+        description=(
+            "Optional URL back to the object in the originating system. This may "
+            "be used by the DIDCheck UI to link back to the resource in the originating "
+            "app. Examples: `https://epycdatawarehouse.amd.com/benchmark/6bac3606-f73c-43fe-9084-32292ee5166b`, "
+            "`https://eia-prod.amd.com/portfolio/6bac3606-f73c-43fe-9084-32292ee5166b`"
+        ),
+        json_schema_extra={"example": "https://example.com/resource/123"},
+    )
+    provenance: DIDOrUUIDList | None = Field(
+        default=None,
+        description=(
+            "List of provenance identifiers (DIDs or UUIDs). Each item is validated and "
+            "canonicalized to UUID format. Items must be unique after canonicalization. "
+            "For example: `[\"did:web:did.amd.com:b8ff3b79-863f-4fa9-84ba-0067663f2b04\", \"b8ff3b79-863f-4fa9-84ba-0067663f2b04\"]`"
+        ),
+        json_schema_extra={"example": []},
+    )
+    update_message: str | None = Field(
+        default=None,
+        description="Optional message describing this update",
+        json_schema_extra={"example": "Updated with new data"},
+    )
+    updated_by: AMDEmail = Field(
+        default=None,
+        description="Optional AMD email of the person who made this update",
+        json_schema_extra={"example": "user@amd.com"},
+    )
+
+
+# =============================================================================
+# Common Path Parameters
+# =============================================================================
+
+# Reusable Path parameter for UID or DID of an artefact
+# Used across multiple endpoints for consistency
+PathUUID = Annotated[CanonicalizedUUID, Path(
+    description="The UID or DID of the artefact to retrieve",
+    openapi_examples={"normal": {"value": "95da4dd5-6e48-4c5b-bb91-935983c16d9c"}},
+)]

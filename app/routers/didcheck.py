@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 
 from app.config import get_config
 from app.did_utils.jsonld import canonicalize_document
-from app.routers.basetypes import ArtefactTypeStr, DivisionStr, Multihash, UUIDString
+from app.routers.basetypes import ArtefactTypeStr, DivisionStr, Multihash, PathUUID, UUIDString
 from app.routers.dependencies import APITokenDep401Response, DIDCheckTokenDep, DIDServiceDep
-from app.routers.epdw import PathUUID
+from app.routers.responses import not_found_response
 from app.services.did_service import ProvenanceNode as ServiceProvenanceNode
 
 # ==========================
@@ -20,8 +20,8 @@ from app.services.did_service import ProvenanceNode as ServiceProvenanceNode
 _example_random_uuid = f"{uuid4()}"
 
 
-class DigitalArtefactInfo(BaseModel):
-    """Information about a specific digital artefact version (overview, excludes metadata and provenance)."""
+class BaseArtefactInfo(BaseModel):
+    """Base fields shared between artefact info response models."""
 
     external_uid: UUIDString = Field(
         ...,
@@ -67,11 +67,6 @@ class DigitalArtefactInfo(BaseModel):
         description="Whether this artefact version is revoked",
         examples=[False],
     )
-    has_provenance: bool = Field(
-        ...,
-        description="Whether this artefact has provenance records",
-        examples=[True, False],
-    )
     update_message: str | None = Field(
         default=None,
         description="Optional message describing this update",
@@ -81,6 +76,16 @@ class DigitalArtefactInfo(BaseModel):
         default=None,
         description="Optional email of the person who made this update",
         examples=["user@amd.com"],
+    )
+
+
+class DigitalArtefactInfo(BaseArtefactInfo):
+    """Information about a specific digital artefact version (overview, excludes metadata and provenance)."""
+
+    has_provenance: bool = Field(
+        ...,
+        description="Whether this artefact has provenance records",
+        examples=[True, False],
     )
 
 
@@ -128,71 +133,17 @@ class ProvenanceTreeResponse(BaseModel):
     )
 
 
-class FullArtefactInfo(BaseModel):
+class FullArtefactInfo(BaseArtefactInfo):
     """Full information about a digital artefact version, including metadata."""
 
-    external_uid: UUIDString = Field(
-        ...,
-        description="UUID identifying the artefact across versions",
-        examples=[_example_random_uuid],
-    )
-    version_uid: UUIDString = Field(
-        ...,
-        description="UUID identifying this specific version",
-        examples=["b8ff3b79-863f-4fa9-84ba-0067663f2b04"],
-    )
-    version: int = Field(
-        ...,
-        description="Monotonically increasing version number",
-        examples=[1, 3],
-    )
-    division: DivisionStr = Field(
-        ...,
-        description="Division identifier",
-        examples=["advisory", "epdw"],
-    )
-    artefact_hash: Multihash | None = Field(
-        default=None,
-        description="Multihash identifying artefact content",
-        examples=["QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"],
-    )
     artefact_metadata: Any | None = Field(
         default=None,
         description="Optional JSON metadata for the artefact",
-    )
-    artefact_type: ArtefactTypeStr | None = Field(
-        default=None,
-        description="Optional artefact type identifier",
-        examples=["report", "benchmark", "benchmark_iteration"],
-    )
-    backlink: str | None = Field(
-        default=None,
-        description="Optional URL back to the object in the originating system",
-        examples=["https://example.com/reports/123"],
     )
     provenance: list[UUIDString] | None = Field(
         default=None,
         description="List of provenance identifiers (normalized to UUIDs)",
         examples=[[]],
-    )
-    creation_date: datetime = Field(
-        ...,
-        description="Timestamp when this artefact version was created",
-    )
-    revoked: bool = Field(
-        ...,
-        description="Whether this artefact version is revoked",
-        examples=[False],
-    )
-    update_message: str | None = Field(
-        default=None,
-        description="Optional message describing this update",
-        examples=["Updated report data"],
-    )
-    updated_by: str | None = Field(
-        default=None,
-        description="Optional email of the person who made this update",
-        examples=["user@amd.com"],
     )
 
 
@@ -339,32 +290,13 @@ class DIDOverviewResponse(BaseModel):
     )
 
 
-# Response documentation for 404 Not Found errors
-NotFoundResponse = {
-    404: {
-        "description": "Artefact not found",
-        "content": {
-            "application/json": {
-                "examples": {
-                    "not_found": {
-                        "summary": "Artefact not found",
-                        "value": {
-                            "detail": "Artefact with uid 'b8ff3b79-863f-4fa9-84ba-0067663f2b04' not found in any division"
-                        }
-                    }
-                }
-            }
-        },
-    }
-}
-
 # ==========================
 # Router
 # ==========================
 app = APIRouter(tags=["DID Check"], prefix="/didcheck")
 
 
-@app.get("/{uid}/vc.json", responses={**APITokenDep401Response})
+@app.get("/{uid}/vc.json", responses={**APITokenDep401Response, **not_found_response()})
 def artefact_vc(
     uid: PathUUID,
     api_token: DIDCheckTokenDep,
@@ -374,7 +306,7 @@ def artefact_vc(
     return did_svc.issue_artefact_vc(division=None, uid=uid)
 
 
-@app.get("/{uid}/overview", responses={**APITokenDep401Response, **NotFoundResponse}, response_model_exclude_none=True)
+@app.get("/{uid}/overview", responses={**APITokenDep401Response, **not_found_response()}, response_model_exclude_none=True)
 def did_overview(
     uid: PathUUID,
     api_token: DIDCheckTokenDep,
@@ -428,7 +360,7 @@ def did_overview(
 
 @app.get(
     "/{uid}/artefact.json",
-    responses={**APITokenDep401Response, **NotFoundResponse},
+    responses={**APITokenDep401Response, **not_found_response()},
     response_model_exclude_none=True,
 )
 def artefact_full(
@@ -477,7 +409,7 @@ def _service_node_to_response(node: ServiceProvenanceNode) -> ProvenanceNode:
 
 @app.get(
     "/{uid}/provenance",
-    responses={**APITokenDep401Response, **NotFoundResponse},
+    responses={**APITokenDep401Response, **not_found_response()},
 )
 def artefact_provenance(
     uid: PathUUID,
@@ -512,7 +444,7 @@ def artefact_provenance(
 
 @app.get(
     "/{uid}/versions",
-    responses={**APITokenDep401Response, **NotFoundResponse},
+    responses={**APITokenDep401Response, **not_found_response()},
 )
 def artefact_versions(
     uid: PathUUID,
@@ -554,7 +486,7 @@ def artefact_versions(
 
 @app.get(
     "/{uid}/descendants",
-    responses={**APITokenDep401Response, **NotFoundResponse},
+    responses={**APITokenDep401Response, **not_found_response()},
 )
 def artefact_descendants(
     uid: PathUUID,
@@ -620,7 +552,7 @@ def artefact_descendants(
 @app.get(
     "/{uid}/vc.nq",
     response_class=PlainTextResponse,
-    responses={**APITokenDep401Response, **NotFoundResponse},
+    responses={**APITokenDep401Response, **not_found_response()},
     tags=["Debug"],
 )
 def artefact_vc_nquads(
@@ -674,7 +606,7 @@ PathDivision = Annotated[
 ]
 
 
-@app.get("/{division}/did.json", responses={**APITokenDep401Response})
+@app.get("/{division}/did.json", responses={**APITokenDep401Response, **not_found_response("Division")})
 def division_did_document(
     division: PathDivision,
     api_token: DIDCheckTokenDep,

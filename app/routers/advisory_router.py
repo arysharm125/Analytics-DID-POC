@@ -1,14 +1,20 @@
 import logging
-from typing import Annotated, Any
+from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Path
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
 
-from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid
+from app.routers.basetypes import (
+    AMDWebDID,
+    ArtefactFieldsMixin,
+    PathUUID,
+    UUIDString,
+    did_from_uuid,
+)
 from app.routers.dependencies import AdvisoryTokenDep, APITokenDep401Response, DIDServiceDep
+from app.routers.responses import bad_request_response, conflict_response, not_found_response
 from app.services.did_service import ArtefactInput
-from app.services.exceptions import InvalidUpdaterEmailError
 
 _ADVISORY_DIVISION = "advisory"
 
@@ -17,55 +23,21 @@ logger = logging.getLogger("advisory_api")
 
 _example_random_uuid = f"{uuid4()}"
 
-class RecordReportRequest(BaseModel):
+class RecordReportRequest(ArtefactFieldsMixin):
     artefact_id: UUIDString = Field(
         ...,  # Required
         description="Globally unique ID of this object (must be a valid UUID)",
         json_schema_extra={"example": _example_random_uuid},
         examples=[_example_random_uuid],
     )
-    artefact_hash: Multihash | None = Field(
-        default=None,
-        alias="artefact_hash",
-        description="A multihash string for the hash of the artefact blob (optional)",
-        json_schema_extra={"example": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"},
-    )
+
+    # Override artefact_metadata with more specific description
     artefact_metadata: dict[str, Any] | None = Field(
         default=None,
         alias="artefact_metadata",
         description="An object with properties set by the caller (corresponds to metadata about the artefact)",
         json_schema_extra={"example": {"filename": "cca-report-123761827584.xsls", "service": "cca"}},
     )
-    backlink: str | None = Field(
-        default=None,
-        description="Optional URL back to the object in the originating system",
-        json_schema_extra={"example": "https://example.com/reports/123"},
-    )
-    provenance: DIDOrUUIDList | None = Field(
-        default=None,
-        description="List of provenance identifiers (DIDs or UUIDs). Each item is validated and "
-                    "canonicalized to UUID format. Items must be unique after canonicalization."
-                    "For example: `[\"did:web:did.amd.com:b8ff3b79-863f-4fa9-84ba-0067663f2b04\", \"b8ff3b79-863f-4fa9-84ba-0067663f2b04\"]`",
-        json_schema_extra={"example": []},
-    )
-    update_message: str | None = Field(
-        default=None,
-        description="Optional message describing this update",
-        json_schema_extra={"example": "Initial report submission"},
-    )
-    updated_by: str | None = Field(
-        default=None,
-        description="Optional AMD email of the person who made this update",
-        json_schema_extra={"example": "user@amd.com"},
-    )
-
-    @field_validator('updated_by')
-    @classmethod
-    def validate_amd_email(cls, v: str | None) -> str | None:
-        """Validate that updated_by is an AMD email address."""
-        if v is not None and not v.lower().endswith("@amd.com"):
-            raise InvalidUpdaterEmailError()
-        return v
 
 class RecordReportResponse(BaseModel):
     artefact_did: AMDWebDID = Field(
@@ -85,65 +57,7 @@ class RecordReportResponse(BaseModel):
     )
 
 
-# Response documentation for 400 Bad Request errors
-BadRequestResponse = {
-    400: {
-        "description": "Bad Request: Invalid input or no changes detected",
-        "content": {
-            "application/json": {
-                "examples": {
-                    "no_changes": {
-                        "summary": "No changes detected",
-                        "value": {
-                            "detail": (
-                                "No changes detected for artefact 'b8ff3b79-863f-4fa9-84ba-0067663f2b04'. "
-                                "A new version requires changes to at least one of: "
-                                "artefact_hash, artefact_metadata, or provenance."
-                            )
-                        }
-                    },
-                    "duplicate_provenance": {
-                        "summary": "Duplicated item in provenance list",
-                        "value": {
-                            "detail": (
-                                "Duplicate identifiers found after canonicalization. "
-                                "Each provenance item must be unique."
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-# Response documentation for 409 Conflict errors
-ConflictResponse = {
-    409: {
-        "description": "Conflict error: Division mismatch or version conflict",
-        "content": {
-            "application/json": {
-                "examples": {
-                    "division_mismatch": {
-                        "summary": "Division mismatch",
-                        "value": {"detail": "Division mismatch: existing division is 'advisory', but attempted to set 'other'"}
-                    },
-                    "version_conflict": {
-                        "summary": "Version conflict",
-                        "value": {"detail": "Version conflict: version 2 already exists"}
-                    },
-                    "provenance_not_found": {
-                        "summary": "Provenance item not found",
-                        "value": {"detail": "Provenance item not found: 2cacad4f-63ab-4668-9db7-7fc2538caa8c"}
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-@router.post("/record_report", responses={**APITokenDep401Response, **BadRequestResponse, **ConflictResponse})
+@router.post("/record_report", responses={**APITokenDep401Response, **bad_request_response(), **conflict_response(_ADVISORY_DIVISION)})
 async def record_report(request: RecordReportRequest, api_token: AdvisoryTokenDep, did_svc: DIDServiceDep) -> RecordReportResponse:
     """Record an advisory report as a DID.
 
@@ -187,12 +101,8 @@ async def advisory_did(did_svc: DIDServiceDep):
     """
     return did_svc.division_did_doc(_ADVISORY_DIVISION)
 
-PathUUID = Annotated[CanonicalizedUUID, Path(
-    description="The UID or DID of the artefact to retrieve the Verifiable Credential for",
-    openapi_examples={"normal":{"value":_example_random_uuid}},
-)]
 
-@router.get("/{uid}/vc.json", responses={**APITokenDep401Response})
+@router.get("/{uid}/vc.json", responses={**APITokenDep401Response, **not_found_response()})
 async def artefact_vc(
     uid: PathUUID,
     api_token: AdvisoryTokenDep,

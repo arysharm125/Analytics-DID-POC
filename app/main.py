@@ -10,7 +10,6 @@ from fastapi.responses import HTMLResponse
 from app.config import get_config
 from app.middlewares import exception_handler_middleware, http_exception_handler
 from app.request_id import AccessLogMiddleware, RequestIdFilter, RequestIdMiddleware
-
 from app.routers.advisory_router import router as advisory_router
 from app.routers.dependencies import did_service_lifespan
 from app.routers.didcheck import app as didcheck_router

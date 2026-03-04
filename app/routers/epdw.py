@@ -1,22 +1,28 @@
 """DID Router for SUT (System Under Test) DID operations."""
 
 import logging
-from typing import Annotated, Any
+from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Path, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid
+from app.routers.basetypes import (
+    AMDWebDID,
+    ArtefactFieldsMixin,
+    PathUUID,
+    UUIDString,
+    did_from_uuid,
+)
 from app.routers.dependencies import APITokenDep401Response, DIDServiceDep, EPDWTokenDep
+from app.routers.responses import bad_request_response, conflict_response, not_found_response
 from app.services.did_service import ArtefactInput, DIDService, artefact_has_changes
 from app.services.exceptions import (
     ArtefactNoChangesError,
     ArtefactsNotFoundError,
     DuplicateExternalUidsError,
     DuplicateIterationIdsError,
-    InvalidUpdaterEmailError,
     IterationIdMatchesBenchmarkIdError,
 )
 from app.services.sut_service import SUTServiceDep
@@ -114,7 +120,7 @@ class AppendDIDResponse(BaseModel):
     message: str
 
 
-class BenchmarkIterationInput(BaseModel):
+class BenchmarkIterationInput(ArtefactFieldsMixin):
     """Input for a single benchmark iteration."""
     iteration_id: UUIDString = Field(
         ...,
@@ -122,47 +128,15 @@ class BenchmarkIterationInput(BaseModel):
         json_schema_extra={"example": _example_iteration_id_1},
         examples=[_example_iteration_id_1],
     )
-    artefact_hash: Multihash | None = Field(
-        default=None,
-        description="Optional multihash of iteration data",
-        json_schema_extra={"example": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"},
-    )
+
+    # Override artefact_metadata with more specific description/example
     artefact_metadata: dict[str, Any] | None = Field(
         default=None,
         description="Optional metadata for the iteration",
         json_schema_extra={"example": {"run": 1, "score": 123.45, "runtime_seconds": 342}},
     )
-    backlink: str | None = Field(
-        default=None,
-        description="Optional URL back to the iteration in the originating system",
-        json_schema_extra={"example": "https://epdw.example.com/iterations/iter-1"},
-    )
-    provenance: DIDOrUUIDList | None = Field(
-        default=None,
-        description="Optional additional provenance identifiers (beyond the benchmark itself)",
-        json_schema_extra={"example": []},
-    )
-    update_message: str | None = Field(
-        default=None,
-        description="Optional message describing this update",
-        json_schema_extra={"example": "Updated benchmark results"},
-    )
-    updated_by: str | None = Field(
-        default=None,
-        description="Optional AMD email of the person who made this update",
-        json_schema_extra={"example": "user@amd.com"},
-    )
 
-    @field_validator('updated_by')
-    @classmethod
-    def validate_amd_email(cls, v: str | None) -> str | None:
-        """Validate that updated_by is an AMD email address."""
-        if v is not None and not v.lower().endswith("@amd.com"):
-            raise InvalidUpdaterEmailError()
-        return v
-
-
-class RecordBenchmarkRequest(BaseModel):
+class RecordBenchmarkRequest(ArtefactFieldsMixin):
     """Request model for recording benchmark with iterations."""
     benchmark_id: UUIDString = Field(
         ...,
@@ -170,48 +144,17 @@ class RecordBenchmarkRequest(BaseModel):
         json_schema_extra={"example": _example_benchmark_id},
         examples=[_example_benchmark_id],
     )
-    artefact_hash: Multihash | None = Field(
-        default=None,
-        description="Optional multihash of benchmark data",
-        json_schema_extra={"example": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"},
-    )
-    artefact_metadata: dict[str, Any] | None = Field(
-        default=None,
-        description="Optional metadata for the benchmark",
-        json_schema_extra={"example": {"name": "SPEC CPU 2017", "config": "base", "system": "EPYC 9004"}},
-    )
-    backlink: str | None = Field(
-        default=None,
-        description="Optional URL back to the benchmark in the originating system",
-        json_schema_extra={"example": "https://epdw.example.com/benchmarks/bench-123"},
-    )
-    provenance: DIDOrUUIDList | None = Field(
-        default=None,
-        description="Optional list of provenance identifiers for the benchmark itself",
-        json_schema_extra={"example": []},
-    )
-    update_message: str | None = Field(
-        default=None,
-        description="Optional message describing this update",
-        json_schema_extra={"example": "Initial benchmark recording"},
-    )
-    updated_by: str | None = Field(
-        default=None,
-        description="Optional AMD email of the person who made this update",
-        json_schema_extra={"example": "user@amd.com"},
-    )
     iterations: list[BenchmarkIterationInput] = Field(
         ...,
         description="List of iterations for this benchmark (at least 1 required)"
     )
 
-    @field_validator('updated_by')
-    @classmethod
-    def validate_amd_email(cls, v: str | None) -> str | None:
-        """Validate that updated_by is an AMD email address."""
-        if v is not None and not v.lower().endswith("@amd.com"):
-            raise InvalidUpdaterEmailError()
-        return v
+    # Override artefact_metadata with more specific description/example
+    artefact_metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional metadata for the benchmark",
+        json_schema_extra={"example": {"name": "SPEC CPU 2017", "config": "base", "system": "EPYC 9004"}},
+    )
 
     @field_validator('iterations')
     @classmethod
@@ -259,51 +202,34 @@ class RecordBenchmarkResponse(BaseModel):
     )
 
 
-class ArtefactUpdateInput(BaseModel):
+class ArtefactUpdateInput(ArtefactFieldsMixin):
     """Input for a single artefact update."""
     external_uid: UUIDString = Field(
         ...,
         description="UUID of the existing artefact",
         json_schema_extra={"example": "95da4dd5-6e48-4c5b-bb91-935983c16d9c"},
     )
-    artefact_hash: Multihash | None = Field(
-        default=None,
-        description="Optional multihash of artefact content",
-        json_schema_extra={"example": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"},
-    )
+
+    # Override artefact_metadata with more specific description/example
     artefact_metadata: dict[str, Any] | None = Field(
         default=None,
         description="Full metadata to set for this version",
         json_schema_extra={"example": {"score": 456.78, "status": "completed"}},
     )
+
+    # Override backlink with more specific example
     backlink: str | None = Field(
         default=None,
         description="Optional URL back to the artefact in the originating system",
         json_schema_extra={"example": "https://epdw.example.com/artefacts/art-123"},
     )
-    provenance: DIDOrUUIDList | None = Field(
-        default=None,
-        description="Optional provenance identifiers",
-        json_schema_extra={"example": []},
-    )
+
+    # Override update_message with more specific example
     update_message: str | None = Field(
         default=None,
         description="Optional message describing this update",
         json_schema_extra={"example": "Updated metadata"},
     )
-    updated_by: str | None = Field(
-        default=None,
-        description="Optional AMD email of the person who made this update",
-        json_schema_extra={"example": "user@amd.com"},
-    )
-
-    @field_validator('updated_by')
-    @classmethod
-    def validate_amd_email(cls, v: str | None) -> str | None:
-        """Validate that updated_by is an AMD email address."""
-        if v is not None and not v.lower().endswith("@amd.com"):
-            raise InvalidUpdaterEmailError()
-        return v
 
 
 class UpdateMultipleArtefactsRequest(BaseModel):
@@ -341,57 +267,9 @@ class UpdateMultipleArtefactsResponse(BaseModel):
 
 
 # ==========================
-# Conflict Response Documentation
-# ==========================
-ConflictResponses = {
-    409: {
-        "description": "Conflict error: Division mismatch or version conflict",
-        "content": {
-            "application/json": {
-                "examples": {
-                    "division_mismatch": {
-                        "summary": "Division mismatch",
-                        "value": {"detail": "Division mismatch: existing division is 'epdw', but attempted to set 'other'"}
-                    },
-                    "version_conflict": {
-                        "summary": "Version conflict",
-                        "value": {"detail": "Version conflict: version 2 already exists"}
-                    },
-                    "provenance_not_found": {
-                        "summary": "Provenance item not found",
-                        "value": {"detail": "Provenance item not found: 2cacad4f-63ab-4668-9db7-7fc2538caa8c"}
-                    }
-                }
-            }
-        }
-    }
-}
-
-NotFoundResponses = {
-    404: {
-        "description": "Resource not found",
-        "content": {
-            "application/json": {
-                "examples": {
-                    "benchmark_not_found": {
-                        "summary": "Benchmark not found",
-                        "value": {"detail": "Benchmark 'abc-123' not found"}
-                    },
-                    "iteration_not_found": {
-                        "summary": "Iteration not found",
-                        "value": {"detail": "Iteration 'iter-1' not found under benchmark 'abc-123'"}
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-# ==========================
 # Endpoints
 # ==========================
-@app.post("/create-sut-did", responses={**APITokenDep401Response, **NotFoundResponses, **ConflictResponses})
+@app.post("/create-sut-did", responses={**APITokenDep401Response, **not_found_response("Resource"), **conflict_response(_EPDW_DIVISION)})
 def create_sut_did(
     req: CreateSutRequest,
     api_token: EPDWTokenDep,
@@ -428,7 +306,7 @@ def create_sut_did(
     })
 
 
-@app.post("/append-did", responses={**APITokenDep401Response, **NotFoundResponses, **ConflictResponses})
+@app.post("/append-did", responses={**APITokenDep401Response, **not_found_response("Resource"), **conflict_response(_EPDW_DIVISION)})
 async def append_did(
     body: DIDAppendRequest,
     api_token: EPDWTokenDep,
@@ -488,12 +366,8 @@ async def epdw_did(did_svc: DIDServiceDep):
     """
     return did_svc.division_did_doc(_EPDW_DIVISION)
 
-PathUUID = Annotated[CanonicalizedUUID, Path(
-    description="The UID or DID of the artefact to retrieve the Verifiable Credential for",
-    openapi_examples={"normal":{"value":"95da4dd5-6e48-4c5b-bb91-935983c16d9c"}},
-)]
 
-@app.get("/epdw/{uid}/vc.json", responses={**APITokenDep401Response})
+@app.get("/epdw/{uid}/vc.json", responses={**APITokenDep401Response, **not_found_response()})
 async def artefact_vc(
     uid: PathUUID,
     api_token: EPDWTokenDep,
@@ -503,28 +377,7 @@ async def artefact_vc(
     return did_svc.issue_artefact_vc(division=_EPDW_DIVISION, uid=uid)
 
 
-BadRequestResponses = {
-    400: {
-        "description": "Bad Request: Invalid input",
-        "content": {
-            "application/json": {
-                "examples": {
-                    "duplicate_iteration_ids": {
-                        "summary": "Duplicate iteration IDs",
-                        "value": {"detail": "Duplicate iteration IDs found: iter-1, iter-2"}
-                    },
-                    "empty_iterations": {
-                        "summary": "Empty iterations list",
-                        "value": {"detail": "At least one iteration is required"}
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-@app.post("/epdw/record-benchmark", responses={**APITokenDep401Response, **BadRequestResponses, **ConflictResponses})
+@app.post("/epdw/record-benchmark", responses={**APITokenDep401Response, **bad_request_response(), **conflict_response(_EPDW_DIVISION)})
 async def record_benchmark(
     request: RecordBenchmarkRequest,
     api_token: EPDWTokenDep,
@@ -754,7 +607,7 @@ async def record_benchmark(
     )
 
 
-@app.post("/epdw/update-multiple-artefacts", responses={**APITokenDep401Response, **BadRequestResponses, **NotFoundResponses, **ConflictResponses})
+@app.post("/epdw/update-multiple-artefacts", responses={**APITokenDep401Response, **bad_request_response(), **not_found_response("Resource"), **conflict_response(_EPDW_DIVISION)})
 async def update_multiple_artefacts(
     request: UpdateMultipleArtefactsRequest,
     api_token: EPDWTokenDep,

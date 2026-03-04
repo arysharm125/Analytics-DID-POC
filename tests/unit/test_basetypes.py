@@ -4,6 +4,7 @@ import pytest
 
 from app.routers.basetypes import (
     _canonicalize_did_or_uuid,
+    _validate_amd_email,
     _validate_and_canonicalize_did_or_uuid,
     _validate_did_list,
     _validate_did_or_uuid,
@@ -26,6 +27,7 @@ from app.services.exceptions import (
     InvalidDivisionError,
     InvalidIdentifierError,
     InvalidMultihashError,
+    InvalidUpdaterEmailError,
 )
 
 
@@ -634,6 +636,47 @@ class TestValidateDIDList:
         dids = ["did:web:did.amd.com:advisory"]
         with pytest.raises(ValueError):
             _validate_did_list(dids)
+
+
+class TestAMDEmailValidation:
+    """Tests for AMD email validation."""
+
+    def test_valid_amd_email(self):
+        """Valid AMD email should pass."""
+        assert _validate_amd_email("user@amd.com") == "user@amd.com"
+        assert _validate_amd_email("john.doe@amd.com") == "john.doe@amd.com"
+        assert _validate_amd_email("john+doe@amd.com") == "john+doe@amd.com"
+
+    def test_valid_amd_email_uppercase_domain(self):
+        """AMD email with uppercase domain should pass (case-insensitive)."""
+        assert _validate_amd_email("user@AMD.COM") == "user@AMD.COM"
+        assert _validate_amd_email("user@Amd.Com") == "user@Amd.Com"
+
+    def test_none_value_passes(self):
+        """None value should pass through unchanged."""
+        assert _validate_amd_email(None) is None
+
+    def test_invalid_non_amd_email_raises(self):
+        """Non-AMD email should raise InvalidUpdaterEmailError."""
+        with pytest.raises(InvalidUpdaterEmailError):
+            _validate_amd_email("user@example.com")
+
+    def test_invalid_non_amd_email_similar_domain_raises(self):
+        """Email with similar but different domain should raise."""
+        with pytest.raises(InvalidUpdaterEmailError):
+            _validate_amd_email("user@amd.net")
+        with pytest.raises(InvalidUpdaterEmailError):
+            _validate_amd_email("user@amdx.com")
+
+    def test_empty_string_raises(self):
+        """Empty string should raise InvalidUpdaterEmailError."""
+        with pytest.raises(InvalidUpdaterEmailError):
+            _validate_amd_email("")
+
+    def test_no_at_symbol_raises(self):
+        """Email without @ symbol should raise InvalidUpdaterEmailError."""
+        with pytest.raises(InvalidUpdaterEmailError):
+            _validate_amd_email("useramd.com")
 
 
 class TestArtefactTypeValidation:
