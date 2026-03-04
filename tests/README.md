@@ -66,8 +66,14 @@ pytest -m "not slow"
 ## Coverage Report
 
 ```bash
-# Generate coverage report
-pytest --cov=app --cov-report=html
+
+# Run tests with coverage (each appends)
+pytest tests/unit/ --cov=app --cov-report=
+pytest tests/integration/ --db-mode=container --vault-mode=container --cov=app --cov-append --cov-report=
+
+# Generate combined report
+coverage report
+coverage html
 
 # View report
 open htmlcov/index.html
@@ -80,7 +86,7 @@ open htmlcov/index.html
 Unit tests should not require external services. Use the provided fixtures:
 
 ```python
-def test_example(in_memory_vault, vault_service):
+def test_example(vault_service):
     """Test with in-memory vault."""
     vault_service.write_secret("test/path", {"key": "value"})
     result = vault_service.fetch_secret("test/path")
@@ -113,9 +119,8 @@ This prevents test pollution between test cases.
 
 | Fixture | Scope | Description |
 |---------|-------|-------------|
-| `db_connector` | function | MongoConnector with isolated database |
-| `in_memory_vault` | function | InMemoryVaultClient for testing |
-| `vault_service` | function | VaultService with in-memory backend |
+| `db_connector` | function | MongoConnector with isolated database (mode depends on --db-mode) |
+| `vault_service` | function | VaultService (mode depends on --vault-mode) |
 | `did_service` | function | DIDService with test dependencies |
 | `sut_service` | function | SUTService with test dependencies |
 | `test_config` | function | Test AppConfig |

@@ -37,15 +37,30 @@ def pytest_addoption(parser):
         choices=["mock", "container", "real"],
         help="Database backend: mock (mongomock), container (testcontainers), real",
     )
+    parser.addoption(
+        "--vault-mode",
+        action="store",
+        default="mock",
+        choices=["mock", "container"],
+        help="Vault backend: mock (InMemoryVaultClient), container (testcontainers Vault)",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
     """Skip integration tests when running in mock mode."""
     db_mode = config.getoption("--db-mode")
+    vault_mode = config.getoption("--vault-mode")
 
-    if db_mode == "mock":
+    # Skip integration tests if either DB or Vault is in mock mode
+    if db_mode == "mock" or vault_mode == "mock":
+        reasons = []
+        if db_mode == "mock":
+            reasons.append("--db-mode=container or --db-mode=real")
+        if vault_mode == "mock":
+            reasons.append("--vault-mode=container")
+
         skip_integration = pytest.mark.skip(
-            reason="Integration tests require --db-mode=container or --db-mode=real"
+            reason=f"Integration tests require {' and '.join(reasons)}"
         )
         for item in items:
             if "integration" in item.keywords:
@@ -95,6 +110,12 @@ def db_mode(request) -> str:
 
 
 @pytest.fixture(scope="session")
+def vault_mode(request) -> str:
+    """Get the vault mode from command line."""
+    return request.config.getoption("--vault-mode")
+
+
+@pytest.fixture(scope="session")
 def mongodb_container(db_mode):
     """Session-scoped MongoDB container (only for container mode).
 
@@ -118,6 +139,41 @@ def mongodb_container(db_mode):
     # Even though testcontainers usually waits for the port to be open,
     # give Mongo a moment to become command-ready.
     time.sleep(0.5)
+
+    yield container
+    container.stop()
+
+
+@pytest.fixture(scope="session")
+def vault_container(vault_mode):
+    """Session-scoped HashiCorp Vault container (only for container mode).
+
+    Starts a Vault dev server with KV v2 secrets engine enabled.
+
+    Requires testcontainers package to be installed.
+    """
+    if vault_mode != "container":
+        yield None
+        return
+
+    try:
+        from testcontainers.core.generic import DockerContainer
+    except ImportError:
+        pytest.skip("testcontainers package not installed")
+        return
+
+    # Start Vault in dev mode with a known root token
+    container = (
+        DockerContainer("hashicorp/vault:1.13.3")
+        .with_exposed_ports(8200)
+        .with_env("VAULT_DEV_ROOT_TOKEN_ID", "test-root-token")
+        .with_env("VAULT_DEV_LISTEN_ADDRESS", "0.0.0.0:8200")
+        .with_command("server -dev")
+    )
+    container.start()
+
+    # Give vault time to fully initialize (dev mode starts quickly)
+    time.sleep(1.0)
 
     yield container
     container.stop()
@@ -218,30 +274,46 @@ def override_test_config(test_config):
 
 
 @pytest.fixture
-def in_memory_vault():
-    """Create an in-memory vault client for testing.
-
-    Returns:
-        InMemoryVaultClient with empty state
-    """
-    from app.services.vault_clients import InMemoryVaultClient
-
-    return InMemoryVaultClient()
-
-
-@pytest.fixture
-def vault_service(in_memory_vault):
-    """Create a vault service with in-memory backend.
+def vault_client(vault_mode, vault_container):
+    """Create appropriate vault client based on mode.
 
     Args:
-        in_memory_vault: The in-memory vault client
+        vault_mode: The vault backend mode (mock or container)
+        vault_container: The Vault container (only for container mode)
 
     Returns:
-        VaultService wrapping the in-memory client
+        VaultClient instance (InMemoryVaultClient or HvacVaultClient)
+    """
+    if vault_mode == "container":
+        if vault_container is None:
+            pytest.skip("Vault container not available")
+
+        from app.services.vault_clients import HvacVaultClient
+
+        # Get container connection details
+        host = vault_container.get_container_host_ip()
+        port = vault_container.get_exposed_port(8200)
+        addr = f"http://{host}:{port}"
+
+        return HvacVaultClient(addr=addr, token="test-root-token")
+
+    # Default: mock mode
+    from app.services.vault_clients import InMemoryVaultClient
+    return InMemoryVaultClient()
+
+@pytest.fixture
+def vault_service(vault_client):
+    """Create a vault service with appropriate backend.
+
+    Args:
+        vault_client: The vault client (mode-aware)
+
+    Returns:
+        VaultService wrapping the client
     """
     from app.services.vault_service import VaultService
 
-    return VaultService(in_memory_vault, "secret")
+    return VaultService(vault_client, "secret")
 
 
 @pytest.fixture

@@ -35,9 +35,13 @@ class TestDIDServiceInitIntegration:
         assert "validator" in collection_doc["options"]
 
     def test_init_ensures_signing_keys_for_required_divisions(
-        self, db_connector, vault_service
+        self, db_connector, vault_service, vault_mode
     ):
         """DIDService should ensure signing keys exist for required divisions."""
+        # This test requires clearing vault, only works with InMemoryVaultClient
+        if vault_mode == "container":
+            pytest.skip("Test requires InMemoryVaultClient (uses .clear() method)")
+
         # Clear vault to start fresh
         vault_service._client.clear()
 
@@ -53,8 +57,12 @@ class TestDIDServiceInitIntegration:
             fragments = vault_service.list_division_signing_key_fragments(division)
             assert len(fragments) > 0
 
-    def test_init_without_ensuring_keys(self, db_connector, vault_service):
+    def test_init_without_ensuring_keys(self, db_connector, vault_service, vault_mode):
         """DIDService with ensure_signing_keys=False should not create keys."""
+        # This test requires clearing vault, only works with InMemoryVaultClient
+        if vault_mode == "container":
+            pytest.skip("Test requires InMemoryVaultClient (uses .clear() method)")
+
         # Clear vault to start fresh
         vault_service._client.clear()
 
