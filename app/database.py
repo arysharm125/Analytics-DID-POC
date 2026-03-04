@@ -124,14 +124,6 @@ class MigrationSet:
     def module(self) -> str:
         return self._module
 
-    @property
-    def migrations(self) -> dict[MigrationName, MigrationFunc]:
-        return self._migrations
-
-    def add(self, name: MigrationName, func: MigrationFunc) -> None:
-        """Add a migration to the set."""
-        self._migrations[name] = func
-
     def migration(self, func: MigrationFunc) -> MigrationFunc:
         """Decorator to register a migration function.
 
@@ -158,14 +150,8 @@ class MigrationSet:
         """Get the full migration name including module."""
         return f"{name.date_slug}_{self._module}_{name.title}"
 
-    def keys(self):
-        return self._migrations.keys()
-
     def __getitem__(self, key: MigrationName) -> MigrationFunc:
         return self._migrations[key]
-
-    def __len__(self) -> int:
-        return len(self._migrations)
 
     def __iter__(self):
         """Iterate over migration names in the set."""
@@ -382,19 +368,6 @@ class MongoConnector:
         if self.db is None:
             raise RuntimeError("MongoConnector not initialized")
         return self.db[name]
-
-    def insert_doc(self, collection_name: str, doc: dict):
-        doc["created_at"] = self.now()
-        return self.get_collection(collection_name).insert_one(doc)
-
-    def update_doc(self, collection_name: str, query: dict, update: dict, upsert=False):
-        if "$set" not in update:
-            update["$set"] = {}
-        update["$set"]["updated_at"] = self.now()
-        return self.get_collection(collection_name).update_one(query, update, upsert=upsert)
-
-    def fetch_docs(self, collection_name: str, query=None, limit=20):
-        return list(self.get_collection(collection_name).find(query or {}).limit(limit))
 
     def get_pool_stats(self) -> ConnectionPoolStats | None:
         """Get current connection pool statistics.
