@@ -11,7 +11,6 @@ from app.config import get_config
 from app.middlewares import exception_handler_middleware, http_exception_handler
 from app.request_id import AccessLogMiddleware, RequestIdFilter, RequestIdMiddleware
 
-# from app.routers.policy import router as policy_router
 from app.routers.advisory_router import router as advisory_router
 from app.routers.dependencies import did_service_lifespan
 from app.routers.didcheck import app as didcheck_router
@@ -161,7 +160,6 @@ app.exception_handler(HTTPException)(http_exception_handler)
 app.middleware("http")(exception_handler_middleware)
 
 
-# app.include_router(policy_router)
 app.include_router(did_router)
 app.include_router(advisory_router)
 
