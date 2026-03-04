@@ -1,7 +1,5 @@
 """Unit tests for app/did_utils/comparisons.py deep comparison functions."""
 
-import pytest
-
 from app.did_utils.comparisons import compute_diff, deep_equals, has_diff
 
 

@@ -676,6 +676,37 @@ class DIDService:
     # these.
     _required_divisions: ClassVar[list[str]] = ["advisory", "epdw"]
 
+    @classmethod
+    def ensure_collections_for_testing(cls, db: MongoConnector) -> None:
+        """Create collections with indexes but without validators for testing.
+
+        This method is intended for test environments using mongomock, which doesn't
+        support MongoDB collection validators. It creates the same indexes as the
+        migrations but skips validator creation.
+
+        For production environments, use migrations (run_migrations=True) instead.
+
+        This is the single source of truth for test collection schema. Any changes
+        to collection indexes should be reflected both in migrations AND here.
+
+        Args:
+            db: MongoConnector instance
+        """
+        # did_artefacts collection with indexes
+        artefacts = db.get_collection(cls._artefacts_col_name)
+        artefacts.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+        artefacts.create_index(
+            [("external_uid", 1), ("version", 1)],
+            unique=True,
+            name="idx_external_uid_version"
+        )
+        artefacts.create_index([("provenance", 1)], name="idx_provenance")
+
+        # did_issued_vcs collection with indexes
+        vcs = db.get_collection(cls._issued_vcs_col_name)
+        vcs.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
+        vcs.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+
     def __init__(
         self,
         db: MongoConnector,

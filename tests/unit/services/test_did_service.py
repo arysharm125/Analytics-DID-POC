@@ -4,13 +4,9 @@ Tests the DIDService class methods, helper functions, and business logic.
 Uses mongomock and InMemoryVaultClient for isolated unit testing.
 """
 
-import uuid
 from datetime import datetime, timezone
-from typing import Any
-from unittest.mock import MagicMock, patch
 
 import pytest
-from pydantic import ValidationError
 
 from app.did_utils.jsonld import DigitalArtefactVCInput
 from app.services.did_service import (
@@ -18,7 +14,6 @@ from app.services.did_service import (
     ArtefactRecord,
     DIDService,
     IssuedVCRecord,
-    ProvenanceNode,
     _artefact_to_da_vc_input,
     artefact_has_changes,
     compress_vc,
@@ -30,11 +25,7 @@ from app.services.exceptions import (
     DivisionKeysNotFoundError,
     DivisionMismatchError,
     ProvenanceNotFoundError,
-    SigningKeyNotAvailableError,
-    VCAlreadyExistsError,
     VCNotFoundError,
-    VCRegenerationMismatchError,
-    VersionConflictError,
 )
 
 # =============================================================================
@@ -1577,7 +1568,7 @@ class TestGetProvenanceTree:
         )
 
         # Manually add invalid provenance to the document
-        collection = did_service.db.get_collection(did_service._artefacts_col_name)
+        collection = did_service.db.get_collection(DIDService._artefacts_col_name)
         collection.update_one(
             {"version_uid": child.version_uid},
             {"$set": {"provenance": ["nonexistent-uuid"]}},
@@ -1822,11 +1813,6 @@ class TestFindIssuedVc:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
-
         artefact = did_service.upsert_artefact(
             ArtefactInput(
                 external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -1857,11 +1843,6 @@ class TestGetIssuedVc:
         """Getting an existing VC should decompress it correctly."""
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
-
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
 
         artefact = did_service.upsert_artefact(
             ArtefactInput(
@@ -1896,11 +1877,6 @@ class TestIssueArtefactVc:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
-
         artefact = did_service.upsert_artefact(
             ArtefactInput(
                 external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -1920,11 +1896,6 @@ class TestIssueArtefactVc:
         """Issuing VC when one exists should return the stored VC."""
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
-
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
 
         artefact = did_service.upsert_artefact(
             ArtefactInput(
@@ -1947,11 +1918,6 @@ class TestIssueArtefactVc:
         """Stored VC should have all required fields including id."""
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
-
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
 
         artefact = did_service.upsert_artefact(
             ArtefactInput(
@@ -1976,11 +1942,6 @@ class TestIssueArtefactVc:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
-
         artefact = did_service.upsert_artefact(
             ArtefactInput(
                 external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -2000,11 +1961,6 @@ class TestIssueArtefactVc:
         """force_regenerate should verify VC matches stored version."""
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
-
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
 
         artefact = did_service.upsert_artefact(
             ArtefactInput(
@@ -2034,11 +1990,6 @@ class TestIssueArtefactVc:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
         vault_service.ensure_division_signing_key("advisory")
-
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
 
         artefact = did_service.upsert_artefact(
             ArtefactInput(
@@ -2074,7 +2025,7 @@ class TestVCDeterministicRegeneration:
         )
 
         # Get artefact doc
-        collection = db_connector.get_collection("did_artefacts")
+        collection = db_connector.get_collection(DIDService._artefacts_col_name)
         artefact_doc = collection.find_one({"version_uid": artefact.version_uid})
 
         # Fixed parameters for deterministic generation
@@ -2104,11 +2055,6 @@ class TestVCDeterministicRegeneration:
         """Regenerating a VC should match the stored version."""
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
-
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
 
         artefact = did_service.upsert_artefact(
             ArtefactInput(
@@ -2140,7 +2086,7 @@ class TestVCDeterministicRegeneration:
             )
         )
 
-        collection = db_connector.get_collection("did_artefacts")
+        collection = db_connector.get_collection(DIDService._artefacts_col_name)
         artefact_doc = collection.find_one({"version_uid": artefact.version_uid})
 
         vc_uid = "12345678-1234-1234-1234-123456789abc"
@@ -2179,7 +2125,7 @@ class TestVCDeterministicRegeneration:
             )
         )
 
-        collection = db_connector.get_collection("did_artefacts")
+        collection = db_connector.get_collection(DIDService._artefacts_col_name)
         artefact_doc = collection.find_one({"version_uid": artefact.version_uid})
 
         vc_uid = "12345678-1234-1234-1234-123456789abc"
@@ -2211,11 +2157,6 @@ class TestRegenerateAndVerifyVc:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
-
         artefact = did_service.upsert_artefact(
             ArtefactInput(
                 external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -2237,11 +2178,6 @@ class TestRegenerateAndVerifyVc:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        # Manually create issued VCs collection
-        collection = did_service.db.get_collection("did_issued_vcs")
-        collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-        collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
-
         artefact = did_service.upsert_artefact(
             ArtefactInput(
                 external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -2259,7 +2195,7 @@ class TestRegenerateAndVerifyVc:
 
         # Replace in database
         tampered_blob = compress_vc(stored_vc)
-        vc_collection = db_connector.get_collection("did_issued_vcs")
+        vc_collection = db_connector.get_collection(DIDService._issued_vcs_col_name)
         vc_collection.update_one(
             {"version_uid": artefact.version_uid},
             {"$set": {"vc_blob": tampered_blob}}

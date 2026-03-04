@@ -92,20 +92,8 @@ def did_service_no_migrations_with_keys(module_db_connector, module_vault_servic
     module_vault_service.ensure_division_signing_key("epdw")
     module_vault_service.ensure_division_signing_key("advisory")
 
-    # Manually create the did_artefacts collection with indexes
-    artefacts_collection = module_db_connector.get_collection("did_artefacts")
-    artefacts_collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
-    artefacts_collection.create_index(
-        [("external_uid", 1), ("version", 1)],
-        unique=True,
-        name="idx_external_uid_version"
-    )
-    artefacts_collection.create_index([("provenance", 1)], name="idx_provenance")
-
-    # Manually create the did_issued_vcs collection with indexes
-    vcs_collection = module_db_connector.get_collection("did_issued_vcs")
-    vcs_collection.create_index([("vc_uid", 1)], unique=True, name="idx_vc_uid")
-    vcs_collection.create_index([("version_uid", 1)], unique=True, name="idx_version_uid")
+    # Create collections with indexes (single source of truth in DIDService)
+    DIDService.ensure_collections_for_testing(module_db_connector)
 
     # Create DIDService without running migrations
     return DIDService(

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.routers.basetypes import AMDWebDID, CanonicalizedUUID, DIDOrUUIDList, Multihash, UUIDString, did_from_uuid
 from app.routers.dependencies import APITokenDep401Response, DIDServiceDep, EPDWTokenDep
-from app.services.did_service import ArtefactInput, artefact_has_changes
+from app.services.did_service import ArtefactInput, DIDService, artefact_has_changes
 from app.services.exceptions import (
     ArtefactNoChangesError,
     ArtefactsNotFoundError,
@@ -593,7 +593,7 @@ async def record_benchmark(
 
     # PRE-VALIDATION: Validate all provenance items exist
     # Collect all provenance UIDs (benchmark + all iterations)
-    collection = did_svc.db.get_collection(did_svc._artefacts_col_name)
+    collection = did_svc.db.get_collection(DIDService._artefacts_col_name)
 
     # Validate benchmark provenance if present
     if request.provenance:
@@ -820,7 +820,7 @@ async def update_multiple_artefacts(
         raise ArtefactsNotFoundError(missing, _EPDW_DIVISION)
 
     # PRE-VALIDATION: Collect and validate all provenance UIDs
-    collection = did_svc.db.get_collection(did_svc._artefacts_col_name)
+    collection = did_svc.db.get_collection(DIDService._artefacts_col_name)
     all_provenance_uids = set()
     for update in request.updates:
         if update.provenance:
