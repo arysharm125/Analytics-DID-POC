@@ -45,7 +45,7 @@ const checkIdentifier = async () => {
   loading.value = true
 
   try {
-    router.push(`/${encodeURIComponent(identifier.value.trim())}`)
+    router.push(`/did/${encodeURIComponent(identifier.value.trim())}`)
   } catch (err) {
     await handleError(err)
   } finally {

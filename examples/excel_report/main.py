@@ -73,7 +73,7 @@ def create_excel_file(artefact_id: str, data: list[dict]) -> bytes:
             ws.cell(row=row_idx, column=col_idx, value=row_data[header])
 
     # Create the URL where the validity of the DID can be checked.
-    check_url = f"{DIDCHECK_URL}/{artefact_id}"
+    check_url = f"{DIDCHECK_URL}/did/{artefact_id}"
 
     # Create Legal Disclaimer sheet
     disclaimer_ws = wb.create_sheet("Legal Disclaimer")

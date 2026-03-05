@@ -262,13 +262,13 @@ onMounted(async () => {
               <div class="text-subtitle-2 text-grey mb-1">Version DID</div>
               <div class="d-flex align-center">
                 <router-link
-                  :to="`/${validationResult.versionUid}`"
+                  :to="`/did/${validationResult.versionUid}`"
                   class="text-primary text-mono"
                 >
                   {{ versionDID }}
                 </router-link>
                 <router-link
-                  :to="`/${validationResult.versionUid}`"
+                  :to="`/did/${validationResult.versionUid}`"
                   class="ml-3 text-primary text-decoration-none d-inline-flex align-center"
                 >
                   <v-icon size="small" class="mr-1">mdi-open-in-new</v-icon>

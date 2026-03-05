@@ -53,7 +53,7 @@ const formattedCreationDate = computed(() => {
       <v-row class="mt-2">
         <v-col cols="12">
           <router-link
-            :to="`/${latestVersion.version_uid}`"
+            :to="`/did/${latestVersion.version_uid}`"
             class="text-primary font-weight-medium"
           >
             <v-icon size="small" start>mdi-open-in-new</v-icon>

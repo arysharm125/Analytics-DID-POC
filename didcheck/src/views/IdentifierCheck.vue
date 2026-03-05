@@ -223,7 +223,7 @@ const goHome = () => {
 }
 
 const navigateToVersion = (versionUid) => {
-  router.push(`/${versionUid}`)
+  router.push(`/did/${versionUid}`)
 }
 
 // Handle file selection
@@ -339,7 +339,7 @@ watch(() => props.identifier, () => {
                 </v-chip>
               </div>
               <router-link
-                :to="`/${digitalArtefact.external_uid}`"
+                :to="`/did/${digitalArtefact.external_uid}`"
                 class="text-mono text-body-1 text-primary"
               >
                 {{ displayDID }}
@@ -425,7 +425,7 @@ watch(() => props.identifier, () => {
                 <v-col cols="12">
                   <div class="text-subtitle-2 text-grey">Version UID</div>
                   <div class="text-body-1 mt-1 text-mono">
-                    <router-link :to="`/${digitalArtefact.version_uid}`" class="text-primary">
+                    <router-link :to="`/did/${digitalArtefact.version_uid}`" class="text-primary">
                       {{ versionDID }}
                     </router-link>
                   </div>
@@ -637,7 +637,7 @@ watch(() => props.identifier, () => {
                   <template #title="{ item }">
                     <div class="d-flex align-center">
                       <router-link
-                        :to="`/${item.uid}`"
+                        :to="`/did/${item.uid}`"
                         class="text-primary text-mono provenance-link"
                         @click.stop
                       >
@@ -712,7 +712,7 @@ watch(() => props.identifier, () => {
                     <td>{{ new Date(version.creation_date).toLocaleDateString() }}</td>
                     <td>
                       <router-link
-                        :to="`/${version.version_uid}`"
+                        :to="`/did/${version.version_uid}`"
                         class="text-primary text-mono version-link"
                       >
                         {{ version.version_uid }}
@@ -813,7 +813,7 @@ watch(() => props.identifier, () => {
                       <td>{{ new Date(descendant.creation_date).toLocaleDateString() }}</td>
                       <td>
                         <router-link
-                          :to="`/${descendant.external_uid}`"
+                          :to="`/did/${descendant.external_uid}`"
                           class="text-primary text-mono version-link"
                         >
                           {{ descendant.external_uid }}

@@ -16,7 +16,7 @@ const routes = [
     props: true
   },
   {
-    path: '/:identifier',
+    path: '/did/:identifier',
     name: 'identifier-check',
     component: IdentifierCheck,
     props: true
