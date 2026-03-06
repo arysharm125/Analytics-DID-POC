@@ -1069,6 +1069,50 @@ class DIDService:
         doc.pop("_id", None)
         return ArtefactRecord(**doc)
 
+    def find_artefact_by_uid_and_type(
+        self, uid: CanonicalizedUUID, division: DivisionStr, artefact_type: ArtefactTypeStr
+    ) -> ArtefactRecord | None:
+        """
+        Find an artefact by uid (version_uid or external_uid) and validate its type and division.
+
+        If the uid matches a version_uid, returns that specific version.
+        If it matches an external_uid, returns the latest version.
+        The artefact must match both the specified division and artefact_type.
+
+        Args:
+            uid: The canonicalized UUID to search for (version_uid or external_uid)
+            division: The division the artefact must belong to
+            artefact_type: The artefact type the artefact must have
+
+        Returns:
+            ArtefactRecord if found and matches division/type, None otherwise
+        """
+        collection = self.db.get_collection(self._artefacts_col_name)
+
+        # First try to find by version_uid (exact version match)
+        doc = collection.find_one({
+            "version_uid": uid,
+            "division": division,
+            "artefact_type": artefact_type
+        })
+        if doc is not None:
+            doc.pop("_id", None)
+            return ArtefactRecord(**doc)
+
+        # Try finding by external_uid and get latest version
+        doc = collection.find_one(
+            {
+                "external_uid": uid,
+                "division": division,
+                "artefact_type": artefact_type
+            },
+            sort=[("version", -1)]
+        )
+        if doc is None:
+            return None
+        doc.pop("_id", None)
+        return ArtefactRecord(**doc)
+
     def find_by_provenance(
         self, provenance_uid: UUIDString, division: DivisionStr | None = None
     ) -> list[ArtefactRecord]:

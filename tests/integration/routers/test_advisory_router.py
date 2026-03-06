@@ -64,21 +64,45 @@ class TestAdvisoryRouterFullWorkflow:
     """Full end-to-end integration tests for advisory router."""
 
     def test_record_report_and_verify_vc_full_workflow(self, test_client, advisory_headers):
-        """Full workflow: create report, generate VC, verify signature via DID document.
+        """Full workflow: create recommendation, create report, generate VC, verify signature via DID document.
 
         This comprehensive test verifies:
-        1. Recording an advisory report creates a DID
-        2. The VC can be generated for the artefact
-        3. The VC structure is correct
-        4. The VC proof is valid
-        5. The signature can be verified using the public key from the DID document
+        1. Recording an advisory recommendation creates a DID
+        2. Recording an advisory report with the recommendation creates a DID
+        3. The VC can be generated for the artefact
+        4. The VC structure is correct
+        5. The VC proof is valid
+        6. The signature can be verified using the public key from the DID document
         """
 
         # =====================================================================
-        # Step 1: Record an advisory report
+        # Step 1: Record an advisory recommendation
+        # =====================================================================
+        recommendation_data = {
+            "artefact_uid": "11111111-2222-3333-4444-555555555555",
+            "artefact_hash": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+            "artefact_metadata": {
+                "recommendation_text": "Use AMD EPYC processors",
+                "category": "hardware",
+            },
+        }
+
+        rec_response = test_client.post(
+            "/advisory/record_recommendation",
+            json=recommendation_data,
+            headers=advisory_headers,
+        )
+
+        assert rec_response.status_code == 200, f"Failed to record recommendation: {rec_response.text}"
+        rec_data = rec_response.json()
+        recommendation_uid = rec_data["artefact_did"].split(":")[-1]
+
+        # =====================================================================
+        # Step 2: Record an advisory report referencing the recommendation
         # =====================================================================
         report_data = {
-            "artefact_id": "95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            "report_uid": "95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            "recommendation_uid": recommendation_uid,
             "artefact_hash": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
             "artefact_metadata": {
                 "filename": "cca-report-123761827584.xlsx",
@@ -86,7 +110,6 @@ class TestAdvisoryRouterFullWorkflow:
                 "analyst": "Jane Doe",
                 "severity": "high",
             },
-            "provenance": [],
         }
 
         response = test_client.post(
@@ -117,7 +140,7 @@ class TestAdvisoryRouterFullWorkflow:
         uid = artefact_did.split(":")[-1]
 
         # =====================================================================
-        # Step 2: Generate a Verifiable Credential
+        # Step 3: Generate a Verifiable Credential
         # =====================================================================
         vc_response = test_client.get(
             f"/advisory/{uid}/vc.json",
@@ -174,6 +197,13 @@ class TestAdvisoryRouterFullWorkflow:
             "analyst": "Jane Doe",
             "severity": "high",
         }
+
+        # Verify provenance includes the recommendation
+        assert "provenance" in subject
+        assert isinstance(subject["provenance"], list)
+        assert len(subject["provenance"]) == 1
+        # Provenance in VC is returned as full DIDs
+        assert subject["provenance"][0] == f"did:web:did.amd.com:{recommendation_uid}"
 
         # =====================================================================
         # Step 4: Validate VC proof
@@ -262,13 +292,26 @@ class TestAdvisoryRouterFullWorkflow:
     def test_record_report_and_update_creates_new_version(self, test_client, advisory_headers):
         """Test that updating an artefact creates a new version."""
 
-        artefact_id = "11111111-2222-3333-4444-555555555555"
+        # Create recommendation first
+        rec_response = test_client.post(
+            "/advisory/record_recommendation",
+            json={
+                "artefact_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7wRec11",
+            },
+            headers=advisory_headers,
+        )
+        assert rec_response.status_code == 200, f"Failed to create recommendation: {rec_response.text}"
+        recommendation_uid = rec_response.json()["artefact_did"].split(":")[-1]
+
+        report_uid = "11111111-2222-3333-4444-555555555555"
 
         # Create first version
         response1 = test_client.post(
             "/advisory/record_report",
             json={
-                "artefact_id": artefact_id,
+                "report_uid": report_uid,
+                "recommendation_uid": recommendation_uid,
                 "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
             },
             headers=advisory_headers,
@@ -282,7 +325,8 @@ class TestAdvisoryRouterFullWorkflow:
         response2 = test_client.post(
             "/advisory/record_report",
             json={
-                "artefact_id": artefact_id,
+                "report_uid": report_uid,
+                "recommendation_uid": recommendation_uid,
                 "artefact_hash": "QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
             },
             headers=advisory_headers,
@@ -298,58 +342,54 @@ class TestAdvisoryRouterFullWorkflow:
         # version_did should be different
         assert v1_data["version_did"] != v2_data["version_did"]
 
-    def test_record_report_with_provenance(self, test_client, advisory_headers):
-        """Test recording a report with provenance references."""
+    def test_record_recommendation_creates_artefact(self, test_client, advisory_headers):
+        """Test recording a recommendation creates an artefact with correct type."""
 
-        # Create parent artefact
-        parent_response = test_client.post(
-            "/advisory/record_report",
+        recommendation_response = test_client.post(
+            "/advisory/record_recommendation",
             json={
-                "artefact_id": "11111111-1111-1111-1111-111111111111",
-                "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+                "artefact_uid": "11111111-1111-1111-1111-111111111111",
+                "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7wRec11",
+                "artefact_metadata": {
+                    "recommendation_text": "Use AMD EPYC 9004 series",
+                    "category": "hardware",
+                },
             },
             headers=advisory_headers,
         )
 
-        assert parent_response.status_code == 200
-        parent_uid = parent_response.json()["artefact_did"].split(":")[-1]
+        assert recommendation_response.status_code == 200, f"Error: {recommendation_response.text}"
+        rec_data = recommendation_response.json()
 
-        # Create child with provenance
-        child_response = test_client.post(
-            "/advisory/record_report",
-            json={
-                "artefact_id": "22222222-2222-2222-2222-222222222222",
-                "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Chi1d1",
-                "provenance": [parent_uid],
-            },
-            headers=advisory_headers,
-        )
+        # Verify response structure
+        assert "artefact_did" in rec_data
+        assert "version_did" in rec_data
+        assert "version" in rec_data
+        assert rec_data["version"] == 1
 
-        assert child_response.status_code == 200
-        child_data = child_response.json()
-
-        # Verify child VC includes provenance
-        child_uid = child_data["artefact_did"].split(":")[-1]
+        # Verify VC includes correct artefact type
+        rec_uid = rec_data["artefact_did"].split(":")[-1]
         vc_response = test_client.get(
-            f"/advisory/{child_uid}/vc.json",
+            f"/advisory/{rec_uid}/vc.json",
             headers=advisory_headers,
         )
 
         assert vc_response.status_code == 200
         vc = vc_response.json()
 
-        # Check that provenance is in the credential subject
-        assert "provenance" in vc["credentialSubject"]
-        provenance = vc["credentialSubject"]["provenance"]
-        assert isinstance(provenance, list)
-        assert len(provenance) == 1
+        # Check that artefact type is in the credential subject
+        assert "artefactType" in vc["credentialSubject"]
+        assert vc["credentialSubject"]["artefactType"] == "recommendation"
 
-    def test_missing_api_token_returns_401(self, test_client):
-        """Test that missing API token returns 401 Unauthorized."""
+    def test_missing_api_token_returns_422(self, test_client):
+        """Test that missing API token returns 422 for missing required header."""
 
         response = test_client.post(
             "/advisory/record_report",
-            json={"artefact_id": "95da4dd5-6e48-4c5b-bb91-935983c16d9c"},
+            json={
+                "report_uid": "95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                "recommendation_uid": "11111111-2222-3333-4444-555555555555",
+            },
             # No headers
         )
 
@@ -360,7 +400,10 @@ class TestAdvisoryRouterFullWorkflow:
 
         response = test_client.post(
             "/advisory/record_report",
-            json={"artefact_id": "95da4dd5-6e48-4c5b-bb91-935983c16d9c"},
+            json={
+                "report_uid": "95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                "recommendation_uid": "11111111-2222-3333-4444-555555555555",
+            },
             headers={"X-API-Token": "invalid-token"},
         )
 
@@ -369,13 +412,25 @@ class TestAdvisoryRouterFullWorkflow:
     def test_no_changes_returns_400(self, test_client, advisory_headers):
         """Test that upserting with no changes returns 400 Bad Request."""
 
-        artefact_id = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+        # Create recommendation first
+        rec_response = test_client.post(
+            "/advisory/record_recommendation",
+            json={
+                "artefact_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7wRec11",
+            },
+            headers=advisory_headers,
+        )
+        recommendation_uid = rec_response.json()["artefact_did"].split(":")[-1]
+
+        report_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
 
         # Create first version
         test_client.post(
             "/advisory/record_report",
             json={
-                "artefact_id": artefact_id,
+                "report_uid": report_uid,
+                "recommendation_uid": recommendation_uid,
                 "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
             },
             headers=advisory_headers,
@@ -385,7 +440,8 @@ class TestAdvisoryRouterFullWorkflow:
         response = test_client.post(
             "/advisory/record_report",
             json={
-                "artefact_id": artefact_id,
+                "report_uid": report_uid,
+                "recommendation_uid": recommendation_uid,
                 "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
             },
             headers=advisory_headers,
@@ -394,20 +450,20 @@ class TestAdvisoryRouterFullWorkflow:
         assert response.status_code == 400
         assert "No changes detected" in response.json()["detail"]
 
-    def test_provenance_not_found_returns_409(self, test_client, advisory_headers):
-        """Test that provenance referencing non-existent artefact returns 409 Conflict."""
+    def test_recommendation_not_found_returns_409(self, test_client, advisory_headers):
+        """Test that report with non-existent recommendation returns 409 Conflict."""
 
         response = test_client.post(
             "/advisory/record_report",
             json={
-                "artefact_id": "95da4dd5-6e48-4c5b-bb91-935983c16d9c",
-                "provenance": ["99999999-9999-9999-9999-999999999999"],
+                "report_uid": "95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                "recommendation_uid": "99999999-9999-9999-9999-999999999999",
             },
             headers=advisory_headers,
         )
 
         assert response.status_code == 409
-        assert "does not exist" in response.json()["detail"].lower()
+        assert "recommendation" in response.json()["detail"].lower()
 
     def test_artefact_not_found_returns_404(self, test_client, advisory_headers):
         """Test that fetching VC for non-existent artefact returns 404 Not Found."""

@@ -80,6 +80,18 @@ class ProvenanceNotFoundError(DIDServiceError, HTTPException):
         super().__init__(status_code=409, detail=detail)
 
 
+class RecommendationNotFoundError(DIDServiceError, HTTPException):
+    """Raised when a recommendation UID doesn't exist or isn't of type 'recommendation' in advisory division."""
+
+    def __init__(self, recommendation_uid: str):
+        self.recommendation_uid = recommendation_uid
+        detail = (
+            f"Recommendation '{recommendation_uid}' not found or is not of type 'recommendation' "
+            "in the advisory division."
+        )
+        super().__init__(status_code=409, detail=detail)
+
+
 class InvalidMultihashError(ValidationError):
     """Raised when a multihash format is invalid."""
 

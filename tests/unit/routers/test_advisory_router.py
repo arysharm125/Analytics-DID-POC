@@ -21,30 +21,31 @@ class TestRecordReportRequestModel:
     def test_valid_request_with_all_fields(self):
         """Request with all fields should validate successfully."""
         request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
             artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
             artefact_metadata={"filename": "report.xlsx", "service": "cca"},
-            provenance=["11111111-2222-3333-4444-555555555555"],
         )
 
-        assert request.artefact_id == "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+        assert request.report_uid == "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+        assert request.recommendation_uid == "11111111-2222-3333-4444-555555555555"
         assert request.artefact_hash == "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk"
         assert request.artefact_metadata == {"filename": "report.xlsx", "service": "cca"}
-        assert request.provenance == ["11111111-2222-3333-4444-555555555555"]
 
     def test_valid_request_minimal(self):
-        """Request with only required artefact_id should validate."""
+        """Request with only required fields should validate."""
         request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
         )
 
-        assert request.artefact_id == "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+        assert request.report_uid == "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+        assert request.recommendation_uid == "11111111-2222-3333-4444-555555555555"
         assert request.artefact_hash is None
         assert request.artefact_metadata is None
-        assert request.provenance is None
 
-    def test_artefact_id_accepts_valid_uuid(self):
-        """Valid UUID format should be accepted for artefact_id."""
+    def test_report_uid_accepts_valid_uuid(self):
+        """Valid UUID format should be accepted for report_uid."""
         valid_uuids = [
             "95da4dd5-6e48-4c5b-bb91-935983c16d9c",
             "00000000-0000-0000-0000-000000000000",
@@ -52,25 +53,54 @@ class TestRecordReportRequestModel:
         ]
 
         for uuid_str in valid_uuids:
-            request = RecordReportRequest(artefact_id=uuid_str)
-            assert request.artefact_id == uuid_str
+            request = RecordReportRequest(
+                report_uid=uuid_str,
+                recommendation_uid="11111111-2222-3333-4444-555555555555",
+            )
+            assert request.report_uid == uuid_str
 
-    def test_artefact_id_rejects_invalid_uuid(self):
+    def test_report_uid_rejects_invalid_uuid(self):
         """Invalid UUID format should raise ValidationError."""
         with pytest.raises(ValidationError) as exc:
-            RecordReportRequest(artefact_id="not-a-valid-uuid")
+            RecordReportRequest(
+                report_uid="not-a-valid-uuid",
+                recommendation_uid="11111111-2222-3333-4444-555555555555",
+            )
 
-        assert "artefact_id" in str(exc.value)
+        assert "report_uid" in str(exc.value)
 
-    def test_artefact_id_rejects_partial_uuid(self):
+    def test_report_uid_rejects_partial_uuid(self):
         """Partial UUID should raise ValidationError."""
         with pytest.raises(ValidationError):
-            RecordReportRequest(artefact_id="95da4dd5-6e48-4c5b")
+            RecordReportRequest(
+                report_uid="95da4dd5-6e48-4c5b",
+                recommendation_uid="11111111-2222-3333-4444-555555555555",
+            )
+
+    def test_recommendation_uid_accepts_valid_uuid(self):
+        """Valid UUID format should be accepted for recommendation_uid."""
+        request = RecordReportRequest(
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
+        )
+
+        assert request.recommendation_uid == "11111111-2222-3333-4444-555555555555"
+
+    def test_recommendation_uid_accepts_did(self):
+        """DID format should be accepted and canonicalized for recommendation_uid."""
+        request = RecordReportRequest(
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="did:web:did.amd.com:11111111-2222-3333-4444-555555555555",
+        )
+
+        # Should be canonicalized to UUID
+        assert request.recommendation_uid == "11111111-2222-3333-4444-555555555555"
 
     def test_artefact_hash_accepts_valid_multihash(self):
         """Valid multihash should be accepted."""
         request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
             artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
         )
 
@@ -80,7 +110,8 @@ class TestRecordReportRequestModel:
         """Invalid multihash should raise ValidationError."""
         with pytest.raises(ValidationError) as exc:
             RecordReportRequest(
-                artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                recommendation_uid="11111111-2222-3333-4444-555555555555",
                 artefact_hash="InvalidHash",
             )
 
@@ -90,7 +121,8 @@ class TestRecordReportRequestModel:
         """Multihash with wrong prefix should raise ValidationError."""
         with pytest.raises(ValidationError):
             RecordReportRequest(
-                artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                recommendation_uid="11111111-2222-3333-4444-555555555555",
                 artefact_hash="XmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
             )
 
@@ -102,7 +134,8 @@ class TestRecordReportRequestModel:
             "nested": {"key": "value"},
         }
         request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
             artefact_metadata=metadata,
         )
 
@@ -111,94 +144,18 @@ class TestRecordReportRequestModel:
     def test_artefact_metadata_accepts_empty_dict(self):
         """Empty dict metadata should be accepted."""
         request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
             artefact_metadata={},
         )
 
         assert request.artefact_metadata == {}
 
-    def test_provenance_accepts_uuid_list(self):
-        """List of UUIDs should be accepted."""
-        provenance = [
-            "11111111-2222-3333-4444-555555555555",
-            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-        ]
-        request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
-            provenance=provenance,
-        )
-
-        assert request.provenance == provenance
-
-    def test_provenance_accepts_did_list(self):
-        """List of DIDs should be canonicalized to UUIDs."""
-        request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
-            provenance=[
-                "did:web:did.amd.com:11111111-2222-3333-4444-555555555555",
-                "did:web:did.amd.com:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-            ],
-        )
-
-        # DIDs should be canonicalized to UUIDs
-        assert request.provenance == [
-            "11111111-2222-3333-4444-555555555555",
-            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-        ]
-
-    def test_provenance_accepts_mixed_list(self):
-        """Mixed list of DIDs and UUIDs should be canonicalized."""
-        request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
-            provenance=[
-                "11111111-2222-3333-4444-555555555555",
-                "did:web:did.amd.com:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-            ],
-        )
-
-        assert request.provenance == [
-            "11111111-2222-3333-4444-555555555555",
-            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-        ]
-
-    def test_provenance_rejects_duplicates(self):
-        """Duplicate provenance items should raise DuplicateProvenanceError."""
-        with pytest.raises(DuplicateProvenanceError) as exc:
-            RecordReportRequest(
-                artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
-                provenance=[
-                    "11111111-2222-3333-4444-555555555555",
-                    "11111111-2222-3333-4444-555555555555",
-                ],
-            )
-
-        # Should contain DuplicateProvenanceError message
-        assert "Duplicate" in str(exc.value)
-
-    def test_provenance_rejects_duplicates_after_canonicalization(self):
-        """Duplicates after DID canonicalization should raise DuplicateProvenanceError."""
-        with pytest.raises(DuplicateProvenanceError):
-            RecordReportRequest(
-                artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
-                provenance=[
-                    "11111111-2222-3333-4444-555555555555",
-                    "did:web:did.amd.com:11111111-2222-3333-4444-555555555555",
-                ],
-            )
-
-    def test_provenance_accepts_empty_list(self):
-        """Empty provenance list should be accepted."""
-        request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
-            provenance=[],
-        )
-
-        assert request.provenance == []
-
     def test_update_message_accepts_string(self):
         """Valid update message should be accepted."""
         request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
             update_message="Initial report submission",
         )
 
@@ -207,7 +164,8 @@ class TestRecordReportRequestModel:
     def test_update_message_accepts_none(self):
         """None for update_message should be accepted."""
         request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
             update_message=None,
         )
 
@@ -216,7 +174,8 @@ class TestRecordReportRequestModel:
     def test_updated_by_accepts_amd_email(self):
         """Valid AMD email should be accepted for updated_by."""
         request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
             updated_by="user@amd.com",
         )
 
@@ -225,7 +184,8 @@ class TestRecordReportRequestModel:
     def test_updated_by_accepts_none(self):
         """None for updated_by should be accepted."""
         request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
             updated_by=None,
         )
 
@@ -237,7 +197,8 @@ class TestRecordReportRequestModel:
 
         with pytest.raises(InvalidUpdaterEmailError):
             RecordReportRequest(
-                artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                recommendation_uid="11111111-2222-3333-4444-555555555555",
                 updated_by="user@example.com",
             )
 
@@ -247,14 +208,16 @@ class TestRecordReportRequestModel:
 
         with pytest.raises(InvalidUpdaterEmailError):
             RecordReportRequest(
-                artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                recommendation_uid="11111111-2222-3333-4444-555555555555",
                 updated_by="not-an-email",
             )
 
     def test_updated_by_case_insensitive(self):
         """AMD email check should be case-insensitive."""
         request = RecordReportRequest(
-            artefact_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            report_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            recommendation_uid="11111111-2222-3333-4444-555555555555",
             updated_by="USER@AMD.COM",
         )
 
