@@ -30,7 +30,7 @@ logger = logging.getLogger("advisory_api")
 _example_random_uuid = f"{uuid4()}"
 
 class RecordRecommendationRequest(ArtefactFieldsMixin):
-    artefact_uid: UUIDString = Field(
+    recommendation_uid: UUIDString = Field(
         ...,  # Required
         description="Globally unique ID of this recommendation (must be a valid UUID)",
         json_schema_extra={"example": _example_random_uuid},
@@ -76,7 +76,7 @@ async def record_recommendation(request: RecordRecommendationRequest, api_token:
 
     # Build artefact input from request
     artefact_input = ArtefactInput(
-        external_uid=request.artefact_uid,
+        external_uid=request.recommendation_uid,
         division=_ADVISORY_DIVISION,
         artefact_hash=request.artefact_hash,
         artefact_metadata=request.artefact_metadata,

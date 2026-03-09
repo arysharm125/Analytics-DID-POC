@@ -59,6 +59,32 @@ const versionDID = computed(() => {
   return `did:web:did.amd.com:${digitalArtefact.value.version_uid}`
 })
 
+/**
+ * Resets all artefact-specific state to initial values.
+ * Should be called when navigating to a new identifier.
+ */
+const resetArtefactState = () => {
+  // Verifiable Credential state
+  issuedVC.value = null
+
+  // Artefact metadata state
+  fetchedArtefact.value = null
+
+  // Provenance state
+  fetchedProvenance.value = null
+
+  // Versions state
+  fetchedVersions.value = null
+
+  // Descendants state
+  fetchedDescendants.value = null
+  descendantsPage.value = 1
+
+  // File verification state
+  selectedFile.value = null
+  verificationStatus.value = null
+  verificationMessage.value = ''
+}
 
 // Transform provenance tree to v-treeview format
 const provenanceTreeItems = computed(() => {
@@ -82,20 +108,10 @@ const provenanceTreeItems = computed(() => {
   return provenance.map(transformNode)
 })
 
-// Helper function to extract UUID from a DID string
-const extractUUID = (didOrUid) => {
-  if (!didOrUid) return null
-  const match = didOrUid.match(/^did:web:did\.amd\.com:([0-9a-fA-F-]+)$/)
-  return match ? match[1] : didOrUid
-}
-
 const fetchIdentifierData = async () => {
   loading.value = true
   error.value = null
-  // Clear previous artefact-specific data when loading a new identifier
-  issuedVC.value = null
-  fetchedArtefact.value = null
-  fetchedProvenance.value = null
+  resetArtefactState()
 
   try {
     const data = await didStore.fetchOverviewByIdentifier(props.identifier)

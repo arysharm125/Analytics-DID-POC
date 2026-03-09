@@ -50,6 +50,12 @@ const saveResultsToStorage = () => {
 
 // Try to restore cached results from sessionStorage
 const restoreFromStorage = () => {
+  // If there's fresh content waiting to be processed, don't restore from cache
+  const hasFreshContent = sessionStorage.getItem(storageKey('content'))
+  if (hasFreshContent) {
+    return false
+  }
+
   const cachedResult = sessionStorage.getItem(storageKey('result'))
   const cachedFilename = sessionStorage.getItem(storageKey('filename'))
 

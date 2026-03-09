@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recommendation Details</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: white;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            opacity: 0.9;
+            font-size: 1rem;
+        }
+
+        main {
+            flex: 1;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+        }
+
+        .did-container {
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+        }
+
+        .did-container h3 {
+            margin: 0 0 0.75rem 0;
+            color: #333;
+            font-size: 1rem;
+        }
+
+        .did {
+            font-family: monospace;
+            word-break: break-all;
+            font-size: 0.9rem;
+            color: #333;
+            background: white;
+            padding: 0.75rem;
+            border-radius: 4px;
+        }
+
+        .info-text {
+            color: #666;
+            line-height: 1.6;
+            margin: 1rem 0;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.875rem 1.5rem;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .button-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .button-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .button-secondary {
+            background: #1976d2;
+            color: white;
+        }
+
+        .button-secondary:hover {
+            background: #1565c0;
+        }
+
+        .button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status {
+            text-align: center;
+            padding: 0.75rem;
+            border-radius: 6px;
+            background: #f0f9ff;
+            color: #0369a1;
+            font-weight: 500;
+            margin: 1rem 0;
+        }
+
+        .status.error {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+
+        .error-message {
+            padding: 1rem;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 6px;
+            color: #dc2626;
+            margin: 1rem 0;
+        }
+
+        .result {
+            padding: 1.5rem;
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+
+        .result h3 {
+            margin: 0 0 1rem 0;
+            color: #16a34a;
+            font-size: 1.1rem;
+        }
+
+        .result-item {
+            margin: 0.75rem 0;
+        }
+
+        .result-label {
+            font-weight: 600;
+            color: #166534;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        .did-code {
+            display: block;
+            padding: 0.75rem;
+            background: #1a1a1a;
+            color: #4ade80;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            word-break: break-all;
+            overflow-wrap: break-word;
+            font-family: monospace;
+        }
+
+        .version-badge {
+            display: inline-block;
+            background: #16a34a;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .download-section {
+            display: flex;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.875rem 1.75rem;
+            background: #059669;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: background 0.2s;
+            font-size: 1rem;
+        }
+
+        .download-btn:hover {
+            background: #047857;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <header>
+                <h1>📋 Recommendation Details</h1>
+                <p class="subtitle">View and generate new report versions</p>
+            </header>
+
+            <main>
+                <!-- Recommendation Info Card -->
+                <div class="card">
+                    <div class="did-container">
+                        <h3>Recommendation Digital Identifier (DID)</h3>
+                        <p class="did">{{ recommendationDID }}</p>
+                    </div>
+                    <p class="info-text">
+                        This recommendation has been registered with a DID for verification and integrity checking.
+                        You can generate new report versions based on this recommendation.
+                    </p>
+                    <div class="button-group">
+                        <a :href="didCheckUrl" class="button button-secondary" target="_blank">
+                            🔍 View in DIDCheck
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Generate Report Card -->
+                <div class="card">
+                    <h2 style="margin: 0 0 1rem 0; color: #333;">Generate New Report</h2>
+                    <p class="info-text">
+                        Create a new Excel report version for this recommendation. Each report will be registered
+                        with its own DID and linked to this recommendation.
+                    </p>
+
+                    <button
+                        @click="generateReport"
+                        :disabled="isLoading"
+                        class="button button-primary"
+                        style="width: 100%;"
+                    >
+                        <span v-if="isLoading" class="spinner"></span>
+                        <span v-else>📝</span>
+                        {{ isLoading ? 'Generating...' : 'Generate New Report Version' }}
+                    </button>
+
+                    <div v-if="status" class="status" :class="{ error: error }">
+                        {{ status }}
+                    </div>
+
+                    <div v-if="error" class="error-message">
+                        ❌ {{ error }}
+                    </div>
+
+                    <div v-if="reportDID" class="result">
+                        <h3>✅ Report Generated Successfully</h3>
+
+                        <div class="result-item">
+                            <span class="result-label">Version:</span>
+                            <span class="version-badge">v{{ version }}</span>
+                        </div>
+
+                        <div class="result-item">
+                            <span class="result-label">Report DID:</span>
+                            <code class="did-code">{{ reportDID }}</code>
+                        </div>
+
+                        <div class="download-section">
+                            <a
+                                :href="downloadUrl"
+                                :download="downloadFilename"
+                                class="download-btn"
+                            >
+                                ⬇️ Download Excel File
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <footer>
+                <p>DID Service POC - Analytics Division</p>
+            </footer>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref } = Vue
+
+        createApp({
+            setup() {
+                // Extract recommendation_uid from template variable
+                const recommendationUid = '$recommendation_uid'
+                const recommendationDID = '$did'
+                const didCheckUrl = '$did_check_url'
+
+                // Reactive state
+                const isLoading = ref(false)
+                const status = ref('')
+                const error = ref('')
+                const reportDID = ref('')
+                const version = ref(0)
+                const downloadUrl = ref('')
+                const downloadFilename = ref('')
+
+                async function generateReport() {
+                    isLoading.value = true
+                    status.value = 'Generating new report version...'
+                    error.value = ''
+                    reportDID.value = ''
+                    version.value = 0
+
+                    // Clean up previous download URL
+                    if (downloadUrl.value) {
+                        URL.revokeObjectURL(downloadUrl.value)
+                        downloadUrl.value = ''
+                        downloadFilename.value = ''
+                    }
+
+                    try {
+                        const response = await fetch(`/recommendation/${recommendationUid}/generate-report`, {
+                            method: 'POST',
+                        })
+
+                        if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}))
+                            throw new Error(errorData.detail || `HTTP error: ${response.status}`)
+                        }
+
+                        // Extract DID info from response headers
+                        const artefactDID = response.headers.get('X-Artefact-DID')
+                        const versionNumber = response.headers.get('X-Version')
+
+                        if (artefactDID) {
+                            reportDID.value = artefactDID
+                        }
+                        if (versionNumber) {
+                            version.value = parseInt(versionNumber, 10)
+                        }
+
+                        // Extract filename from Content-Disposition header
+                        const contentDisposition = response.headers.get('Content-Disposition')
+                        if (contentDisposition) {
+                            const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/)
+                            if (filenameMatch) {
+                                downloadFilename.value = filenameMatch[1]
+                            }
+                        }
+                        if (!downloadFilename.value) {
+                            downloadFilename.value = 'report.xlsx'
+                        }
+
+                        // Get the file blob
+                        const blob = await response.blob()
+
+                        // Create download URL
+                        downloadUrl.value = URL.createObjectURL(blob)
+
+                        status.value = 'Success! New report version generated and registered.'
+
+                    } catch (err) {
+                        error.value = err.message || 'An error occurred'
+                        status.value = 'Failed'
+                        console.error('Error:', err)
+                    } finally {
+                        isLoading.value = false
+                    }
+                }
+
+                return {
+                    recommendationUid,
+                    recommendationDID,
+                    didCheckUrl,
+                    isLoading,
+                    status,
+                    error,
+                    reportDID,
+                    version,
+                    downloadUrl,
+                    downloadFilename,
+                    generateReport,
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>

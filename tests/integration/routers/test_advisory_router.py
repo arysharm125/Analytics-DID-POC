@@ -79,7 +79,7 @@ class TestAdvisoryRouterFullWorkflow:
         # Step 1: Record an advisory recommendation
         # =====================================================================
         recommendation_data = {
-            "artefact_uid": "11111111-2222-3333-4444-555555555555",
+            "recommendation_uid": "11111111-2222-3333-4444-555555555555",
             "artefact_hash": "QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
             "artefact_metadata": {
                 "recommendation_text": "Use AMD EPYC processors",
@@ -296,7 +296,7 @@ class TestAdvisoryRouterFullWorkflow:
         rec_response = test_client.post(
             "/advisory/record_recommendation",
             json={
-                "artefact_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "recommendation_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
                 "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7wRec11",
             },
             headers=advisory_headers,
@@ -348,7 +348,7 @@ class TestAdvisoryRouterFullWorkflow:
         recommendation_response = test_client.post(
             "/advisory/record_recommendation",
             json={
-                "artefact_uid": "11111111-1111-1111-1111-111111111111",
+                "recommendation_uid": "11111111-1111-1111-1111-111111111111",
                 "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7wRec11",
                 "artefact_metadata": {
                     "recommendation_text": "Use AMD EPYC 9004 series",
@@ -416,7 +416,7 @@ class TestAdvisoryRouterFullWorkflow:
         rec_response = test_client.post(
             "/advisory/record_recommendation",
             json={
-                "artefact_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "recommendation_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
                 "artefact_hash": "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7wRec11",
             },
             headers=advisory_headers,

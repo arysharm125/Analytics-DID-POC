@@ -129,19 +129,53 @@ def calculate_multihash(data: bytes) -> str:
     return base58.b58encode(multihash_bytes).decode("ascii")
 
 
-async def register_with_didsvc(
-    artefact_id: str,
-    artefact_hash: str,
+async def register_recommendation_with_didsvc(
+    recommendation_uid: str,
+    artefact_hash: str | None,
     metadata: dict,
     backlink: str,
 ) -> dict:
-    """Register the artefact with DIDSvc."""
+    """Register a recommendation with DIDSvc."""
     request_body = {
-        "artefact_id": artefact_id,
+        "recommendation_uid": recommendation_uid,
         "artefact_hash": artefact_hash,
         "artefact_metadata": metadata,
         "backlink": backlink,
-        "provenance": [],
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{DIDSVC_BASE_URL}/advisory/record_recommendation",
+            json=request_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Token": DIDSVC_API_TOKEN,
+            },
+            timeout=30.0,
+        )
+
+        if response.status_code != 200:
+            error_detail = response.json().get("detail", f"HTTP {response.status_code}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"DIDSvc error: {error_detail}",
+            )
+
+        return response.json()
+
+
+async def register_report_with_didsvc(
+    report_uid: str,
+    recommendation_uid: str,
+    artefact_hash: str,
+    metadata: dict,
+) -> dict:
+    """Register a report with DIDSvc."""
+    request_body = {
+        "report_uid": report_uid,
+        "recommendation_uid": recommendation_uid,
+        "artefact_hash": artefact_hash,
+        "artefact_metadata": metadata,
     }
 
     async with httpx.AsyncClient() as client:
@@ -178,18 +212,38 @@ async def generate_report():
 
     Returns the Excel file as a download with DID information in response headers.
     """
-    # Generate unique artefact ID
-    artefact_id = str(uuid.uuid4())
+    # Generate unique IDs for recommendation and report
+    recommendation_uid = str(uuid.uuid4())
+    report_uid = str(uuid.uuid4())
 
     # Generate sample data and create Excel file
     data = generate_sample_data()
-    excel_bytes = create_excel_file(artefact_id, data)
+    excel_bytes = create_excel_file(report_uid, data)
 
     # Calculate hash
     artefact_hash = calculate_multihash(excel_bytes)
 
-    # Prepare metadata
-    metadata = {
+    # Prepare recommendation metadata
+    recommendation_metadata = {
+        "name": "sample_recommendation",
+        "type": "recommendation",
+        "description": "Recommendation for sample report",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Create backlink URL for recommendation
+    recommendation_backlink = f"{EXAMPLE_APP_URL}/recommendation/{recommendation_uid}"
+
+    # First, register the recommendation with DIDSvc
+    await register_recommendation_with_didsvc(
+        recommendation_uid,
+        None,  # No hash for recommendation
+        recommendation_metadata,
+        recommendation_backlink
+    )
+
+    # Prepare report metadata
+    report_metadata = {
         "name": "sample_report",
         "type": "report",
         "format": "xlsx",
@@ -197,14 +251,100 @@ async def generate_report():
         "rowCount": len(data),
     }
 
-    # Create backlink URL pointing to this app's report details page
-    backlink = f"{EXAMPLE_APP_URL}/report/{artefact_id}"
-
-    # Register with DIDSvc
-    did_response = await register_with_didsvc(artefact_id, artefact_hash, metadata, backlink)
+    # Now register the report with DIDSvc (referencing the recommendation)
+    did_response = await register_report_with_didsvc(
+        report_uid,
+        recommendation_uid,
+        artefact_hash,
+        report_metadata
+    )
 
     # Create filename
-    filename = f"report_{artefact_id[:8]}.xlsx"
+    filename = f"report_{report_uid[:8]}.xlsx"
+
+    # Return file as streaming response with DID info in headers
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Artefact-DID": did_response["artefact_did"],
+            "X-Version-DID": did_response["version_did"],
+            "X-Version": str(did_response["version"]),
+        },
+    )
+
+
+@app.get("/recommendation/{artefact_id}")
+async def recommendation_details(artefact_id: str):
+    """
+    Recommendation details page - displays the DID and link to DIDCheck.
+
+    This demonstrates the backlink functionality: when users click the backlink
+    in DIDCheck, they come here to see the recommendation DID with a link back to DIDCheck
+    for full verification details.
+    """
+    from string import Template
+
+    from fastapi.responses import HTMLResponse
+
+    # Read the template file
+    template_path = STATIC_DIR / "recommendation_details.html"
+    with open(template_path) as f:
+        template_content = f.read()
+
+    # Prepare the data
+    did_check_url = f"{DIDCHECK_URL}/did/{artefact_id}"
+    did = f"did:web:did.amd.com:{artefact_id}"
+
+    # Render the template with actual values
+    template = Template(template_content)
+    html_content = template.safe_substitute(
+        recommendation_uid=artefact_id,
+        did=did,
+        did_check_url=did_check_url
+    )
+
+    return HTMLResponse(content=html_content)
+
+
+@app.post("/recommendation/{recommendation_uid}/generate-report")
+async def generate_report_for_recommendation(recommendation_uid: str):
+    """
+    Generate a new Excel report for an existing recommendation.
+
+    This endpoint creates a new report version referencing the existing recommendation.
+    Returns the Excel file as a download with DID information in response headers.
+    """
+    # Generate a new unique ID for this report
+    report_uid = str(uuid.uuid4())
+
+    # Generate sample data and create Excel file
+    data = generate_sample_data()
+    excel_bytes = create_excel_file(report_uid, data)
+
+    # Calculate hash
+    artefact_hash = calculate_multihash(excel_bytes)
+
+    # Prepare report metadata
+    report_metadata = {
+        "name": "sample_report",
+        "type": "report",
+        "format": "xlsx",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "rowCount": len(data),
+    }
+
+    # Register the report with DIDSvc (referencing the existing recommendation)
+    did_response = await register_report_with_didsvc(
+        report_uid,
+        recommendation_uid,
+        artefact_hash,
+        report_metadata
+    )
+
+    # Create filename
+    filename = f"report_{report_uid[:8]}.xlsx"
 
     # Return file as streaming response with DID info in headers
     return StreamingResponse(
@@ -222,11 +362,10 @@ async def generate_report():
 @app.get("/report/{artefact_id}")
 async def report_details(artefact_id: str):
     """
-    Report details page - displays the DID and link to DIDCheck.
+    Report details page - displays the report DID information.
 
-    This demonstrates the backlink functionality: when users click the backlink
-    in DIDCheck, they come here to see the report DID with a link back to DIDCheck
-    for full verification details.
+    Note: Reports don't have backlinks in this example - only recommendations do.
+    This endpoint serves as a placeholder to show report information.
     """
     from string import Template
 
@@ -238,7 +377,7 @@ async def report_details(artefact_id: str):
         template_content = f.read()
 
     # Prepare the data
-    did_check_url = f"{DIDCHECK_URL}/{artefact_id}"
+    did_check_url = f"{DIDCHECK_URL}/did/{artefact_id}"
     did = f"did:web:did.amd.com:{artefact_id}"
 
     # Render the template with actual values

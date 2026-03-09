@@ -38,8 +38,6 @@ npm run preview
 ```
 src/
 ├── components/       # Reusable Vue components
-├── composables/      # Vue composables (reusable logic)
-│   └── useVerification.js  # Verification hook points
 ├── plugins/          # Vue plugins configuration
 │   └── vuetify.js    # Vuetify configuration
 ├── router/           # Vue Router configuration
@@ -100,21 +98,6 @@ const routes = [
     meta: { requiresAuth: true }
   }
 ]
-```
-
-### Implementing Verification
-
-The `useVerification` composable provides hook points for implementing verification logic:
-
-```js
-import { useVerification } from '@/composables/useVerification'
-
-const { verifyVC, verifyBinaryHash } = useVerification()
-
-// Implement in useVerification.js:
-// - verifyVC(vcData) - Verify VC signatures
-// - verifyBinaryHash(binary, expectedHash) - Verify binary hashes
-// - verifyDIDDocument(didDocument) - Verify DID document proofs
 ```
 
 ## Environment Variables

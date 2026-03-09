@@ -46,7 +46,7 @@ class AdvisoryRecordReportUser(AdvisoryAPIUser):
         super().on_start()
         # Create a recommendation that reports will reference
         rec_payload = {
-            "artefact_uid": generate_uuid(),
+            "recommendation_uid": generate_uuid(),
             "artefact_hash": generate_multihash(),
             "artefact_metadata": {
                 "recommendation_text": "Load test recommendation",
@@ -110,7 +110,7 @@ class AdvisoryVCUser(AdvisoryAPIUser):
         super().on_start()
         # Create a recommendation first
         rec_payload = {
-            "artefact_uid": generate_uuid(),
+            "recommendation_uid": generate_uuid(),
             "artefact_hash": generate_multihash(),
             "artefact_metadata": {"test": "recommendation"}
         }
@@ -186,7 +186,7 @@ class AdvisoryMixedUser(AdvisoryAPIUser):
         """Helper to create a recommendation and store its ID."""
         rec_uid = generate_uuid()
         rec_payload = {
-            "artefact_uid": rec_uid,
+            "recommendation_uid": rec_uid,
             "artefact_hash": generate_multihash(),
             "artefact_metadata": {
                 "recommendation_text": f"Recommendation {rec_uid[:8]}",
