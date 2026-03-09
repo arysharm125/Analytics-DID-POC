@@ -85,6 +85,9 @@ def create_excel_file(artefact_id: str, data: list[dict]) -> bytes:
     link_cell.hyperlink = check_url
     link_cell.style = "Hyperlink"
 
+    # Generate QR code URL with a source query param for logging.
+    qr_url = f"{check_url}?source=qrcode"
+
     # Generate QR code for the check URL
     qr = qrcode.QRCode(
         version=1,
@@ -92,7 +95,7 @@ def create_excel_file(artefact_id: str, data: list[dict]) -> bytes:
         box_size=4,
         border=2,
     )
-    qr.add_data(check_url)
+    qr.add_data(qr_url)
     qr.make(fit=True)
     qr_image = qr.make_image(fill_color="black", back_color="white")
 
