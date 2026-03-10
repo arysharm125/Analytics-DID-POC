@@ -7,7 +7,7 @@ enabling dependency injection and testability.
 from typing import Any, Protocol
 
 
-class VaultClientProtocol(Protocol):
+class VaultClientProtocol(Protocol):  # pragma: no cover
     """Protocol for vault client implementations.
 
     Implementations:

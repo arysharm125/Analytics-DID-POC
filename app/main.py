@@ -4,8 +4,7 @@ import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException
 
 from app.config import get_config
 from app.middlewares import exception_handler_middleware, http_exception_handler
@@ -13,6 +12,7 @@ from app.request_id import AccessLogMiddleware, RequestIdFilter, RequestIdMiddle
 from app.routers.advisory_router import router as advisory_router
 from app.routers.dependencies import did_service_lifespan
 from app.routers.didcheck import app as didcheck_router
+from app.routers.docs import app as docs_router
 from app.routers.epdw import app as did_router
 from app.routers.epdw import startup_did_router
 from app.routers.health import app as health_router
@@ -167,26 +167,5 @@ if get_config().features.didcheck_router:
   app.include_router(didcheck_router)
 
 app.include_router(health_router)
+app.include_router(docs_router)
 
-@app.get("/docs", include_in_schema=False)
-async def api_documentation(request: Request):
-    return HTMLResponse("""
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title>Elements in HTML</title>
-
-    <script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/@stoplight/elements/styles.min.css">
-  </head>
-  <body>
-
-    <elements-api
-      apiDescriptionUrl="openapi.json"
-      router="hash"
-    />
-
-  </body>
-</html>""")
