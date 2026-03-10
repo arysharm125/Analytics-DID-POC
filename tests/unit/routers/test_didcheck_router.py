@@ -399,6 +399,510 @@ class TestArtefactVersions:
 
 
 # =============================================================================
+# Test Artefact VC Endpoint
+# =============================================================================
+
+
+class TestArtefactVC:
+    """Tests for the /{uid}/vc.json endpoint."""
+
+    @pytest.fixture
+    def test_artefact_uid(self, did_service_no_migrations, sample_uuid, sample_multihash):
+        """Create a test artefact and return its version UID."""
+        from app.services.did_service import ArtefactInput
+
+        result = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash=sample_multihash,
+                artefact_metadata={"test": "data"},
+                artefact_type="benchmark",
+            )
+        )
+        return result.version_uid
+
+    @pytest.fixture
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+        """Create a test client with DIDService dependency override and auth headers."""
+        set_did_service_dependency(did_service_no_migrations)
+        vault_service.ensure_division_signing_key("epdw")
+        client = TestClient(app)
+        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+
+    def test_returns_valid_vc_structure(self, client_with_service, test_artefact_uid):
+        """Endpoint should return a valid VC structure."""
+        response = client_with_service.get(f"/didcheck/{test_artefact_uid}/vc.json")
+
+        assert response.status_code == 200
+        vc = response.json()
+
+        # Verify VC has required fields
+        assert "@context" in vc
+        assert "type" in vc
+        assert "issuer" in vc
+        assert "issuanceDate" in vc
+        assert "credentialSubject" in vc
+        assert "proof" in vc
+
+    def test_returns_vc_with_proof(self, client_with_service, test_artefact_uid):
+        """Endpoint should return a VC with a valid proof."""
+        response = client_with_service.get(f"/didcheck/{test_artefact_uid}/vc.json")
+
+        assert response.status_code == 200
+        vc = response.json()
+
+        proof = vc["proof"]
+        assert proof["type"] == "DataIntegrityProof"
+        assert proof["cryptosuite"] == "eddsa-rdfc-2022"
+        assert "verificationMethod" in proof
+        assert "proofValue" in proof
+        assert proof["proofPurpose"] == "assertionMethod"
+
+    def test_returns_404_when_artefact_not_found(self, client_with_service, sample_uuid_2):
+        """Endpoint should return 404 for non-existent artefact."""
+        response = client_with_service.get(f"/didcheck/{sample_uuid_2}/vc.json")
+
+        assert response.status_code == 404
+
+    def test_returns_401_with_wrong_token(self, client_with_service, test_artefact_uid):
+        """Endpoint should return 401 when provided with an invalid token."""
+        response = client_with_service.get(
+            f"/didcheck/{test_artefact_uid}/vc.json",
+            headers={"X-API-Token": "wrong-token"}
+        )
+
+        assert response.status_code == 401
+
+    def test_returns_422_with_missing_token(self, client_with_service, test_artefact_uid):
+        """Endpoint should return 422 when authentication token is missing."""
+        response = client_with_service.raw.get(f"/didcheck/{test_artefact_uid}/vc.json")
+
+        assert response.status_code == 422
+
+
+# =============================================================================
+# Test DID Overview Endpoint
+# =============================================================================
+
+
+class TestDIDOverview:
+    """Tests for the /{uid}/overview endpoint."""
+
+    @pytest.fixture
+    def test_artefact_uid(self, did_service_no_migrations, sample_uuid, sample_multihash):
+        """Create a test artefact and return its version UID."""
+        from app.services.did_service import ArtefactInput
+
+        result = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash=sample_multihash,
+                artefact_metadata={"test": "data"},
+                artefact_type="report",
+            )
+        )
+        return result.version_uid
+
+    @pytest.fixture
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+        """Create a test client with DIDService dependency override and auth headers."""
+        set_did_service_dependency(did_service_no_migrations)
+        vault_service.ensure_division_signing_key("epdw")
+        client = TestClient(app)
+        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+
+    def test_returns_overview_for_latest_version(self, client_with_service, test_artefact_uid):
+        """Endpoint should return overview for the latest version."""
+        response = client_with_service.get(f"/didcheck/{test_artefact_uid}/overview")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Should have digital_artefact field
+        assert "digital_artefact" in data
+        artefact = data["digital_artefact"]
+        assert "version" in artefact
+        assert artefact["version"] == 1
+        assert "version_uid" in artefact
+        assert "division" in artefact
+
+        # Should not have latest_version field (or it should be null)
+        assert data.get("latest_version") is None
+
+    def test_returns_latest_version_info_when_not_latest(
+        self, client_with_service, did_service_no_migrations, sample_uuid, sample_multihash
+    ):
+        """Endpoint should return latest version info when queried version is not latest."""
+        from app.services.did_service import ArtefactInput
+
+        # Create version 1
+        v1 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash=sample_multihash,
+            )
+        )
+
+        # Create version 2
+        did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+            )
+        )
+
+        # Get overview for version 1
+        response = client_with_service.get(f"/didcheck/{v1.version_uid}/overview")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Should have latest_version field
+        assert "latest_version" in data
+        assert data["latest_version"] is not None
+        assert data["latest_version"]["version"] == 2
+
+    def test_has_provenance_true_when_provenance_exists(
+        self, client_with_service, did_service_no_migrations, sample_uuid, sample_uuid_2
+    ):
+        """Endpoint should set has_provenance to true when provenance exists."""
+        from app.services.did_service import ArtefactInput
+
+        # Create parent artefact
+        parent = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+            )
+        )
+
+        # Create child with provenance
+        child = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid_2,
+                division="epdw",
+                provenance=[parent.version_uid],
+            )
+        )
+
+        response = client_with_service.get(f"/didcheck/{child.version_uid}/overview")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["digital_artefact"]["has_provenance"] is True
+
+    def test_has_provenance_false_when_no_provenance(self, client_with_service, test_artefact_uid):
+        """Endpoint should set has_provenance to false when no provenance exists."""
+        response = client_with_service.get(f"/didcheck/{test_artefact_uid}/overview")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["digital_artefact"]["has_provenance"] is False
+
+    def test_returns_404_when_artefact_not_found(self, client_with_service, sample_uuid_2):
+        """Endpoint should return 404 for non-existent artefact."""
+        response = client_with_service.get(f"/didcheck/{sample_uuid_2}/overview")
+
+        assert response.status_code == 404
+
+    def test_returns_401_with_wrong_token(self, client_with_service, test_artefact_uid):
+        """Endpoint should return 401 when provided with an invalid token."""
+        response = client_with_service.get(
+            f"/didcheck/{test_artefact_uid}/overview",
+            headers={"X-API-Token": "wrong-token"}
+        )
+
+        assert response.status_code == 401
+
+
+# =============================================================================
+# Test Artefact Full Endpoint
+# =============================================================================
+
+
+class TestArtefactFull:
+    """Tests for the /{uid}/artefact.json endpoint."""
+
+    @pytest.fixture
+    def test_artefact_uid(self, did_service_no_migrations, sample_uuid, sample_multihash):
+        """Create a test artefact with metadata and return its version UID."""
+        from app.services.did_service import ArtefactInput
+
+        result = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash=sample_multihash,
+                artefact_metadata={"key": "value", "number": 42},
+                artefact_type="report",
+            )
+        )
+        return result.version_uid
+
+    @pytest.fixture
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+        """Create a test client with DIDService dependency override and auth headers."""
+        set_did_service_dependency(did_service_no_migrations)
+        vault_service.ensure_division_signing_key("epdw")
+        client = TestClient(app)
+        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+
+    def test_returns_all_artefact_fields(self, client_with_service, test_artefact_uid):
+        """Endpoint should return all artefact fields."""
+        response = client_with_service.get(f"/didcheck/{test_artefact_uid}/artefact.json")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Verify all required fields are present
+        assert "external_uid" in data
+        assert "version_uid" in data
+        assert "version" in data
+        assert "division" in data
+        assert "creation_date" in data
+        assert "revoked" in data
+
+    def test_includes_artefact_metadata(self, client_with_service, test_artefact_uid):
+        """Endpoint should include artefact_metadata field."""
+        response = client_with_service.get(f"/didcheck/{test_artefact_uid}/artefact.json")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "artefact_metadata" in data
+        assert data["artefact_metadata"]["key"] == "value"
+        assert data["artefact_metadata"]["number"] == 42
+
+    def test_includes_provenance_list(
+        self, client_with_service, did_service_no_migrations, sample_uuid, sample_uuid_2
+    ):
+        """Endpoint should include provenance list when present."""
+        from app.services.did_service import ArtefactInput
+
+        # Create parent artefact
+        parent = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+            )
+        )
+
+        # Create child with provenance
+        child = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid_2,
+                division="epdw",
+                provenance=[parent.version_uid],
+            )
+        )
+
+        response = client_with_service.get(f"/didcheck/{child.version_uid}/artefact.json")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "provenance" in data
+        assert isinstance(data["provenance"], list)
+        assert len(data["provenance"]) == 1
+        assert data["provenance"][0] == parent.version_uid
+
+    def test_returns_404_when_artefact_not_found(self, client_with_service, sample_uuid_2):
+        """Endpoint should return 404 for non-existent artefact."""
+        response = client_with_service.get(f"/didcheck/{sample_uuid_2}/artefact.json")
+
+        assert response.status_code == 404
+
+    def test_returns_401_with_wrong_token(self, client_with_service, test_artefact_uid):
+        """Endpoint should return 401 when provided with an invalid token."""
+        response = client_with_service.get(
+            f"/didcheck/{test_artefact_uid}/artefact.json",
+            headers={"X-API-Token": "wrong-token"}
+        )
+
+        assert response.status_code == 401
+
+
+# =============================================================================
+# Test Artefact Provenance Endpoint
+# =============================================================================
+
+
+class TestArtefactProvenance:
+    """Tests for the /{uid}/provenance endpoint."""
+
+    @pytest.fixture
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+        """Create a test client with DIDService dependency override and auth headers."""
+        set_did_service_dependency(did_service_no_migrations)
+        vault_service.ensure_division_signing_key("epdw")
+        client = TestClient(app)
+        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+
+    def test_returns_provenance_tree(
+        self, client_with_service, did_service_no_migrations, sample_uuid, sample_uuid_2
+    ):
+        """Endpoint should return provenance tree structure."""
+        from app.services.did_service import ArtefactInput
+
+        # Create parent
+        parent = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+            )
+        )
+
+        # Create child with provenance
+        child = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid_2,
+                division="epdw",
+                provenance=[parent.version_uid],
+            )
+        )
+
+        response = client_with_service.get(f"/didcheck/{child.version_uid}/provenance")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "root_uid" in data
+        assert data["root_uid"] == child.version_uid
+        assert "max_depth" in data
+        assert "max_children" in data
+        assert "provenance" in data
+        assert isinstance(data["provenance"], list)
+        assert len(data["provenance"]) == 1
+
+    def test_returns_empty_for_no_provenance(
+        self, client_with_service, did_service_no_migrations, sample_uuid
+    ):
+        """Endpoint should return empty provenance list when artefact has no provenance."""
+        from app.services.did_service import ArtefactInput
+
+        artefact = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+            )
+        )
+
+        response = client_with_service.get(f"/didcheck/{artefact.version_uid}/provenance")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["provenance"] == []
+
+    def test_returns_404_when_artefact_not_found(self, client_with_service, sample_uuid_2):
+        """Endpoint should return 404 for non-existent artefact."""
+        response = client_with_service.get(f"/didcheck/{sample_uuid_2}/provenance")
+
+        assert response.status_code == 404
+
+    def test_returns_401_with_wrong_token(
+        self, client_with_service, did_service_no_migrations, sample_uuid
+    ):
+        """Endpoint should return 401 when provided with an invalid token."""
+        from app.services.did_service import ArtefactInput
+
+        artefact = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+            )
+        )
+
+        response = client_with_service.get(
+            f"/didcheck/{artefact.version_uid}/provenance",
+            headers={"X-API-Token": "wrong-token"}
+        )
+
+        assert response.status_code == 401
+
+
+# =============================================================================
+# Test Division DID Document Endpoint
+# =============================================================================
+
+
+class TestDivisionDIDDocument:
+    """Tests for the /{division}/did.json endpoint."""
+
+    @pytest.fixture
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+        """Create a test client with DIDService dependency override and auth headers."""
+        set_did_service_dependency(did_service_no_migrations)
+        vault_service.ensure_division_signing_key("epdw")
+        vault_service.ensure_division_signing_key("advisory")
+        client = TestClient(app)
+        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+
+    def test_returns_valid_did_document_structure(self, client_with_service):
+        """Endpoint should return a valid DID document structure."""
+        response = client_with_service.get("/didcheck/epdw/did.json")
+
+        assert response.status_code == 200
+        did_doc = response.json()
+
+        # Verify required fields
+        assert "@context" in did_doc
+        assert "id" in did_doc
+        assert did_doc["id"] == "did:web:did.amd.com:epdw"
+
+    def test_includes_verification_methods(self, client_with_service):
+        """Endpoint should include verification methods."""
+        response = client_with_service.get("/didcheck/epdw/did.json")
+
+        assert response.status_code == 200
+        did_doc = response.json()
+
+        assert "verificationMethod" in did_doc
+        assert isinstance(did_doc["verificationMethod"], list)
+        assert len(did_doc["verificationMethod"]) > 0
+
+        # Verify structure of first verification method
+        vm = did_doc["verificationMethod"][0]
+        assert "id" in vm
+        assert "type" in vm
+        assert vm["type"] == "Multikey"
+        assert "controller" in vm
+        assert "publicKeyMultibase" in vm
+
+    def test_includes_assertion_methods(self, client_with_service):
+        """Endpoint should include assertion method references."""
+        response = client_with_service.get("/didcheck/epdw/did.json")
+
+        assert response.status_code == 200
+        did_doc = response.json()
+
+        assert "assertionMethod" in did_doc
+        assert isinstance(did_doc["assertionMethod"], list)
+        assert len(did_doc["assertionMethod"]) > 0
+
+    def test_returns_404_for_unknown_division(self, client_with_service):
+        """Endpoint should return 404 for non-existent division."""
+        response = client_with_service.get("/didcheck/nonexistent/did.json")
+
+        assert response.status_code == 404
+
+    def test_returns_401_with_wrong_token(self, client_with_service):
+        """Endpoint should return 401 when provided with an invalid token."""
+        response = client_with_service.get(
+            "/didcheck/epdw/did.json",
+            headers={"X-API-Token": "wrong-token"}
+        )
+
+        assert response.status_code == 401
+
+
+# =============================================================================
 # Test Artefact Descendants Endpoint
 # =============================================================================
 
