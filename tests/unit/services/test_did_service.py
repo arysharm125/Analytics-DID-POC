@@ -2371,3 +2371,184 @@ class TestGetAllVersions:
         assert "artefact_type" not in version_doc
         assert "division" not in version_doc
         assert "_id" not in version_doc
+
+
+# =============================================================================
+# Exception Coverage Tests
+# =============================================================================
+
+
+class TestVersionConflictError:
+    """Tests for VersionConflictError exception."""
+
+    def test_concurrent_update_raises_version_conflict(self, did_service_no_migrations, db_connector, monkeypatch):
+        """Concurrent updates causing duplicate version should raise VersionConflictError."""
+        from pymongo.errors import DuplicateKeyError
+
+        from app.services.exceptions import VersionConflictError
+
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        # Create first version
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+            )
+        )
+
+        # Monkey-patch get_collection to return a collection with mocked insert_one
+        original_get_collection = did_service.db.get_collection
+
+        def mock_insert_one(doc):
+            # Simulate concurrent insert that violates the unique index
+            error = DuplicateKeyError("E11000 duplicate key error collection: test.did_artefacts index: idx_external_uid_version")
+            raise error
+
+        def mock_get_collection(name):
+            col = original_get_collection(name)
+            if name == DIDService._artefacts_col_name:
+                monkeypatch.setattr(col, "insert_one", mock_insert_one)
+            return col
+
+        monkeypatch.setattr(did_service.db, "get_collection", mock_get_collection)
+
+        # Now try to upsert - should raise VersionConflictError
+        with pytest.raises(VersionConflictError) as exc:
+            did_service.upsert_artefact(
+                ArtefactInput(
+                    external_uid=external_uid,
+                    division="epdw",
+                    artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+                )
+            )
+
+        assert exc.value.external_uid == external_uid
+        assert exc.value.version == 2
+        assert "version 2 already exists" in str(exc.value)
+
+
+class TestVCAlreadyExistsError:
+    """Tests for VCAlreadyExistsError exception."""
+
+    def test_duplicate_vc_issuance_raises(self, did_service_no_migrations, vault_service, db_connector):
+        """Attempting to store a VC for a version that already has one should raise VCAlreadyExistsError."""
+        from app.services.exceptions import VCAlreadyExistsError
+
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        # Issue VC first time
+        did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Try to manually store another VC for same version_uid
+        vc_uid = "12345678-1234-1234-1234-123456789abc"
+        issuance_date = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+        fragment = vault_service.get_active_signing_key_fragment("epdw")
+        dummy_vc = {"id": "test", "type": ["VerifiableCredential"]}
+
+        with pytest.raises(VCAlreadyExistsError) as exc:
+            did_service._store_issued_vc(
+                vc_uid=vc_uid,
+                version_uid=artefact.version_uid,
+                issuance_date=issuance_date,
+                signing_key_fragment=fragment,
+                vc=dummy_vc,
+            )
+
+        assert exc.value.version_uid == artefact.version_uid
+        assert "already been issued" in str(exc.value)
+
+
+class TestVCRegenerationMismatchError:
+    """Tests for VCRegenerationMismatchError exception."""
+
+    def test_force_regenerate_mismatch_raises(self, did_service_no_migrations, vault_service, db_connector):
+        """Force regenerate with mismatched VC should raise VCRegenerationMismatchError."""
+        from app.services.exceptions import VCRegenerationMismatchError
+
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        # Issue VC
+        did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Tamper with stored VC to cause mismatch
+        stored_vc = did_service.get_issued_vc(artefact.version_uid)
+        stored_vc["credentialSubject"]["artefactHash"] = "QmTamperedHash"
+
+        # Replace in database
+        tampered_blob = compress_vc(stored_vc)
+        vc_collection = db_connector.get_collection(DIDService._issued_vcs_col_name)
+        vc_collection.update_one(
+            {"version_uid": artefact.version_uid},
+            {"$set": {"vc_blob": tampered_blob}}
+        )
+
+        # Force regenerate - should raise VCRegenerationMismatchError
+        with pytest.raises(VCRegenerationMismatchError) as exc:
+            did_service.issue_artefact_vc("epdw", artefact.version_uid, force_regenerate=True)
+
+        assert exc.value.version_uid == artefact.version_uid
+        assert "does not match stored VC" in str(exc.value)
+
+
+class TestSigningKeyNotAvailableError:
+    """Tests for SigningKeyNotAvailableError exception."""
+
+    def test_missing_signing_key_raises(self, did_service_no_migrations, vault_service, db_connector, vault_mode):
+        """Requesting a non-existent signing key should raise SigningKeyNotAvailableError."""
+        from app.services.exceptions import SigningKeyNotAvailableError
+
+        # This test requires InMemoryVaultClient for proper control
+        if vault_mode == "container":
+            pytest.skip("Test requires InMemoryVaultClient for key manipulation")
+
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        # Issue VC with existing key
+        did_service.issue_artefact_vc("epdw", artefact.version_uid)
+
+        # Get the VC record
+        vc_record = did_service.find_issued_vc(artefact.version_uid)
+
+        # Delete the signing key from vault (InMemoryVaultClient requires mount_point and path)
+        vault_service._client.delete_secret(
+            vault_service._mount,
+            f"divisions/epdw/signing_keys/{vc_record.signing_key_fragment}"
+        )
+
+        # Try to regenerate - should raise SigningKeyNotAvailableError
+        with pytest.raises(SigningKeyNotAvailableError) as exc:
+            did_service.regenerate_and_verify_vc(artefact.version_uid)
+
+        assert exc.value.division == "epdw"
+        assert exc.value.fragment == vc_record.signing_key_fragment
+        assert f"Signing key '{vc_record.signing_key_fragment}' not found" in str(exc.value)

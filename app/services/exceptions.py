@@ -217,62 +217,10 @@ class SigningKeyNotAvailableError(DIDServiceError, HTTPException):
         )
 
 
-# =============================================================================
-# SUT-specific Exceptions
-# =============================================================================
-
-class BenchmarkNotFoundError(DIDServiceError, HTTPException):
-    """Raised when a benchmark execution ID is not found in the source data."""
-    def __init__(self, benchmark_id: str):
-        self.benchmark_id = benchmark_id
-        super().__init__(status_code=404, detail=f"Benchmark '{benchmark_id}' not found")
-
-
-class IterationNotFoundError(DIDServiceError, HTTPException):
-    """Raised when an iteration is not found."""
-    def __init__(self, iteration_id: str):
-        self.iteration_id = iteration_id
-        super().__init__(status_code=404, detail=f"Iteration '{iteration_id}' not found")
-
-
-class NoIterationsFoundError(DIDServiceError, HTTPException):
-    """Raised when no iterations exist under a benchmark."""
-    def __init__(self, benchmark_id: str):
-        self.benchmark_id = benchmark_id
-        super().__init__(
-            status_code=404,
-            detail=f"No iterations found under benchmark '{benchmark_id}'"
-        )
-
-
-class BlockedKeyUpdateError(DIDServiceError, HTTPException):
-    """Raised when attempting to update a protected key."""
-    def __init__(self, key: str):
-        self.key = key
-        super().__init__(status_code=400, detail=f"Updates not allowed for key: {key}")
-
-
-class NoChangesDetectedError(DIDServiceError, HTTPException):
-    """Raised when an update payload contains no actual changes."""
-    def __init__(self):
-        super().__init__(status_code=400, detail="No changes detected in payload")
-
-
 class InvalidUpdaterEmailError(DIDServiceError, HTTPException):
     """Raised when updater email is not a valid AMD email."""
     def __init__(self):
         super().__init__(status_code=400, detail="Unauthorized email — must be an @amd.com address")
-
-
-class SUTRecordNotFoundError(DIDServiceError, HTTPException):
-    """Raised when a SUT DID record is not found."""
-    def __init__(self, benchmark_id: str, iteration_id: str):
-        self.benchmark_id = benchmark_id
-        self.iteration_id = iteration_id
-        super().__init__(
-            status_code=404,
-            detail=f"Record not found for benchmark '{benchmark_id}', iteration '{iteration_id}'"
-        )
 
 
 class DuplicateIterationIdsError(DIDServiceError, HTTPException):

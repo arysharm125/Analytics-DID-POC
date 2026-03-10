@@ -76,15 +76,6 @@ class RequestIdFilter(logging.Filter):
         return True
 
 
-def get_request_id() -> str:
-    """Get the current request ID from context.
-
-    Returns:
-        The request ID string, or "-" if not in a request context
-    """
-    return request_id_ctx.get("-")
-
-
 class AccessLogMiddleware:
     """Pure ASGI middleware for access logging with request correlation.
 
