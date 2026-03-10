@@ -49,7 +49,7 @@ def _build_error_response(request: Request, status_code: int, exc: Exception, de
     return JSONResponse(status_code=status_code, content=error_response)
 
 
-async def http_exception_handler(request: Request, exc: HTTPException):
+def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """Handle HTTPExceptions - apply trace_id logging for 5xx errors.
 
     For status codes >= 500, this logs the exception with a trace_id and
