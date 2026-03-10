@@ -139,6 +139,18 @@ class DivisionKeysNotFoundError(DIDServiceError, HTTPException):
         super().__init__(status_code=404, detail=f"Division keys for '{division}' not found.")
 
 
+class SecretNotFoundError(DIDServiceError):
+    """Raised when a secret is not found in vault.
+
+    This exception is used by all VaultClientProtocol implementations to provide
+    a consistent error type when a secret doesn't exist at the specified path.
+    """
+    def __init__(self, mount_point: str, path: str):
+        self.mount_point = mount_point
+        self.path = path
+        super().__init__(f"Secret not found at {mount_point}/{path}")
+
+
 class ArtefactNoChangesError(DIDServiceError, HTTPException):
     """Raised when upserting an artefact with no actual changes.
 

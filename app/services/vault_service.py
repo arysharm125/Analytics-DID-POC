@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 from nacl.signing import SigningKey
 
+from app.services.exceptions import SecretNotFoundError
 from app.services.vault_protocol import VaultClientProtocol
 
 logger = logging.getLogger("vault_service")
@@ -22,14 +23,6 @@ logger = logging.getLogger("vault_service")
 # =============================================================================
 # Exceptions
 # =============================================================================
-
-class SecretNotFoundError(Exception):
-    """Raised when a secret cannot be found in vault."""
-
-    def __init__(self, path: str, mount_point: str):
-        self.path = path
-        self.mount_point = mount_point
-        super().__init__(f"Secret not found: {mount_point}/{path}")
 
 
 class DivisionPublicKeysNotFoundError(Exception):
@@ -88,11 +81,6 @@ class VaultService:
         self._client = client
         self._mount = mount_point
 
-    @property
-    def mount_point(self) -> str:
-        """Get the default mount point."""
-        return self._mount
-
     def is_authenticated(self) -> bool:
         """Check if vault is authenticated.
 
@@ -117,25 +105,7 @@ class VaultService:
         Raises:
             SecretNotFoundError: If the secret doesn't exist
         """
-        try:
-            return self._client.read_secret(self._mount, path)
-        except Exception as e:
-            raise SecretNotFoundError(path, self._mount) from e
-
-    def fetch_secret_or_default(self, path: str, default: dict | None = None) -> dict:
-        """Fetch a secret from vault, returning a default if not found.
-
-        Args:
-            path: Path to the secret (relative to mount point)
-            default: Value to return if secret not found (defaults to empty dict)
-
-        Returns:
-            The secret data or the default value
-        """
-        try:
-            return self._client.read_secret(self._mount, path)
-        except Exception:
-            return default if default is not None else {}
+        return self._client.read_secret(self._mount, path)
 
     def write_secret(self, path: str, data: dict) -> None:
         """Write a secret to vault.

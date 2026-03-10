@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 from contextlib import asynccontextmanager, suppress
 from typing import TYPE_CHECKING, Annotated
@@ -16,7 +17,10 @@ if TYPE_CHECKING:
 
     from app.database import MongoConnector
     from app.services.did_service import DIDService
+    from app.services.vault_protocol import VaultClientProtocol
     from app.services.vault_service import VaultService
+
+logger = logging.getLogger("did_vault_api_sut")
 
 
 async def verify_epdw_token(
@@ -115,6 +119,63 @@ APITokenDep401Response = {401: {"description": "Invalid or missing API token"}}
 
 
 # =============================================================================
+# Vault Client Factory
+# =============================================================================
+
+_vault_client: VaultClientProtocol | None = None
+_vault_client_initialized: bool = False
+
+
+def _create_vault_client() -> VaultClientProtocol:
+    """Create a vault client based on configuration.
+
+    Returns:
+        Either an HvacVaultClient, MockVaultClient, or raises if config is invalid.
+    """
+    config = get_config()
+
+    # Check if we should use the local file-based mock
+    if config.vault.local_mock_path:
+        from app.services.vault_mock import MockVaultClient
+
+        logger.info(f"[INFO] Using local mock Vault at: {config.vault.local_mock_path}")
+        return MockVaultClient(
+            root_dir=config.vault.local_mock_path,
+            default_mount=config.vault.mount,
+        )
+
+    # Use real vault via hvac
+    from app.services.vault_clients import HvacVaultClient
+
+    client = HvacVaultClient(addr=config.vault.addr, token=config.vault.token)
+    if client.is_authenticated():
+        logger.info(f"[INFO] Vault connected: {config.vault.addr}")
+    else:
+        logger.warning(f"[WARN] Vault authentication failed: {config.vault.addr}")
+    return client
+
+
+def get_vault_client() -> VaultClientProtocol:
+    """Get the vault client, initializing it lazily if needed.
+
+    Returns:
+        The vault client (HvacVaultClient or MockVaultClient)
+    """
+    global _vault_client, _vault_client_initialized
+    if not _vault_client_initialized:
+        _vault_client = _create_vault_client()
+        _vault_client_initialized = True
+    return _vault_client  # type: ignore
+
+
+def reset_vault_client() -> None:
+    """Reset the vault client (for testing)."""
+    global _vault_client, _vault_client_initialized
+    _vault_client = None
+    _vault_client_initialized = False
+
+
+# =============================================================================
 # Vault Service Dependency
 # =============================================================================
 
@@ -140,8 +201,11 @@ def get_vault() -> VaultService:
     global _vault_service, _vault_service_initialized
 
     if not _vault_service_initialized:
-        from app.services.vault import get_vault_service
-        _vault_service = get_vault_service()
+        from app.services.vault_service import VaultService
+
+        client = get_vault_client()
+        config = get_config()
+        _vault_service = VaultService(client, mount_point=config.vault.mount)
         _vault_service_initialized = True
 
     return _vault_service  # type: ignore
@@ -321,6 +385,7 @@ def reset_all_dependencies() -> None:
     Use this in tests to clear all cached services (vault, database, and DIDService).
     Should be called in test teardown to ensure clean state.
     """
+    reset_vault_client()
     reset_vault_dependency()
     reset_db_dependency()
     reset_did_service_dependency()

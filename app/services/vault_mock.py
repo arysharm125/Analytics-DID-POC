@@ -13,11 +13,13 @@ Usage:
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import hvac.exceptions
+
+from app.services.exceptions import SecretNotFoundError
 
 logger = logging.getLogger("vault_mock")
 
@@ -59,13 +61,13 @@ class MockKVv2:
             }
         }
 
-        Raises hvac.exceptions.InvalidPath if the secret doesn't exist.
+        Raises SecretNotFoundError if the secret doesn't exist.
         """
         secret_path = self._get_secret_path(mount_point, path)
 
         if not secret_path.exists():
             logger.debug(f"Secret not found: {secret_path}")
-            raise hvac.exceptions.InvalidPath(f"No secret at {mount_point}/{path}")
+            raise SecretNotFoundError(mount_point, path)
 
         try:
             with open(secret_path) as f:
@@ -73,7 +75,7 @@ class MockKVv2:
             return stored
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in secret file {secret_path}: {e}")
-            raise hvac.exceptions.InvalidPath(f"Corrupted secret at {mount_point}/{path}") from e
+            raise SecretNotFoundError(mount_point, path) from e
 
     def create_or_update_secret(
         self,
@@ -103,7 +105,7 @@ class MockKVv2:
         secret_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Build the response structure
-        now = datetime.utcnow().isoformat() + "Z"
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         stored = {
             "data": {
                 "data": secret,
@@ -118,7 +120,7 @@ class MockKVv2:
             "lease_duration": 0,
             "lease_id": "",
             "renewable": False,
-            "request_id": f"mock-{datetime.utcnow().timestamp()}",
+            "request_id": f"mock-{datetime.now(timezone.utc).timestamp()}",
             "wrap_info": None,
             "warnings": None,
             "auth": None,
@@ -166,7 +168,7 @@ class MockKVv2:
             "lease_duration": 0,
             "lease_id": "",
             "renewable": False,
-            "request_id": f"mock-{datetime.utcnow().timestamp()}",
+            "request_id": f"mock-{datetime.now(timezone.utc).timestamp()}",
             "wrap_info": None,
             "warnings": None,
             "auth": None,
@@ -197,45 +199,11 @@ class MockKVv2:
             pass  # Directory not empty or other issue, ignore
 
 
-class MockKVv1:
-    """
-    Mock implementation of hvac KV v1 secrets engine.
-
-    Since we always behave as v2, this is a thin wrapper that delegates to v2.
-    """
-
-    def __init__(self, kv_v2: MockKVv2):
-        self._v2 = kv_v2
-
-    def read_secret(
-        self, path: str, mount_point: str = "secret"
-    ) -> dict[str, Any]:
-        """Read a secret (v1 style response)."""
-        result = self._v2.read_secret_version(path=path, mount_point=mount_point)
-        # v1 returns data directly under "data", not nested
-        return {"data": result.get("data", {}).get("data", {})}
-
-    def create_or_update_secret(
-        self, path: str, secret: dict[str, Any], mount_point: str = "secret"
-    ) -> dict[str, Any]:
-        """Create or update a secret."""
-        return self._v2.create_or_update_secret(
-            path=path, secret=secret, mount_point=mount_point
-        )
-
-    def list_secrets(
-        self, path: str = "", mount_point: str = "secret"
-    ) -> dict[str, Any]:
-        """List secrets at a path."""
-        return self._v2.list_secrets(path=path, mount_point=mount_point)
-
-
 class MockKV:
     """Mock KV secrets engine container."""
 
     def __init__(self, root_dir: str):
         self.v2 = MockKVv2(root_dir)
-        self.v1 = MockKVv1(self.v2)
 
 
 class MockSecrets:
@@ -243,39 +211,6 @@ class MockSecrets:
 
     def __init__(self, root_dir: str):
         self.kv = MockKV(root_dir)
-
-
-class MockSys:
-    """Mock system backend."""
-
-    def __init__(self, root_dir: str, default_mount: str = "secret"):
-        self.root_dir = Path(root_dir)
-        self.default_mount = default_mount
-
-    def list_mounted_secrets_engines(self) -> dict[str, Any]:
-        """
-        Return mock mounted secrets engines.
-
-        Always returns the default mount as KV v2.
-        """
-        return {
-            "data": {
-                f"{self.default_mount}/": {
-                    "type": "kv",
-                    "description": "Mock KV secrets engine",
-                    "options": {"version": "2"},
-                    "accessor": "mock_accessor",
-                    "config": {
-                        "default_lease_ttl": 0,
-                        "force_no_cache": False,
-                        "max_lease_ttl": 0,
-                    },
-                    "local": False,
-                    "seal_wrap": False,
-                    "external_entropy_access": False,
-                }
-            }
-        }
 
 
 class MockVaultClient:
@@ -310,7 +245,6 @@ class MockVaultClient:
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
-        self.sys = MockSys(root_dir, default_mount)
         self.secrets = MockSecrets(root_dir)
 
         logger.info(f"MockVaultClient initialized with root: {self.root_dir}")
@@ -334,7 +268,7 @@ class MockVaultClient:
             The secret data as a dictionary
 
         Raises:
-            hvac.exceptions.InvalidPath: If the secret doesn't exist
+            SecretNotFoundError: If the secret doesn't exist
         """
         result = self.secrets.kv.v2.read_secret_version(
             mount_point=mount_point, path=path

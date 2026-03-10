@@ -28,6 +28,7 @@ router = APIRouter(tags=["Advisory API"], prefix="/advisory")
 logger = logging.getLogger("advisory_api")
 
 _example_random_uuid = f"{uuid4()}"
+_example_random_uuid_02 = f"{uuid4()}"
 
 class RecordRecommendationRequest(ArtefactFieldsMixin):
     recommendation_uid: UUIDString = Field(
@@ -101,7 +102,7 @@ class RecordReportRequest(BaseModel):
     report_uid: UUIDString = Field(
         ...,  # Required
         description="Globally unique ID of this report (must be a valid UUID)",
-        json_schema_extra={"example": _example_random_uuid},
+        json_schema_extra={"example": _example_random_uuid_02},
         examples=[_example_random_uuid],
     )
 

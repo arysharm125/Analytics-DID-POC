@@ -4,8 +4,7 @@ import logging
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter
 from pydantic import BaseModel, Field, field_validator
 
 from app.routers.basetypes import (
@@ -25,7 +24,6 @@ from app.services.exceptions import (
     DuplicateIterationIdsError,
     IterationIdMatchesBenchmarkIdError,
 )
-from app.services.sut_service import SUTServiceDep
 
 # ==========================
 # Constants
@@ -269,90 +267,6 @@ class UpdateMultipleArtefactsResponse(BaseModel):
 # ==========================
 # Endpoints
 # ==========================
-@app.post("/create-sut-did", responses={**APITokenDep401Response, **not_found_response("Resource"), **conflict_response(_EPDW_DIVISION)})
-def create_sut_did(
-    req: CreateSutRequest,
-    api_token: EPDWTokenDep,
-    sut_svc: SUTServiceDep,
-):
-    """
-    Create DIDs for a benchmark execution and its iterations.
-
-    This endpoint creates:
-    - A master DID for the benchmark execution
-    - Child DIDs for each iteration (linked via provenance)
-
-    The operation is idempotent - if DIDs already exist for the benchmark,
-    the existing DIDs are returned.
-    """
-    result = sut_svc.create_sut_dids(req.benchmarkExecutionID)
-
-    logger.info(
-        f"SUT DIDs: benchmark={result.benchmark_id}, "
-        f"master_did={result.master_did}, iterations={len(result.iterations)}, "
-        f"status={result.status}"
-    )
-
-    return JSONResponse({
-        "status": result.status,
-        "message": result.message,
-        "benchmarkExecutionID": result.benchmark_id,
-        "mode": result.mode,
-        "master_did": result.master_did,
-        "iterations": [
-            {"iterationID": it.iteration_id, "did": it.did}
-            for it in result.iterations
-        ],
-    })
-
-
-@app.post("/append-did", responses={**APITokenDep401Response, **not_found_response("Resource"), **conflict_response(_EPDW_DIVISION)})
-async def append_did(
-    body: DIDAppendRequest,
-    api_token: EPDWTokenDep,
-    sut_svc: SUTServiceDep,
-    update_message: str = Query(
-        ...,
-        description="Message describing the update",
-        openapi_examples={"normal":{"value":"Adding new metadata"}},
-    ),
-    updated_by: str = Query(
-        ...,
-        description="AMD email of the updater",
-        openapi_examples={"normal":{"value":"user@amd.com"}},
-    ),
-):
-    """
-    Append/update data to an existing iteration DID.
-
-    Creates a new version of the artefact with the updated metadata.
-    The diff between old and new data is computed and returned.
-    """
-    result = sut_svc.append_to_iteration(
-        benchmark_id=body.benchmarkExecutionID,
-        iteration_id=body.iterationID,
-        data=body.data or {},
-        update_message=update_message,
-        updated_by=updated_by,
-    )
-
-
-    logger.info(
-        f"Updated SUT DID: iteration={result.iteration_id}, "
-        f"version={result.version}, updated_by={updated_by}"
-    )
-
-    return {
-        "status": result.status,
-        "benchmarkExecutionID": result.benchmark_id,
-        "iterationID": result.iteration_id,
-        "did": result.did,
-        "previous_did": result.previous_did,
-        "version": result.version,
-        "diff": result.diff,
-        "message": result.message,
-    }
-
 
 @app.get("/epdw/did.json")
 async def epdw_did(did_svc: DIDServiceDep):

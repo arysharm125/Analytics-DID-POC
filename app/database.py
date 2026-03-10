@@ -337,7 +337,7 @@ class MongoConnector:
             db = MongoConnector.from_vault_service(vault_svc)
         """
         # Import here to avoid circular dependency
-        from app.services.vault_service import SecretNotFoundError
+        from app.services.exceptions import SecretNotFoundError
 
         try:
             config = vault_svc.fetch_secret("mongo")

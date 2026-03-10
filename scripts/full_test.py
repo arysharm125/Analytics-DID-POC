@@ -83,7 +83,7 @@ def main() -> int:
     # Step 3: Pytest with containers
     print_section("Step 3/6: Running Pytest (Container Mode)")
     ret = run_command(
-        ["pytest", "--db-mode=container", "--vault-mode=container", "--cov=app", "--cov-append", "--cov-report="],
+        ["pytest", "--db-mode=container", "--vault-mode=container", "--cov=app", "--cov-append", "--cov-report=html"],
         check=True,
         description="Running pytest with MongoDB and Vault containers"
     )

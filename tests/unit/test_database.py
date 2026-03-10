@@ -87,10 +87,8 @@ class TestFromVaultService:
 
     def test_from_vault_service_secret_not_found(self, vault_service, vault_mode):
         """Should raise RuntimeError when vault secret not found."""
-        # This test requires InMemoryVaultClient which raises KeyError for missing secrets
-        # HvacVaultClient raises hvac.exceptions.InvalidPath which is caught differently
         if vault_mode == "container":
-            pytest.skip("Test requires InMemoryVaultClient (different exception behavior)")
+            pytest.skip("Test requires mock vault (container vault may have secrets from other tests)")
 
         # Vault doesn't have the 'mongo' secret
         with pytest.raises(RuntimeError, match="Failed to read MongoDB config from vault"):

@@ -710,7 +710,7 @@ class DIDService:
     def __init__(
         self,
         db: MongoConnector,
-        vault_svc: VaultService | None = None,
+        vault_svc: VaultService,
         run_migrations: bool = True,
         ensure_signing_keys: bool = True,
     ):
@@ -718,19 +718,12 @@ class DIDService:
 
         Args:
             db: MongoConnector instance for database operations
-            vault_svc: VaultService instance for vault operations.
-                       If None, will use get_vault_service() from vault module.
+            vault_svc: VaultService instance for vault operations
             run_migrations: Whether to run database migrations on init (default True)
             ensure_signing_keys: Whether to ensure division signing keys exist (default True)
         """
         self.db = db
-
-        # Use provided vault service or get from module
-        if vault_svc is not None:
-            self._vault_svc = vault_svc
-        else:
-            from app.services.vault import get_vault_service
-            self._vault_svc = get_vault_service()
+        self._vault_svc = vault_svc
 
         if run_migrations:
             self.db.run_migrations(_did_service_migrations)

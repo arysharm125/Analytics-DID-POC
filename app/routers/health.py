@@ -2,8 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.database import ConnectionPoolStats
-from app.routers.dependencies import MongoConnectorDep
-from app.services.vault import vault_is_authenticated
+from app.routers.dependencies import MongoConnectorDep, VaultServiceDep
 from app.version import VERSION, full_version
 
 
@@ -41,7 +40,7 @@ app = APIRouter(tags=["Health"])
 
 
 @app.get("/health")
-def health(db: MongoConnectorDep) -> HealthResponse:
+def health(db: MongoConnectorDep, vault: VaultServiceDep) -> HealthResponse:
     """Returns a health status for the application.
 
     Checks:
@@ -55,7 +54,7 @@ def health(db: MongoConnectorDep) -> HealthResponse:
     """
     # Check vault authentication
     try:
-        vault_ok = vault_is_authenticated()
+        vault_ok = vault.is_authenticated()
     except Exception:
         vault_ok = False
 

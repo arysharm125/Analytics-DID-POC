@@ -10,6 +10,8 @@ from typing import Any
 import hvac
 import hvac.exceptions
 
+from app.services.exceptions import SecretNotFoundError
+
 
 class HvacVaultClient:
     """Real vault client using hvac library.
@@ -45,12 +47,15 @@ class HvacVaultClient:
             The secret data as a dictionary
 
         Raises:
-            hvac.exceptions.InvalidPath: If the secret doesn't exist
+            SecretNotFoundError: If the secret doesn't exist
         """
-        result = self._client.secrets.kv.v2.read_secret_version(
-            mount_point=mount_point, path=path
-        )
-        return result.get("data", {}).get("data", {})
+        try:
+            result = self._client.secrets.kv.v2.read_secret_version(
+                mount_point=mount_point, path=path, raise_on_deleted_version=True
+            )
+            return result.get("data", {}).get("data", {})
+        except hvac.exceptions.InvalidPath as e:
+            raise SecretNotFoundError(mount_point, path) from e
 
     def write_secret(self, mount_point: str, path: str, data: dict[str, Any]) -> None:
         """Write a secret to vault KV v2.
@@ -72,12 +77,16 @@ class HvacVaultClient:
             path: Path to list
 
         Returns:
-            List of secret names/paths
+            List of secret names/paths (empty list if path doesn't exist)
         """
-        result = self._client.secrets.kv.v2.list_secrets(
-            mount_point=mount_point, path=path
-        )
-        return result.get("data", {}).get("keys", [])
+        try:
+            result = self._client.secrets.kv.v2.list_secrets(
+                mount_point=mount_point, path=path
+            )
+            return result.get("data", {}).get("keys", [])
+        except hvac.exceptions.InvalidPath:
+            # Path doesn't exist, return empty list (consistent with mock implementations)
+            return []
 
     def delete_secret(self, mount_point: str, path: str) -> None:
         """Delete a secret and all its versions from vault KV v2.
@@ -136,11 +145,11 @@ class InMemoryVaultClient:
             The secret data as a dictionary
 
         Raises:
-            KeyError: If the secret doesn't exist
+            SecretNotFoundError: If the secret doesn't exist
         """
         key = self._key(mount_point, path)
         if key not in self._secrets:
-            raise KeyError(f"Secret not found: {key}")
+            raise SecretNotFoundError(mount_point, path)
         return self._secrets[key].copy()
 
     def write_secret(self, mount_point: str, path: str, data: dict[str, Any]) -> None:

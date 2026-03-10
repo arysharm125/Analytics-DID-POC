@@ -87,20 +87,13 @@ def reset_singletons():
 
 def _reset_all():
     """Reset all cached state across the application."""
-    # Reset FastAPI dependencies (includes reset_config_cache and DIDService)
+    # Reset FastAPI dependencies (includes vault client, vault service, and config)
     from app.routers.dependencies import reset_all_dependencies
 
     reset_all_dependencies()
 
-    # Reset vault.py module-level singletons
-    from app.services.vault import reset_vault_client, reset_vault_service
-
-    reset_vault_client()
-    reset_vault_service()
-
     # Clear config override
     override_config(None)
-    reset_config_cache()
 
 
 @pytest.fixture(scope="session")
@@ -376,22 +369,6 @@ def did_service_no_migrations(db_connector, vault_service):
         run_migrations=False,
         ensure_signing_keys=False,  # Already done above
     )
-
-
-@pytest.fixture
-def sut_service(db_connector, did_service):
-    """Create a SUTService for testing.
-
-    Args:
-        db_connector: MongoConnector instance
-        did_service: DIDService instance
-
-    Returns:
-        SUTService instance with test dependencies
-    """
-    from app.services.sut_service import SUTService
-
-    return SUTService(db=db_connector, did_svc=did_service)
 
 
 # =============================================================================
