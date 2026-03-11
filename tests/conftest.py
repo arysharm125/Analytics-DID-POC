@@ -242,10 +242,6 @@ def test_config() -> AppConfig:
             advisory_access_token="test-advisory-token",
             didcheck_access_token="test-didcheck-token",
         ),
-        collections=MongoCollectionConfig(
-            qa_benchmark_collection="test_benchmark_executions",
-            qa_benchmark_iterations="test_benchmark_iterations",
-        ),
         mongo_pool=MongoPoolConfig(
             max_pool_size=100,
             min_pool_size=5,

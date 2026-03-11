@@ -149,7 +149,6 @@ class TestArtefactVCNquads:
         config_disabled = AppConfig(
             vault=test_config.vault,
             tokens=test_config.tokens,
-            collections=test_config.collections,
             mongo_pool=test_config.mongo_pool,
             features=FeatureFlags(
                 didcheck_router=True,

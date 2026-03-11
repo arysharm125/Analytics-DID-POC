@@ -59,7 +59,6 @@ class AppConfig:
 
     vault: VaultConfig
     tokens: TokenConfig
-    collections: MongoCollectionConfig
     mongo_pool: MongoPoolConfig
     features: FeatureFlags
     expose_error_details: bool
@@ -83,14 +82,6 @@ def _load_config_from_env() -> AppConfig:
             epdw_access_token=os.getenv("EPDW_ACCESS_TOKEN", ""),
             advisory_access_token=os.getenv("ADVISORY_ACCESS_TOKEN", ""),
             didcheck_access_token=os.getenv("DIDCHECK_ACCESS_TOKEN", ""),
-        ),
-        collections=MongoCollectionConfig(
-            qa_benchmark_collection=os.getenv(
-                "QA_COLLECTION", "benchmark_executions"
-            ),
-            qa_benchmark_iterations=os.getenv(
-                "QA_COLLECTION_ITER", "benchmark_iterations"
-            ),
         ),
         mongo_pool=MongoPoolConfig(
             max_pool_size=int(os.getenv("MONGO_MAX_POOL_SIZE", "100")),

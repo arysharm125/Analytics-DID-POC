@@ -291,9 +291,7 @@ async def record_benchmark(
     Record a benchmark execution with its iterations as DIDs.
 
     This endpoint creates Digital Artefacts for both the benchmark and its iterations,
-    establishing parent-child relationships via provenance. Unlike `/create-sut-did`,
-    this endpoint receives data directly in the request payload, enabling decoupled
-    operation without requiring access to EPDW's internal database.
+    establishing parent-child relationships via provenance.
 
     **Idempotent Behavior:**
     - Benchmark: If exists with same data → status="unchanged" (no new version)
@@ -521,9 +519,7 @@ async def update_multiple_artefacts(
     Update multiple existing artefacts with new data.
 
     This endpoint updates existing Digital Artefacts by creating new versions
-    with the provided data. Unlike `/append-did` which merges data, this endpoint
-    replaces the full metadata. It operates independently without requiring access
-    to external databases.
+    with the provided data.
 
     **Pre-validation Phase:**
     - Validates update list is non-empty

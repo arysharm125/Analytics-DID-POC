@@ -91,10 +91,6 @@ class TestBuildErrorResponse:
                 advisory_access_token="",
                 didcheck_access_token="",
             ),
-            collections=MongoCollectionConfig(
-                qa_benchmark_collection="",
-                qa_benchmark_iterations="",
-            ),
             mongo_pool=MongoPoolConfig(
                 max_pool_size=100,
                 min_pool_size=5,
@@ -135,10 +131,6 @@ class TestBuildErrorResponse:
                 epdw_access_token="",
                 advisory_access_token="",
                 didcheck_access_token="",
-            ),
-            collections=MongoCollectionConfig(
-                qa_benchmark_collection="",
-                qa_benchmark_iterations="",
             ),
             mongo_pool=MongoPoolConfig(
                 max_pool_size=100,
