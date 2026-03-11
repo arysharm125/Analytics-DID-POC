@@ -49,16 +49,6 @@ logger.setLevel(logging.INFO)
 app = APIRouter(tags=["EPDW APIs"])
 
 
-async def startup_did_router():
-    """
-    Startup hook for the DID router.
-
-    Note: Most initialization is now handled by DIDService migrations.
-    This function is kept for backward compatibility with main.py.
-    """
-    logger.info("DID router startup - initialization handled by DIDService")
-
-
 # ==========================
 # API Models
 # ==========================

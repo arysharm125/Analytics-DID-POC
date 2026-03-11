@@ -12,6 +12,7 @@ import os
 import time
 import uuid
 from collections.abc import Generator
+from contextlib import suppress
 
 import pytest
 
@@ -213,9 +214,16 @@ def db_connector(db_mode, mongodb_container) -> Generator[MongoConnector, None, 
         # Teardown order matters: drop DB, then close client
         try:
             if db_mode != "mock" and connector.client:
-                connector.client.drop_database(db_name)
+                # Import the exception here to avoid circular imports
+                from pymongo.errors import InvalidOperation
+                # Client may already be closed (e.g., by lifespan shutdown)
+                with suppress(InvalidOperation):
+                    connector.client.drop_database(db_name)
         finally:
-            connector.close_connection()
+            # Attempt to close connection if not already closed
+            # Connection may already be closed, ignore errors
+            with suppress(Exception):
+                connector.close_connection()
 
 
 
