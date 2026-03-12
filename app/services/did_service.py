@@ -674,7 +674,7 @@ class DIDService:
     # List of divisions that must have signing keys provisioned. Currently
     # hardcoded, in the future we will have a management API endpoint to create
     # these.
-    _required_divisions: ClassVar[list[str]] = ["advisory", "epdw"]
+    _required_divisions: ClassVar[list[str]] = ["advisory", "epdw", "demodivision"]
 
     @classmethod
     def ensure_collections_for_testing(cls, db: MongoConnector) -> None:

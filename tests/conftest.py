@@ -241,6 +241,7 @@ def test_config() -> AppConfig:
             epdw_access_token="test-epdw-token",
             advisory_access_token="test-advisory-token",
             didcheck_access_token="test-didcheck-token",
+            demodiv_access_token="test-demodiv-token",
         ),
         mongo_pool=MongoPoolConfig(
             max_pool_size=100,
@@ -252,6 +253,7 @@ def test_config() -> AppConfig:
         features=FeatureFlags(
             didcheck_router=True,
             debug_vc_nquads=True,
+            demodiv_router=True,
         ),
         expose_error_details=True,
     )

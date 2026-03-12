@@ -104,6 +104,38 @@ async def verify_didcheck_token(
         raise HTTPException(status_code=401, detail="Invalid DIDCheck token")
     return x_api_token
 
+async def verify_demodiv_token(
+    x_api_token: str = Header(
+        ...,
+        description="Demo division API access token required for authentication.",
+        openapi_examples={"normal":{"value":EXAMPLE_API_TOKEN}},
+        alias="X-API-Token",
+    )
+) -> str:
+    """
+    Dependency that validates the Demo division API token from the request header.
+
+    Uses lazy config loading to allow test overrides.
+    In development, if DEMODIV_ACCESS_TOKEN is not set, token validation is bypassed.
+
+    Raises:
+        HTTPException: 401 if token is invalid (when token is configured)
+
+    Returns:
+        The validated token string
+    """
+    config = get_config()
+    expected_token = config.tokens.didcheck_access_token
+
+    # Allow bypass in development if token not configured
+    if not expected_token:
+        return x_api_token
+
+    if not secrets.compare_digest(x_api_token, expected_token):
+        raise HTTPException(status_code=401, detail="Invalid DIDCheck token")
+    return x_api_token
+
+
 
 # EPDW-specific token dependency
 EPDWTokenDep = Annotated[str, Depends(verify_epdw_token)]
@@ -113,6 +145,10 @@ AdvisoryTokenDep = Annotated[str, Depends(verify_advisory_token)]
 
 # DIDCheck-specific token dependency
 DIDCheckTokenDep = Annotated[str, Depends(verify_didcheck_token)]
+
+# Demodiv-specific token dependency
+DemoDivTokenDep = Annotated[str, Depends(verify_demodiv_token)]
+
 
 # Response documentation for token dependencies.
 APITokenDep401Response = {401: {"description": "Invalid or missing API token"}}

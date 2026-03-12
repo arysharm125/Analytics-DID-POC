@@ -90,6 +90,7 @@ class TestBuildErrorResponse:
                 epdw_access_token="",
                 advisory_access_token="",
                 didcheck_access_token="",
+                demodiv_access_token="",
             ),
             mongo_pool=MongoPoolConfig(
                 max_pool_size=100,
@@ -98,7 +99,11 @@ class TestBuildErrorResponse:
                 wait_queue_timeout_ms=5000,
                 pool_monitor_interval_s=60,
             ),
-            features=FeatureFlags(didcheck_router=False, debug_vc_nquads=False),
+            features=FeatureFlags(
+                didcheck_router=False,
+                debug_vc_nquads=False,
+                demodiv_router=False,
+            ),
             expose_error_details=True,
         )
 
@@ -131,6 +136,7 @@ class TestBuildErrorResponse:
                 epdw_access_token="",
                 advisory_access_token="",
                 didcheck_access_token="",
+                demodiv_access_token="",
             ),
             mongo_pool=MongoPoolConfig(
                 max_pool_size=100,
@@ -139,7 +145,11 @@ class TestBuildErrorResponse:
                 wait_queue_timeout_ms=5000,
                 pool_monitor_interval_s=60,
             ),
-            features=FeatureFlags(didcheck_router=False, debug_vc_nquads=False),
+            features=FeatureFlags(
+                didcheck_router=False,
+                debug_vc_nquads=False,
+                demodiv_router=False,
+            ),
             expose_error_details=False,
         )
 

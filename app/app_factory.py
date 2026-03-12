@@ -13,6 +13,7 @@ from app.lifespan import StartupDependencies, create_app_lifespan
 from app.middlewares import exception_handler_middleware, http_exception_handler
 from app.request_id import AccessLogMiddleware, RequestIdMiddleware
 from app.routers.advisory_router import router as advisory_router
+from app.routers.demo_division import router as demodiv_router
 from app.routers.dependencies import did_service_lifespan, get_db, get_vault
 from app.routers.didcheck import app as didcheck_router
 from app.routers.docs import app as docs_router
@@ -81,6 +82,10 @@ def create_app(
     include_didcheck_router = get_config().features.didcheck_router
     if include_didcheck_router:
         app.include_router(didcheck_router)
+
+    include_demodiv_router = get_config().features.demodiv_router
+    if include_demodiv_router:
+        app.include_router(demodiv_router)
 
     app.include_router(health_router)
     app.include_router(docs_router)

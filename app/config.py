@@ -24,6 +24,7 @@ class TokenConfig:
     epdw_access_token: str
     advisory_access_token: str
     didcheck_access_token: str
+    demodiv_access_token: str
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class FeatureFlags:
     """Feature flag configuration."""
 
     didcheck_router: bool
+    demodiv_router: bool
     debug_vc_nquads: bool
 
 
@@ -82,6 +84,7 @@ def _load_config_from_env() -> AppConfig:
             epdw_access_token=os.getenv("EPDW_ACCESS_TOKEN", ""),
             advisory_access_token=os.getenv("ADVISORY_ACCESS_TOKEN", ""),
             didcheck_access_token=os.getenv("DIDCHECK_ACCESS_TOKEN", ""),
+            demodiv_access_token=os.getenv("DEMODIV_ACCESS_TOKEN", ""),
         ),
         mongo_pool=MongoPoolConfig(
             max_pool_size=int(os.getenv("MONGO_MAX_POOL_SIZE", "100")),
@@ -92,6 +95,7 @@ def _load_config_from_env() -> AppConfig:
         ),
         features=FeatureFlags(
             didcheck_router=bool(os.getenv("FEATURE_DIDCHECK_ROUTER", "")),
+            demodiv_router=bool(os.getenv("FEATURE_DEMODIV_ROUTER", "")),
             debug_vc_nquads=bool(os.getenv("FEATURE_DEBUG_VC_NQUADS", "")),
         ),
         expose_error_details=bool(os.getenv("EXPOSE_ERROR_DETAILS", "")),
