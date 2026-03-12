@@ -256,6 +256,57 @@ describe('VC Compatibility Tests - Using Production Code', () => {
       expect(credential.credentialSubject.artefactMetadata).toBeDefined()
       expect(credential.credentialSubject.artefactMetadata.severity).toBe('high')
     })
+
+    test('complex VC with tampered proofValue should fail validation', async () => {
+      const vcPath = path.join(FIXTURES_DIR, 'vcs/advisory_complex.json')
+      const credential = JSON.parse(readFileSync(vcPath, 'utf-8'))
+
+      // Tamper with the proofValue field.
+      credential.proof.proofValue = credential.proof.proofValue.replace(/u(......)/, (m, g1) => "uH8qkWL")
+
+      const result = await validateVCStructure(credential)
+
+      expect(result.valid).toBe(false)
+      for (const check of result.checks) {
+        if (check.name == "Proof Verification") {
+          expect(check.passed).toBe(false)
+        }
+      }
+    })
+
+    test('complex VC with tampered artefactHash should fail validation', async () => {
+      const vcPath = path.join(FIXTURES_DIR, 'vcs/advisory_complex.json')
+      const credential = JSON.parse(readFileSync(vcPath, 'utf-8'))
+
+      // Tamper with the artefactHash field.
+      credential.credentialSubject.artefactHash = credential.credentialSubject.artefactHash.substr(0, 40) + "rQdVrF"
+
+      const result = await validateVCStructure(credential)
+
+      expect(result.valid).toBe(false)
+      for (const check of result.checks) {
+        if (check.name == "Proof Verification") {
+          expect(check.passed).toBe(false)
+        }
+      }
+    })
+
+    test('complex VC with tampered artefactMetadata should fail validation', async () => {
+      const vcPath = path.join(FIXTURES_DIR, 'vcs/advisory_complex.json')
+      const credential = JSON.parse(readFileSync(vcPath, 'utf-8'))
+
+      // Tamper with the artefactMetadata field.
+      delete(credential.credentialSubject.artefactMetadata.severity);
+
+      const result = await validateVCStructure(credential)
+
+      expect(result.valid).toBe(false)
+      for (const check of result.checks) {
+        if (check.name == "Proof Verification") {
+          expect(check.passed).toBe(false)
+        }
+      }
+    })
   })
 
   describe('Individual Check Results', () => {
