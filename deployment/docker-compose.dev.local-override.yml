@@ -1,0 +1,14 @@
+
+# Override docker-compose file for dev with a local vault install. Useful for
+# running a local development version which mocks Hashicorp vault locally
+# (in the filesystem).
+#
+# Use it by passing as an additional argument to docker compose:
+# docker compose -f deployment/docker-compose.dev.yml -f deployment/docker-compose.dev.local-override.yml up -d
+
+services:
+  api:
+    volumes:
+      - ../local_vault_data:/app/vault_data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -1,0 +1,39 @@
+# deployment/Dockerfile
+# syntax=docker/dockerfile:1
+
+# Stage 1: Build the Vite/Vue app
+FROM node:24-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy all code
+COPY didcheck didcheck
+COPY contexts contexts
+
+# Move into the didcheck app folder.
+WORKDIR /app/didcheck
+
+# Install dependencies
+RUN npm ci
+
+# Build for production
+RUN npm run build
+
+# Stage 2: Serve with a lightweight web server
+FROM nginx:stable-alpine3.23-slim
+
+# Remove default nginx static assets
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy built files from builder
+COPY --from=builder /app/didcheck/dist /usr/share/nginx/html
+
+# Copy custom nginx config (optional)
+# COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Expose port 80
+EXPOSE 80
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

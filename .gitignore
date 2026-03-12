@@ -1,6 +1,7 @@
 # Ignore Docker and environment files
 .dockerignore
 .env
+.env.dev
 # Ignore Python cache directories
 __pycache__/
 
@@ -21,3 +22,6 @@ node_modules/
 # Code coverage outputs
 htmlcov/
 .coverage
+
+# Ignore local mock vault data when running a dev docker.
+local_vault_data
