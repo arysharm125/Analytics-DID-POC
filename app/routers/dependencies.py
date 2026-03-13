@@ -125,14 +125,14 @@ async def verify_demodiv_token(
         The validated token string
     """
     config = get_config()
-    expected_token = config.tokens.didcheck_access_token
+    expected_token = config.tokens.demodiv_access_token
 
     # Allow bypass in development if token not configured
     if not expected_token:
         return x_api_token
 
     if not secrets.compare_digest(x_api_token, expected_token):
-        raise HTTPException(status_code=401, detail="Invalid DIDCheck token")
+        raise HTTPException(status_code=401, detail="Invalid demo division token")
     return x_api_token
 
 

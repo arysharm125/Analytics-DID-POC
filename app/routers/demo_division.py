@@ -22,7 +22,7 @@ from app.services.did_service import ArtefactInput
 
 _DEMO_DIVISION = "demodivision"
 
-router = APIRouter(tags=["Demo Division API"], prefix="/demodiv")
+router = APIRouter(tags=["Demo Division API"], prefix=f"/{_DEMO_DIVISION}")
 logger = logging.getLogger("demodivision")
 
 _example_random_uuid = f"{uuid4()}"

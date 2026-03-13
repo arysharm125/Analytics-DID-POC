@@ -24,7 +24,7 @@ from app.services.exceptions import RecommendationNotFoundError
 
 _ADVISORY_DIVISION = "advisory"
 
-router = APIRouter(tags=["Advisory API"], prefix="/advisory")
+router = APIRouter(tags=["Advisory API"], prefix=f"/{_ADVISORY_DIVISION}")
 logger = logging.getLogger("advisory_api")
 
 _example_random_uuid = f"{uuid4()}"

@@ -46,7 +46,7 @@ logger.setLevel(logging.INFO)
 # ==========================
 # Router
 # ==========================
-app = APIRouter(tags=["EPDW APIs"])
+app = APIRouter(tags=["EPDW APIs"], prefix=f"/{_EPDW_DIVISION}")
 
 
 # ==========================
@@ -258,7 +258,7 @@ class UpdateMultipleArtefactsResponse(BaseModel):
 # Endpoints
 # ==========================
 
-@app.get("/epdw/did.json")
+@app.get("/did.json")
 async def epdw_did(did_svc: DIDServiceDep):
     """Return the DID document that corresponds to the EPDW division.
 
@@ -271,7 +271,7 @@ async def epdw_did(did_svc: DIDServiceDep):
     return did_svc.division_did_doc(_EPDW_DIVISION)
 
 
-@app.get("/epdw/{uid}/vc.json", responses={**APITokenDep401Response, **not_found_response()})
+@app.get("/{uid}/vc.json", responses={**APITokenDep401Response, **not_found_response()})
 async def artefact_vc(
     uid: PathUUID,
     api_token: EPDWTokenDep,
@@ -281,7 +281,7 @@ async def artefact_vc(
     return did_svc.issue_artefact_vc(division=_EPDW_DIVISION, uid=uid)
 
 
-@app.post("/epdw/record-benchmark", responses={**APITokenDep401Response, **bad_request_response(), **conflict_response(_EPDW_DIVISION)})
+@app.post("/record-benchmark", responses={**APITokenDep401Response, **bad_request_response(), **conflict_response(_EPDW_DIVISION)})
 async def record_benchmark(
     request: RecordBenchmarkRequest,
     api_token: EPDWTokenDep,
@@ -509,7 +509,7 @@ async def record_benchmark(
     )
 
 
-@app.post("/epdw/update-multiple-artefacts", responses={**APITokenDep401Response, **bad_request_response(), **not_found_response("Resource"), **conflict_response(_EPDW_DIVISION)})
+@app.post("/update-multiple-artefacts", responses={**APITokenDep401Response, **bad_request_response(), **not_found_response("Resource"), **conflict_response(_EPDW_DIVISION)})
 async def update_multiple_artefacts(
     request: UpdateMultipleArtefactsRequest,
     api_token: EPDWTokenDep,
