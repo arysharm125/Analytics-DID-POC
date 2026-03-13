@@ -116,7 +116,6 @@ async def verify_demodiv_token(
     Dependency that validates the Demo division API token from the request header.
 
     Uses lazy config loading to allow test overrides.
-    In development, if DEMODIV_ACCESS_TOKEN is not set, token validation is bypassed.
 
     Raises:
         HTTPException: 401 if token is invalid (when token is configured)
@@ -126,10 +125,6 @@ async def verify_demodiv_token(
     """
     config = get_config()
     expected_token = config.tokens.demodiv_access_token
-
-    # Allow bypass in development if token not configured
-    if not expected_token:
-        return x_api_token
 
     if not secrets.compare_digest(x_api_token, expected_token):
         raise HTTPException(status_code=401, detail="Invalid demo division token")

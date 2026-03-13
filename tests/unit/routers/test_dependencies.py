@@ -23,6 +23,7 @@ from app.routers.dependencies import (
     set_did_service_dependency,
     set_vault_dependency,
     verify_advisory_token,
+    verify_demodiv_token,
     verify_didcheck_token,
     verify_epdw_token,
 )
@@ -99,9 +100,6 @@ class TestVerifyDidcheckToken:
         """When didcheck_access_token is not set, validation is bypassed (dev mode)."""
         # Create config with empty didcheck token
         from app.config import (
-            FeatureFlags,
-            MongoCollectionConfig,
-            MongoPoolConfig,
             override_config,
         )
 
@@ -126,6 +124,34 @@ class TestVerifyDidcheckToken:
             assert result == "any-token-works"
         finally:
             override_config(None)
+
+
+class TestVerifyDemoDivToken:
+    """Tests for verify_demodiv_token dependency."""
+
+    async def test_valid_token_returns_token(self, test_config, override_test_config):
+        """Valid demo division token returns the token string."""
+        token = test_config.tokens.demodiv_access_token
+        result = await verify_demodiv_token(x_api_token=token)
+        assert result == token
+
+    async def test_invalid_token_raises_401(self, override_test_config):
+        """Invalid token raises HTTPException with 401."""
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_demodiv_token(x_api_token="invalid-token")
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Invalid demo division token"
+
+    @patch('app.routers.dependencies.secrets.compare_digest')
+    async def test_uses_constant_time_comparison(self, mock_compare, test_config, override_test_config):
+        """Verify secrets.compare_digest is used (security)."""
+        mock_compare.return_value = True
+        token = "test-token"
+
+        await verify_demodiv_token(x_api_token=token)
+
+        mock_compare.assert_called_once_with(token, test_config.tokens.demodiv_access_token)
 
 
 # =============================================================================

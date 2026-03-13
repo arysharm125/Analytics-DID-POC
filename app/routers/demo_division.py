@@ -13,11 +13,12 @@ from app.routers.basetypes import (
     AMDWebDID,
     ArtefactFieldsMixin,
     ArtefactTypeStr,
+    PathUUID,
     UUIDString,
     did_from_uuid,
 )
 from app.routers.dependencies import APITokenDep401Response, DemoDivTokenDep, DIDServiceDep
-from app.routers.responses import bad_request_response, conflict_response
+from app.routers.responses import bad_request_response, conflict_response, not_found_response
 from app.services.did_service import ArtefactInput
 
 _DEMO_DIVISION = "demodivision"
@@ -105,3 +106,8 @@ async def demodiv_did(did_svc: DIDServiceDep):
         JSON-LD DID Document.
     """
     return did_svc.division_did_doc(_DEMO_DIVISION)
+
+@router.get("/{uid}/vc.json", responses={**APITokenDep401Response, **not_found_response()})
+async def artefact_vc(uid: PathUUID, api_token: DemoDivTokenDep, did_svc: DIDServiceDep):
+    """Return a Verifiable Credential with proofs for a Digital Artefact."""
+    return did_svc.issue_artefact_vc(division=_DEMO_DIVISION, uid=uid)
