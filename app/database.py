@@ -32,18 +32,15 @@ if TYPE_CHECKING:
 # Import config for pool settings
 from app.config import get_config
 
-# -----------------------------------------------------------
+# ===========================================================
 # Logging
-# -----------------------------------------------------------
+# ===========================================================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     stream=sys.stdout
 )
 logger = logging.getLogger("db_connector")
-
-# Type alias for migration functions
-MigrationFunc = Callable[["MongoConnector"], None]
 
 
 @dataclass(frozen=True)
@@ -61,10 +58,23 @@ class ConnectionPoolStats:
     wait_queue_size: int
     pool_health: str  # "healthy", "warning", "critical"
 
+# ===========================================================
+# Utils
+# ===========================================================
+def _redact_mongodb_connstring(conn_string: str) -> str:
+    """Redacts the password in a mongodb:// string. conn_string MUST start with mongodb://"""
+    return re.sub(r'(mongodb(?:\+srv)?://[^:]+:)([^@]+)(@)', r'\1<REDACTED>@', conn_string)
+
+# ===========================================================
+# Migration
+# ===========================================================
+
 # Validation patterns for MigrationName
 _RE_DATE_SLUG = re.compile(r"^\d{8}\d{3}$")
 _RE_TITLE = re.compile(r"^[A-Za-z0-9_-]+$")
 
+# Type alias for migration functions
+MigrationFunc = Callable[["MongoConnector"], None]
 
 @dataclass(frozen=True)
 class MigrationName:
@@ -222,15 +232,21 @@ class MongoConnector:
         Raises:
             RuntimeError: If connection fails after 3 attempts
         """
-        logger.info(f"Mongo target DB: {db_name}")
-        logger.info("Connecting to MongoDB...")
-
         self.client = None
 
         use_tls = (
             conn_string.startswith("mongodb+srv://")
             or "mongodb.net" in conn_string
         )
+
+        if conn_string.startswith("mongodb://"):
+            # Log conn_string redacting the password.
+            redacted = _redact_mongodb_connstring(conn_string)
+            logger.info(f"Connecting to MongoDB {redacted} (use_tls={use_tls}, db_name={db_name})")
+        else:
+            # Don't log conn_string to avoid logging passwords.
+            logger.info(f"Connecting to MongoDB (use_tls={use_tls}, db_name={db_name})")
+
 
         # Get pool configuration
         config = get_config()

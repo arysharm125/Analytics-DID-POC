@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.database import MongoConnector, MongoConnectorInitError
+from app.database import MongoConnector, MongoConnectorInitError, _redact_mongodb_connstring
 
 
 class TestMongoConnectorInitialization:
@@ -258,3 +258,17 @@ class TestConnectRetryLogic:
             # Verify TLS was not enabled
             call_kwargs = mock_mongo_client.call_args[1]
             assert call_kwargs['tls'] is False
+
+class TestConnStringRedaction:
+    def test_conn_string_redaction_cases(self):
+        """
+        Tests the various cases where the password in a mongodb connection string
+        should be redacted.
+        """
+        assert _redact_mongodb_connstring("mongodb://mongodb:27017/") == "mongodb://mongodb:27017/"
+        assert _redact_mongodb_connstring("mongodb://user:password@mongodb:27017/") == "mongodb://user:<REDACTED>@mongodb:27017/"
+        assert _redact_mongodb_connstring("mongodb+srv://mongodb:27017/") == "mongodb+srv://mongodb:27017/"
+        assert _redact_mongodb_connstring("mongodb+srv://user:password@mongodb:27017/") == "mongodb+srv://user:<REDACTED>@mongodb:27017/"
+
+        # *NOT* redacted (https schema).
+        assert _redact_mongodb_connstring("https://user:password@mongodb:27017/") == "https://user:password@mongodb:27017/"
