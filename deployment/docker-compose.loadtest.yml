@@ -12,8 +12,6 @@ services:
     restart: unless-stopped
     volumes:
       - mongodb_loadtest_data:/data/db
-    ports:
-      - "8430:27017"  # Loadtest port range starts at 8430
 
   vault:
     image: hashicorp/vault:1.15
@@ -24,8 +22,6 @@ services:
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: "loadtest-root-token"
       VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
-    ports:
-      - "8431:8200"  # Loadtest port range: 8430+
 
   vault-init:
     image: hashicorp/vault:1.15
@@ -55,8 +51,6 @@ services:
         condition: service_started
       vault-init:
         condition: service_completed_successfully
-    expose:
-      - "8434"
     deploy:
       resources:
         limits:
@@ -64,7 +58,7 @@ services:
           memory: 1G
 
   nginx:
-    image: nginx:1.25-alpine
+    image: nginx:1.29.6-alpine3.23-slim
     container_name: didsvc-loadtest-nginx
     restart: unless-stopped
     volumes:
@@ -72,14 +66,14 @@ services:
     depends_on:
       - api
     ports:
-      - "8432:80"  # Loadtest port range: 8430+
+      - "8432:80"
 
   locust:
     image: locustio/locust:2.24.0
     container_name: didsvc-loadtest-locust
     restart: unless-stopped
     ports:
-      - "8433:8089"  # Loadtest port range: 8430+
+      - "8433:8089"
     volumes:
       - ../benchmarks:/mnt/benchmarks
     working_dir: /mnt/benchmarks/locustfiles

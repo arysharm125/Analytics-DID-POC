@@ -5,6 +5,22 @@
 #
 # Use it by passing as an additional argument to docker compose:
 # docker compose -f deployment/docker-compose.dev.yml -f deployment/docker-compose.dev.local-override.yml up -d
+#
+# When using this override, configure the mongodb connection string in
+# local_vault_data/mongo/secret.json with the following contents:
+#
+#   {
+#       "data": {
+#           "data": {
+#               "connection_string": "mongodb://host.docker.internal:27017/?directConnection=true",
+#               "database_name": "did_service_dev_docker"
+#           }
+#       }
+#   }
+#
+# Also, make sure your local mongodb install allows access by any host (0.0.0.0)
+# so that the container can connect to it.
+
 
 services:
   api:

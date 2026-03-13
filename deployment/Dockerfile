@@ -1,5 +1,8 @@
-# deployment/Dockerfile
 # syntax=docker/dockerfile:1
+
+# This is the Dockerfile that builds a production DIDSvc backend API image. It
+# uses a python image to build requirements from source, then it copies all
+# artefacts to a production image.
 
 # =========================
 # Build stage
@@ -46,9 +49,8 @@ RUN --mount=type=bind,source=.git,target=/tmp/.git \
 # =========================
 FROM python:3.12-slim
 
-# Install runtime libs AND Audit Tool Dependencies (sshpass, ssh)
+# Install runtime libs AND necessary binary deps.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     libssl3 \
     libffi8 \
  && rm -rf /var/lib/apt/lists/*
@@ -77,9 +79,6 @@ COPY deployment/logging.ini /app/deployment/
 
 # Copy generated version_metadata.py from build stage
 COPY --from=build /app/app/version_metadata.py /app/app/version_metadata.py
-
-# Fix ownership
-RUN chown -R appuser:appgroup /app /opt/did-venv
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

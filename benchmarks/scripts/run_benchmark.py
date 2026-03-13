@@ -30,7 +30,7 @@ from app.version import full_version
 DEFAULT_USERS = 200
 DEFAULT_SPAWN_RATE = 10
 DEFAULT_DURATION = "5m"
-DEFAULT_HOST = "http://localhost:8432"
+DEFAULT_HOST = "http://localhost:8432" # Nginx reverse proxy.
 DEFAULT_LOCUSTFILE = "locustfiles"
 
 

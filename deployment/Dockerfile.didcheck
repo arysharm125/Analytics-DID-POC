@@ -1,5 +1,8 @@
-# deployment/Dockerfile
 # syntax=docker/dockerfile:1
+
+# This is the Dockerfile that builds a production DIDCheck image. It builds the
+# frontend code in a node image, then copies the results over to a minimal nginx
+# image.
 
 # Stage 1: Build the Vite/Vue app
 FROM node:24-alpine AS builder
@@ -21,7 +24,7 @@ RUN npm ci
 RUN npm run build
 
 # Stage 2: Serve with a lightweight web server
-FROM nginx:stable-alpine3.23-slim
+FROM nginx:1.29.6-alpine3.23-slim
 
 # Remove default nginx static assets
 RUN rm -rf /usr/share/nginx/html/*
@@ -29,8 +32,7 @@ RUN rm -rf /usr/share/nginx/html/*
 # Copy built files from builder
 COPY --from=builder /app/didcheck/dist /usr/share/nginx/html
 
-# Copy custom nginx config (optional)
-# COPY nginx.conf /etc/nginx/conf.d/default.conf
+# nginx.conf is setup in the approriate docker-compose file.
 
 # Expose port 80
 EXPOSE 80
