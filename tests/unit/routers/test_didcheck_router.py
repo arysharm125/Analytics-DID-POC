@@ -154,6 +154,7 @@ class TestArtefactVCNquads:
                 didcheck_router=True,
                 debug_vc_nquads=False,  # Disabled
                 demodiv_router=False,
+                docs_router=False,
             ),
             expose_error_details=True,
         )

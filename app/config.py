@@ -52,6 +52,7 @@ class FeatureFlags:
 
     didcheck_router: bool
     demodiv_router: bool
+    docs_router: bool
     debug_vc_nquads: bool
 
 
@@ -96,6 +97,7 @@ def _load_config_from_env() -> AppConfig:
         features=FeatureFlags(
             didcheck_router=bool(os.getenv("FEATURE_DIDCHECK_ROUTER", "")),
             demodiv_router=bool(os.getenv("FEATURE_DEMODIV_ROUTER", "")),
+            docs_router=bool(os.getenv("FEATURE_DOCS_ROUTER", "")),
             debug_vc_nquads=bool(os.getenv("FEATURE_DEBUG_VC_NQUADS", "")),
         ),
         expose_error_details=bool(os.getenv("EXPOSE_ERROR_DETAILS", "")),

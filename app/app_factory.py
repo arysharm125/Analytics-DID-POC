@@ -16,6 +16,7 @@ from app.routers.advisory_router import router as advisory_router
 from app.routers.demo_division import router as demodiv_router
 from app.routers.dependencies import did_service_lifespan, get_db, get_vault
 from app.routers.didcheck import app as didcheck_router
+from app.routers.docs import api_decription, api_summary
 from app.routers.docs import app as docs_router
 from app.routers.epdw import app as did_router
 from app.routers.health import app as health_router
@@ -49,12 +50,19 @@ def create_app(
 
         lifespan = default_lifespan
 
+    # Fetch features to decide whether to include conditional routes.
+    features = get_config().features
+
     # Create FastAPI app
     app = FastAPI(
         docs_url=None,
         redoc_url=None,
+        title="DIDSvc API",
+        summary=api_summary,
+        description=api_decription,
         lifespan=lifespan,
         version=VERSION,
+        openapi_url=None if features.docs_router is False else "/openapi.json",
     )
 
     # ==========================
@@ -78,16 +86,12 @@ def create_app(
     app.include_router(did_router)
     app.include_router(advisory_router)
 
-    # Conditionally include generic DID router based on feature flag
-    include_didcheck_router = get_config().features.didcheck_router
-    if include_didcheck_router:
+    if features.didcheck_router:
         app.include_router(didcheck_router)
-
-    include_demodiv_router = get_config().features.demodiv_router
-    if include_demodiv_router:
+    if features.demodiv_router:
         app.include_router(demodiv_router)
+    if features.docs_router:
+        app.include_router(docs_router)
 
     app.include_router(health_router)
-    app.include_router(docs_router)
-
     return app

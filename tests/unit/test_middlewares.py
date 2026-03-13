@@ -1,6 +1,6 @@
 """Unit tests for app/middlewares.py."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 from app.config import (
     AppConfig,
     FeatureFlags,
-    MongoCollectionConfig,
     MongoPoolConfig,
     TokenConfig,
     VaultConfig,
@@ -103,6 +102,7 @@ class TestBuildErrorResponse:
                 didcheck_router=False,
                 debug_vc_nquads=False,
                 demodiv_router=False,
+                docs_router=False,
             ),
             expose_error_details=True,
         )
@@ -149,6 +149,7 @@ class TestBuildErrorResponse:
                 didcheck_router=False,
                 debug_vc_nquads=False,
                 demodiv_router=False,
+                docs_router=False,
             ),
             expose_error_details=False,
         )

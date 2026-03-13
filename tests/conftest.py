@@ -254,6 +254,7 @@ def test_config() -> AppConfig:
             didcheck_router=True,
             debug_vc_nquads=True,
             demodiv_router=True,
+            docs_router=True,
         ),
         expose_error_details=True,
     )
