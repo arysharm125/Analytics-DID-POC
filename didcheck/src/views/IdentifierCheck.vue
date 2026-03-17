@@ -97,6 +97,7 @@ const provenanceTreeItems = computed(() => {
       title: `did:web:did.amd.com:${node.uid}`,
       uid: node.uid,
       division: node.division,
+      artefact_type: node.artefact_type,
       truncated: node.truncated,
     }
     if (node.children && node.children.length > 0) {
@@ -666,6 +667,15 @@ watch(() => props.identifier, () => {
                         variant="outlined"
                       >
                         {{ item.division }}
+                      </v-chip>
+                      <v-chip
+                        v-if="item.artefact_type"
+                        size="x-small"
+                        class="ml-2"
+                        variant="outlined"
+                        color="primary"
+                      >
+                        {{ item.artefact_type }}
                       </v-chip>
                       <v-tooltip v-if="item.truncated" location="top">
                         <template #activator="{ props }">

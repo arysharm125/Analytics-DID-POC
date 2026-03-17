@@ -103,11 +103,13 @@ class ProvenanceNode:
     Attributes:
         uid: The UUID identifying the artefact (version_uid if found, otherwise the original provenance uid)
         division: The division identifier of the artefact, or None if not found
+        artefact_type: The type of the artefact.
         truncated: True if the node has children but recursion was stopped (due to depth or child count limits)
         children: List of child ProvenanceNodes, or None if no children or not recursed
     """
     uid: str
     division: str | None
+    artefact_type: str | None
     truncated: bool = False
     children: list[ProvenanceNode] | None = field(default=None)
 
@@ -1402,6 +1404,7 @@ class DIDService:
                 nodes.append(ProvenanceNode(
                     uid=prov_uid,
                     division=None,
+                    artefact_type=None,
                     truncated=False,
                     children=None,
                 ))
@@ -1430,6 +1433,7 @@ class DIDService:
                 nodes.append(ProvenanceNode(
                     uid=artefact["version_uid"],
                     division=artefact.get("division"),
+                    artefact_type=artefact.get("artefact_type"),
                     truncated=False,
                     children=children if children else None,
                 ))
@@ -1438,6 +1442,7 @@ class DIDService:
                 nodes.append(ProvenanceNode(
                     uid=artefact["version_uid"],
                     division=artefact.get("division"),
+                    artefact_type=artefact.get("artefact_type"),
                     truncated=has_children,
                     children=None,
                 ))

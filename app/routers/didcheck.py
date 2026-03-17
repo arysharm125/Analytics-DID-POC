@@ -102,6 +102,11 @@ class ProvenanceNode(BaseModel):
         description="Division of the provenance artefact",
         examples=["advisory", "epdw"],
     )
+    artefact_type: ArtefactTypeStr | None = Field(
+        default=None,
+        description="Type registered for the artefact",
+        examples=["report", "benchmark"],
+    )
     truncated: bool = Field(
         default=False,
         description="True if this node has children but wasn't recursed into (due to depth or count limits)",
@@ -402,6 +407,7 @@ def _service_node_to_response(node: ServiceProvenanceNode) -> ProvenanceNode:
     return ProvenanceNode(
         uid=node.uid,
         division=node.division,
+        artefact_type=node.artefact_type,
         truncated=node.truncated,
         children=children,
     )
