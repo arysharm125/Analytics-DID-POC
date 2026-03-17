@@ -749,8 +749,8 @@ class TestFindByExternalUid:
         assert result is not None
         assert result.division == "epdw"
 
-    def test_find_with_wrong_division_returns_none(self, did_service_no_migrations):
-        """Finding with wrong division filter should return None."""
+    def test_find_with_wrong_division_raises(self, did_service_no_migrations):
+        """Finding with wrong division filter should return raise."""
         did_service = did_service_no_migrations
         external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
 
@@ -758,8 +758,12 @@ class TestFindByExternalUid:
             ArtefactInput(external_uid=external_uid, division="epdw", artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1")
         )
 
-        result = did_service.find_by_external_uid(external_uid, division="advisory")
-        assert result is None
+        with pytest.raises(DivisionMismatchError) as exc:
+            result = did_service.find_by_external_uid(external_uid, division="advisory")
+
+        assert "epdw" in str(exc.value)
+        assert "advisory" in str(exc.value)
+        assert external_uid in str(exc.value)
 
     def test_find_nonexistent_returns_none(self, did_service_no_migrations):
         """Finding non-existent artefact should return None."""
@@ -1311,6 +1315,41 @@ class TestGetDescendantsPaginated:
         assert len(result.descendants) == 0
         assert result.total_count == 5
         assert result.has_more is False
+
+class TestMiscValidations:
+    """
+    Tests for various validations in internal DIDService methods.
+    """
+
+    def test_validate_ids_may_exist(self, did_service_no_migrations, vault_service, vault_mode):
+        """Validating the behavior of validate_ids_may_exist is correct"""
+        did_service = did_service_no_migrations
+        epdw_input = ArtefactInput(
+            external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            division="epdw",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+        )
+        did_service.upsert_artefact(epdw_input)
+
+        advisory_input = ArtefactInput(
+            external_uid="bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+            division="advisory",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+        )
+        did_service.upsert_artefact(advisory_input)
+
+        test_uids = [
+            "95da4dd5-6e48-4c5b-bb91-935983c16d9c" # Exists.
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" # Doesn't exist.
+        ]
+
+        # Ok test (exists in right division or doesn't exist).
+        did_service.validate_ids_may_exist_division(test_uids, "epdw")
+
+        # Test that raises (includes artefact in wrong division).
+        with pytest.raises(DivisionMismatchError) as exc:
+            test_uids.append("bbbbbbbb-cccc-dddd-eeee-ffffffffffff")
+            did_service.validate_ids_may_exist_division(test_uids, "epdw")
 
 
 # =============================================================================

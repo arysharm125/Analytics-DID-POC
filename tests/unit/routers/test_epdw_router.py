@@ -12,9 +12,11 @@ from app.routers.epdw import (
     BenchmarkIterationInput,
     RecordBenchmarkRequest,
     UpdateMultipleArtefactsRequest,
+    record_benchmark,
 )
 from app.services.exceptions import (
     ArtefactsNotFoundError,
+    DivisionMismatchError,
     DuplicateExternalUidsError,
     DuplicateIterationIdsError,
     DuplicateProvenanceError,
@@ -219,7 +221,6 @@ class TestRecordBenchmarkRoute:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        from app.routers.epdw import record_benchmark
 
         request = RecordBenchmarkRequest(
             benchmark_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -257,7 +258,6 @@ class TestRecordBenchmarkRoute:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        from app.routers.epdw import record_benchmark
 
         request = RecordBenchmarkRequest(
             benchmark_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -279,7 +279,6 @@ class TestRecordBenchmarkRoute:
         """Duplicate iteration IDs should raise DuplicateIterationIdsError."""
         did_service = did_service_no_migrations
 
-        from app.routers.epdw import record_benchmark
 
         request = RecordBenchmarkRequest(
             benchmark_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -298,7 +297,6 @@ class TestRecordBenchmarkRoute:
         """Iteration ID matching benchmark ID should raise IterationIdMatchesBenchmarkIdError."""
         did_service = did_service_no_migrations
 
-        from app.routers.epdw import record_benchmark
 
         request = RecordBenchmarkRequest(
             benchmark_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -316,7 +314,6 @@ class TestRecordBenchmarkRoute:
         """Non-existent benchmark provenance should raise ProvenanceNotFoundError."""
         did_service = did_service_no_migrations
 
-        from app.routers.epdw import record_benchmark
 
         request = RecordBenchmarkRequest(
             benchmark_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -335,7 +332,6 @@ class TestRecordBenchmarkRoute:
         """Non-existent iteration provenance should raise ProvenanceNotFoundError."""
         did_service = did_service_no_migrations
 
-        from app.routers.epdw import record_benchmark
 
         request = RecordBenchmarkRequest(
             benchmark_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
@@ -357,7 +353,6 @@ class TestRecordBenchmarkRoute:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        from app.routers.epdw import record_benchmark
 
         # First call - create benchmark and first iteration successfully
         request1 = RecordBenchmarkRequest(
@@ -410,7 +405,6 @@ class TestRecordBenchmarkRoute:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        from app.routers.epdw import record_benchmark
 
         # Create initial version
         request1 = RecordBenchmarkRequest(
@@ -438,7 +432,6 @@ class TestRecordBenchmarkRoute:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        from app.routers.epdw import record_benchmark
 
         # Create initial version
         request1 = RecordBenchmarkRequest(
@@ -478,7 +471,6 @@ class TestRecordBenchmarkRoute:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        from app.routers.epdw import record_benchmark
         from app.services.did_service import ArtefactInput
 
         # First create the benchmark so it exists for provenance validation
@@ -529,7 +521,6 @@ class TestRecordBenchmarkRoute:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        from app.routers.epdw import record_benchmark
 
         # First call - creates everything
         request = RecordBenchmarkRequest(
@@ -563,7 +554,6 @@ class TestRecordBenchmarkRoute:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        from app.routers.epdw import record_benchmark
 
         # First call - create benchmark with 2 iterations
         request1 = RecordBenchmarkRequest(
@@ -615,7 +605,6 @@ class TestRecordBenchmarkRoute:
         did_service = did_service_no_migrations
         vault_service.ensure_division_signing_key("epdw")
 
-        from app.routers.epdw import record_benchmark
 
         # First call - create benchmark + 2 iterations
         request1 = RecordBenchmarkRequest(
@@ -670,6 +659,68 @@ class TestRecordBenchmarkRoute:
         assert response2.iterations[2].status == "created"  # iter-3
         assert response2.iterations[2].version == 1
         assert response2.partial_failure is False
+
+    def test_update_benchmark_wrong_division_raises_409(self, did_service_no_migrations):
+        """Trying to update an artefact as a benchmark when artefact exists in
+        another division should fail."""
+        did_service = did_service_no_migrations
+
+        from app.services.did_service import ArtefactInput
+
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        # Create artefact in advisory division
+        artefact = did_service.upsert_artefact(ArtefactInput(
+            external_uid=external_uid,
+            division="advisory",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+        ))
+
+        # Try to update it via EPDW endpoint
+        request = RecordBenchmarkRequest(
+            benchmark_id=external_uid,
+            iterations=[
+                BenchmarkIterationInput(
+                    iteration_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD2",  # Same
+                ),
+            ],
+        )
+
+        import asyncio
+        with pytest.raises(DivisionMismatchError):
+            asyncio.run(record_benchmark(request, api_token="test-token", did_svc=did_service))
+
+    def test_update_benchmark_iteration_wrong_division_raises_409(self, did_service_no_migrations):
+        """Trying to update an artefact as a benchmark iteration when artefact
+        exists in another division should fail."""
+        did_service = did_service_no_migrations
+
+        from app.services.did_service import ArtefactInput
+
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        # Create artefact in advisory division
+        artefact = did_service.upsert_artefact(ArtefactInput(
+            external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            division="advisory",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+        ))
+
+        # Try to update it via EPDW endpoint
+        request = RecordBenchmarkRequest(
+            benchmark_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            iterations=[
+                BenchmarkIterationInput(
+                    iteration_id=external_uid,
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD2",  # Same
+                ),
+            ],
+        )
+
+        import asyncio
+        with pytest.raises(DivisionMismatchError):
+            asyncio.run(record_benchmark(request, api_token="test-token", did_svc=did_service))
 
 
 # =============================================================================
@@ -851,8 +902,8 @@ class TestUpdateMultipleArtefactsRoute:
             asyncio.run(update_multiple_artefacts(request, api_token="test-token", did_svc=did_service))
         assert "99999999-9999-9999-9999-999999999999" in str(exc.value)
 
-    def test_update_multiple_artefacts_wrong_division_raises_404(self, did_service_no_migrations):
-        """Artefact in different division should raise ArtefactsNotFoundError."""
+    def test_update_multiple_artefacts_wrong_division_raises_409(self, did_service_no_migrations):
+        """Artefact in different division should raise DivisionMismatchError."""
         did_service = did_service_no_migrations
 
         from app.routers.epdw import update_multiple_artefacts
@@ -873,7 +924,7 @@ class TestUpdateMultipleArtefactsRoute:
         )
 
         import asyncio
-        with pytest.raises(ArtefactsNotFoundError):
+        with pytest.raises(DivisionMismatchError):
             asyncio.run(update_multiple_artefacts(request, api_token="test-token", did_svc=did_service))
 
     def test_update_multiple_artefacts_invalid_provenance_raises_409(self, did_service_no_migrations):

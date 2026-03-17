@@ -303,6 +303,7 @@ async def record_benchmark(
     **Pre-validation Phase:**
     - Validates iteration list is non-empty
     - Checks for duplicate iteration IDs
+    - Validates benchmark and iterations, if they exist, they belong to EPDW division
     - Validates all provenance items exist in did_artefacts
 
     **Processing:**
@@ -345,6 +346,11 @@ async def record_benchmark(
 
     if matching_benchmark_ids:
         raise IterationIdMatchesBenchmarkIdError(matching_benchmark_ids)
+
+    # PRE-VALIDATION: Check that iterations and benchmarks, if they exist,
+    # they exist in EPDW division.
+    all_ids = [*iteration_ids, request.benchmark_id]
+    did_svc.validate_ids_may_exist_division(all_ids, _EPDW_DIVISION)
 
     # PRE-VALIDATION: Validate all provenance items exist
     # Collect all provenance UIDs (benchmark + all iterations)

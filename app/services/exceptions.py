@@ -44,16 +44,19 @@ class DuplicateProvenanceError(DIDServiceError, HTTPException):
 
 
 class DivisionMismatchError(DIDServiceError, HTTPException):
-    """Raised when attempting to change an artefact's division."""
+    """
+    Raised when attempting to change an artefact's division or trying to find
+    an artefact of the wrong division.
+    """
 
-    def __init__(self, external_uid: str, existing_division: str, new_division: str):
+    def __init__(self, external_uid: str, existing_division: str, target_division: str):
         self.external_uid = external_uid
         self.existing_division = existing_division
-        self.new_division = new_division
+        self.target_division = target_division
         detail = (
             f"Division mismatch for artefact '{external_uid}': "
             f"existing division is '{existing_division}', "
-            f"but attempted to set '{new_division}'. Division cannot be changed."
+            f"but target division is '{target_division}'. Division cannot be changed."
         )
         super().__init__(status_code=409, detail=detail)
 

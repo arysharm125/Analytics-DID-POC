@@ -740,9 +740,6 @@ class DIDService:
         """
         Validate that all identifiers in the list exist in did_artefacts.
 
-        Note: The list is already canonicalized to UUIDs by the
-        DIDOrUUIDList type validator.
-
         Args:
             id_list: List of canonicalized UUID strings
             collection: The did_artefacts collection
@@ -760,6 +757,35 @@ class DIDService:
             })
             if not exists:
                 raise ProvenanceNotFoundError(uuid_str)
+
+    def validate_ids_may_exist_division(self, id_list: DIDOrUUIDList, division: DivisionStr):
+        """
+        Validates whether the given set of ids exist in a given division. It is
+        ok if the given artefact id does not exist, but if the artefact does
+        exist, then it MUST be in the given division, otherwise this raises an
+        exception.
+
+        Args:
+            id_list: List of canonicalized UUID strings
+            division: The target division
+
+        Raises:
+            DivisionMismatchError: If an artefact is in the wrong division.
+        """
+        collection = self.db.get_collection(self._artefacts_col_name)
+        for uuid_str in id_list:
+            # Check if this UUID exists as version_uid or external_uid in did_artefacts
+            exists = collection.find_one({
+                "$or": [
+                    {"version_uid": uuid_str},
+                    {"external_uid": uuid_str}
+                ]
+            })
+            if not exists:
+                continue
+            if exists["division"] != division:
+                raise DivisionMismatchError(uuid_str, exists["division"], division)
+
 
     def _find_artefact_by_uid(self, uid: CanonicalizedUUID, collection) -> dict | None:
         """
@@ -817,7 +843,7 @@ class DIDService:
                 raise DivisionMismatchError(
                     external_uid=artefact.external_uid,
                     existing_division=latest_doc["division"],
-                    new_division=artefact.division,
+                    target_division=artefact.division,
                 )
 
             # Validate at least one thing changed (either artefact_hash,
@@ -1048,16 +1074,21 @@ class DIDService:
 
         Returns:
             ArtefactRecord if found, None otherwise
+
+        Raises:
+            DivisionMismatchError: If the artefact is in the wrong division.
         """
         collection = self.db.get_collection(self._artefacts_col_name)
 
         query: dict[str, Any] = {"external_uid": external_uid}
-        if division is not None:
-            query["division"] = division
-
         doc = collection.find_one(query, sort=[("version", -1)])
         if doc is None:
             return None
+
+        # Double check division.
+        if division is not None and doc["division"] != division:
+            raise DivisionMismatchError(external_uid, doc["division"], division)
+
         # Remove MongoDB _id before returning
         doc.pop("_id", None)
         return ArtefactRecord(**doc)
