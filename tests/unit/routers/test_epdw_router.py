@@ -4,6 +4,8 @@ Tests the /epdw/record-benchmark and /epdw/update-multiple-artefacts routes
 including Pydantic model validation and route logic.
 """
 
+from unittest.mock import patch
+
 import pytest
 from pydantic import ValidationError
 
@@ -452,6 +454,72 @@ class TestRecordBenchmarkRoute:
         assert response2.iterations[1].status == "unchanged"
         assert response2.iterations[1].version == 1  # Same version
         assert response2.iterations[1].error is None
+
+    def test_record_benchmark_exception_during_iteration_processing(self, did_service_no_migrations, vault_service):
+        """Exception during iteration processing should be caught and result in partial_failure=True."""
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+
+        import asyncio
+
+        request = RecordBenchmarkRequest(
+            benchmark_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            iterations=[
+                BenchmarkIterationInput(
+                    iteration_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+                ),
+                BenchmarkIterationInput(
+                    iteration_id="bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+                ),
+                BenchmarkIterationInput(
+                    iteration_id="cccccccc-dddd-eeee-ffff-000000000000",
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD3",
+                ),
+            ],
+        )
+
+        # Mock upsert_artefact to fail on the second iteration
+        original_upsert = did_service.upsert_artefact
+        call_count = [0]
+
+        def mock_upsert(artefact_input):
+            call_count[0] += 1
+            # Succeed for benchmark (call 1)
+            # Succeed for iteration 1 (call 2)
+            # Fail for iteration 2 (call 3)
+            # Succeed for iteration 3 (call 4)
+            if call_count[0] == 3:
+                raise RuntimeError("DB write failed")
+            return original_upsert(artefact_input)
+
+        with patch.object(did_service, 'upsert_artefact', side_effect=mock_upsert):
+            response = asyncio.run(record_benchmark(request, api_token="test-token", did_svc=did_service))
+
+        # Verify response
+        assert response.benchmark_status == "created"
+        assert response.partial_failure is True
+
+        # Check iteration results
+        assert len(response.iterations) == 3
+
+        # Iteration 1 should succeed
+        assert response.iterations[0].status == "created"
+        assert response.iterations[0].error is None
+        assert response.iterations[0].iteration_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+        # Iteration 2 should fail
+        assert response.iterations[1].status == "error"
+        assert response.iterations[1].error == "DB write failed"
+        assert response.iterations[1].iteration_id == "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+        assert response.iterations[1].version == 0
+
+        # Iteration 3 should succeed (processing continued after error)
+        assert response.iterations[2].status == "created"
+        assert response.iterations[2].error is None
+        assert response.iterations[2].iteration_id == "cccccccc-dddd-eeee-ffff-000000000000"
 
     def test_record_benchmark_updates_existing_benchmark(self, did_service_no_migrations, vault_service):
         """Calling with existing benchmark_id should create new version."""
@@ -1070,6 +1138,89 @@ class TestUpdateMultipleArtefactsRoute:
         with pytest.raises(ArtefactsNotFoundError):
             # Pre-validation will catch this before processing
             asyncio.run(update_multiple_artefacts(request, api_token="test-token", did_svc=did_service))
+
+    def test_update_multiple_artefacts_exception_during_update_processing(self, did_service_no_migrations):
+        """Exception during update processing should be caught and result in partial_failure=True."""
+        did_service = did_service_no_migrations
+
+        import asyncio
+
+        from app.routers.epdw import update_multiple_artefacts
+        from app.services.did_service import ArtefactInput
+
+        # Create three existing artefacts
+        artefact_uids = [
+            "aaaaaaaa-0000-0000-0000-000000000000",
+            "bbbbbbbb-0000-0000-0000-000000000000",
+            "cccccccc-0000-0000-0000-000000000000",
+        ]
+
+        for uid in artefact_uids:
+            did_service.upsert_artefact(ArtefactInput(
+                external_uid=uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+            ))
+
+        request = UpdateMultipleArtefactsRequest(
+            updates=[
+                ArtefactUpdateInput(
+                    external_uid="aaaaaaaa-0000-0000-0000-000000000000",
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+                ),
+                ArtefactUpdateInput(
+                    external_uid="bbbbbbbb-0000-0000-0000-000000000000",
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD3",
+                ),
+                ArtefactUpdateInput(
+                    external_uid="cccccccc-0000-0000-0000-000000000000",
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD4",
+                ),
+            ]
+        )
+
+        # Mock upsert_artefact to fail on the second update
+        original_upsert = did_service.upsert_artefact
+        call_count = [0]
+
+        def mock_upsert(artefact_input):
+            call_count[0] += 1
+            # Succeed for update 1 (call 1)
+            # Fail for update 2 (call 2)
+            # Succeed for update 3 (call 3)
+            if call_count[0] == 2:
+                raise RuntimeError("Connection lost")
+            return original_upsert(artefact_input)
+
+        with patch.object(did_service, 'upsert_artefact', side_effect=mock_upsert):
+            response = asyncio.run(update_multiple_artefacts(request, api_token="test-token", did_svc=did_service))
+
+        # Verify response
+        assert response.total == 3
+        assert response.successful == 2
+        assert response.failed == 1
+        assert response.partial_failure is True
+
+        # Check update results
+        assert len(response.results) == 3
+
+        # Update 1 should succeed
+        assert response.results[0].status == "updated"
+        assert response.results[0].error is None
+        assert response.results[0].external_uid == "aaaaaaaa-0000-0000-0000-000000000000"
+        assert response.results[0].version == 2
+
+        # Update 2 should fail
+        assert response.results[1].status == "error"
+        assert response.results[1].error == "Connection lost"
+        assert response.results[1].external_uid == "bbbbbbbb-0000-0000-0000-000000000000"
+        assert response.results[1].version == 0
+
+        # Update 3 should succeed (processing continued after error)
+        assert response.results[2].status == "updated"
+        assert response.results[2].error is None
+        assert response.results[2].external_uid == "cccccccc-0000-0000-0000-000000000000"
+        assert response.results[2].version == 2
 
     def test_update_multiple_artefacts_preserves_artefact_type(self, did_service_no_migrations):
         """Artefact type should be preserved from existing artefact."""
