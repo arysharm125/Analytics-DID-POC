@@ -740,7 +740,8 @@ class DIDService:
         self, id_list: DIDOrUUIDList, collection
     ) -> None:
         """
-        Validate that all identifiers in the list exist in did_artefacts.
+        Validate that all identifiers in the list exist in did_artefacts. This
+        is the internal version of _validate_id_list_exists.
 
         Args:
             id_list: List of canonicalized UUID strings
@@ -759,6 +760,19 @@ class DIDService:
             })
             if not exists:
                 raise ProvenanceNotFoundError(uuid_str)
+
+    def validate_id_list_exists(self, id_list: DIDOrUUIDList) -> None:
+        """
+        Validate that all identifiers in the list exist in did_artefacts.
+
+        Args:
+            id_list: List of canonicalized UUID strings
+
+        Raises:
+            ProvenanceNotFoundError: If an identifier doesn't exist
+        """
+        collection = self.db.get_collection(self._artefacts_col_name)
+        self._validate_id_list_exists(id_list, collection)
 
     def validate_ids_may_exist_division(self, id_list: DIDOrUUIDList, division: DivisionStr):
         """

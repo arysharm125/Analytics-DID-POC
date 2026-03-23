@@ -16,7 +16,7 @@ from app.routers.basetypes import (
 )
 from app.routers.dependencies import APITokenDep401Response, DIDServiceDep, EPDWTokenDep
 from app.routers.responses import bad_request_response, conflict_response, not_found_response
-from app.services.did_service import ArtefactInput, DIDService, artefact_has_changes
+from app.services.did_service import ArtefactInput, artefact_has_changes
 from app.services.exceptions import (
     ArtefactNoChangesError,
     ArtefactsNotFoundError,
@@ -352,18 +352,15 @@ async def record_benchmark(
     all_ids = [*iteration_ids, request.benchmark_id]
     did_svc.validate_ids_may_exist_division(all_ids, _EPDW_DIVISION)
 
-    # PRE-VALIDATION: Validate all provenance items exist
-    # Collect all provenance UIDs (benchmark + all iterations)
-    collection = did_svc.db.get_collection(DIDService._artefacts_col_name)
-
-    # Validate benchmark provenance if present
-    if request.provenance:
-        did_svc._validate_id_list_exists(request.provenance, collection)
-
-    # Validate each iteration's provenance if present
+    # PRE-VALIDATION: Collect all provenance UIDs (benchmark + all iterations) and
+    # validate all of them exist. It's ok for provenance to be repeated, so use a
+    # set to de-dupe and speed up the check.
+    all_provenance = set(request.provenance or [])
     for iteration in request.iterations:
-        if iteration.provenance:
-            did_svc._validate_id_list_exists(iteration.provenance, collection)
+        all_provenance.update(iteration.provenance or [])
+    if len(all_provenance) > 0:
+        did_svc.validate_id_list_exists(list(all_provenance))
+
 
     # CREATE OR UPDATE BENCHMARK ARTEFACT (with idempotent behavior)
     # Check if benchmark already exists
@@ -578,16 +575,14 @@ async def update_multiple_artefacts(
     if missing:
         raise ArtefactsNotFoundError(missing, _EPDW_DIVISION)
 
-    # PRE-VALIDATION: Collect and validate all provenance UIDs
-    collection = did_svc.db.get_collection(DIDService._artefacts_col_name)
-    all_provenance_uids = set()
+    # PRE-VALIDATION: Collect all provenance UIDs (benchmark + all iterations) and
+    # validate all of them exist. It's ok for provenance to be repeated, so use a
+    # set to de-dupe and speed up the check.
+    all_provenance = set()
     for update in request.updates:
-        if update.provenance:
-            all_provenance_uids.update(update.provenance)
-
-    # Validate each unique provenance item exists
-    for prov_uid in all_provenance_uids:
-        did_svc._validate_id_list_exists([prov_uid], collection)
+        all_provenance.update(update.provenance or [])
+    if len(all_provenance) > 0:
+        did_svc.validate_id_list_exists(list(all_provenance))
 
     # PROCESS UPDATES (partial-success mode)
     results: list[ArtefactUpdateResult] = []

@@ -14,6 +14,7 @@ from app.routers.epdw import (
     UpdateMultipleArtefactsRequest,
     record_benchmark,
 )
+from app.services.did_service import ArtefactInput
 from app.services.exceptions import (
     ArtefactsNotFoundError,
     DivisionMismatchError,
@@ -347,6 +348,58 @@ class TestRecordBenchmarkRoute:
         with pytest.raises(ProvenanceNotFoundError) as exc:
             asyncio.run(record_benchmark(request, api_token="test-token", did_svc=did_service))
         assert "88888888-8888-8888-8888-888888888888" in str(exc.value)
+
+    def test_record_benchmark_duplicated_provenance_ok(self, did_service_no_migrations, vault_service):
+        """Trying to record with the same provenance in benchmark and multiple iterations is ok."""
+        did_service = did_service_no_migrations
+        vault_service.ensure_division_signing_key("epdw")
+        vault_service.ensure_division_signing_key("advisory")
+
+        # Create provenance item in different division.
+        did_service.upsert_artefact(ArtefactInput(
+            external_uid="11111111-2222-3333-4444-555555555555",
+            division="advisory",
+            artefact_metadata={"foo":"bar"},
+        ))
+
+        # Record a benchmark and multiple iterations, all including the same
+        # provenance item.
+        request = RecordBenchmarkRequest(
+            benchmark_id="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            artefact_metadata={"name": "SPEC CPU 2017"},
+            provenance=["11111111-2222-3333-4444-555555555555"],
+            iterations=[
+                BenchmarkIterationInput(
+                    iteration_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+                    artefact_metadata={"run": 1, "score": 123.45},
+                    provenance=["11111111-2222-3333-4444-555555555555"],
+                ),
+                BenchmarkIterationInput(
+                    iteration_id="bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+                    artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+                    artefact_metadata={"run": 1, "score": 123.45},
+                    provenance=["11111111-2222-3333-4444-555555555555"],
+                )
+            ],
+        )
+
+        # Call the endpoint function directly
+        import asyncio
+        response = asyncio.run(record_benchmark(request, api_token="test-token", did_svc=did_service))
+
+        # Verify API result.
+        assert response.partial_failure is False
+        assert len(response.iterations) == 2
+        for iter_result in response.iterations:
+            assert iter_result.status == "created"
+
+        # Verify the objects in the DB all have the right provenance.
+        assert "11111111-2222-3333-4444-555555555555" in did_service.find_by_external_uid("95da4dd5-6e48-4c5b-bb91-935983c16d9c").provenance
+        assert "11111111-2222-3333-4444-555555555555" in did_service.find_by_external_uid("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").provenance
+        assert "11111111-2222-3333-4444-555555555555" in did_service.find_by_external_uid("bbbbbbbb-cccc-dddd-eeee-ffffffffffff").provenance
+
 
     def test_record_benchmark_partial_failure_mode(self, did_service_no_migrations, vault_service):
         """Iterations with unchanged data should return status='unchanged' (not an error)."""
