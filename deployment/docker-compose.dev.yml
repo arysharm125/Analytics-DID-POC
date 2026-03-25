@@ -26,8 +26,8 @@ services:
       - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - api
-    ports:
-      - "8092:80"
+    expose:
+      - "8090"
 
 
   didcheck:  # Nginx for didcheck SPA frontend (didcheck.amd.com)
@@ -44,5 +44,5 @@ services:
       - ../.env.dev
     environment:
       - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
-    ports:
-      - "8090:80"
+    expose:
+      - "8092"
