@@ -13,7 +13,7 @@ services:
       dockerfile: deployment/Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log
     env_file:
-      - ../.env.dev
+      - /etc/didsvc/env
     restart: always
     expose:
       - "8000"   # private, nginx will access this
@@ -41,7 +41,7 @@ services:
     volumes:
       - ./nginx/nginx.didcheck-dev.conf:/etc/nginx/templates/nginx.conf.template:ro
     env_file:
-      - ../.env.dev
+      - /etc/didsvc/env
     environment:
       - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
     expose:
