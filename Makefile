@@ -18,6 +18,7 @@
 
 PYTHON := python3
 VENV := .venv
+AUDIT_REPORT_FILE := audit-report.txt
 
 
 ######################################################################
@@ -110,6 +111,8 @@ didsvc-loadtest-std: venv-check didsvc-loadtest-up ## Run a standard loadtest ex
 didsvc-loadtest-stress: venv-check didsvc-loadtest-up ## Run a stress loadtest execution
 	python benchmarks/scripts/run_benchmark.py --users 1000  --duration 5m --spawn-rate 5
 
+didsvc-audit: venv-check ## Perform a pip-audit in backend dependencies
+	pip-audit -r requirements.txt --strict
 
 ######################################################################
 ## Frontend targets
@@ -120,6 +123,10 @@ didcheck-install: nvm-check ## Install dependencies for DIDCheck development
 
 didcheck-dev: nvm-check ## Run DIDCheck local development server
 	(cd didcheck && npm run dev)
+
+didcheck-audit: nvm-check ## Perform an npm audit in didcheck dependencies
+	(cd didcheck && npm audit)
+	(cd didcheck/tests/backend-compat && npm audit)
 
 
 ######################################################################
@@ -139,6 +146,40 @@ example-excelreport-install: venv-check ## Install dependencies for excel_report
 example-excelreport-dev: venv-check ## Run excel_report example dev environment
 	(cd examples/excel_report && uvicorn main:app --reload --port 3001)
 
+owasp-depcheck: ## Run OWASP depedency-check tool in both front and back end code
+	@dependency-check.sh \
+		--project "DIDService" \
+		--scan ./requirements.txt \
+		--scan ./didcheck \
+		--enableExperimental \
+		--format ./scripts/depcheck-txt-summary.vsl \
+		-o ./dependency-check-report.txt \
+		--junitFailOnCVSS 0
+
+trivy-check: ## Run trivy check in both front and back end code
+	@docker run --rm \
+		-v $(PWD):/project \
+		-v ~/.cache/trivy:/root/.cache/trivy \
+		aquasec/trivy:0.69.3 \
+		fs /project
+
+audit-report-inner: venv-check nvm-check
+	@echo "Full DIDservice Audit Report"
+	@date
+	@echo "-------------------- DIDSvc audit task --------------------"
+	@$(MAKE) didsvc-audit
+	@echo "-------------------- DIDCheck audit task --------------------"
+	@$(MAKE) didcheck-audit
+	@echo "-------------------- trivy audit task --------------------"
+	@$(MAKE) trivy-check
+	@echo "-------------------- OWASP depcheck task --------------------"
+	@$(MAKE) owasp-depcheck
+
+audit-report: venv-check nvm-check ## Run all audit/check tasks and write a text report file
+	@rm -f $(AUDIT_REPORT_FILE)
+	@$(MAKE) audit-report-inner | tee $(AUDIT_REPORT_FILE)
+	@cat dependency-check-report.txt >> $(AUDIT_REPORT_FILE)
+	@cat $(AUDIT_REPORT_FILE)
 
 ######################################################################
 ## Docker targets

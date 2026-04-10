@@ -18,3 +18,5 @@ ruff>=0.8.0
 
 # Container-based testing (requires Docker)
 testcontainers[mongodb]>=3.7.0
+
+pip-audit>=2.10.0

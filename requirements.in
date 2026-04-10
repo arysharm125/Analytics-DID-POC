@@ -4,9 +4,9 @@ pymongo
 hvac
 pynacl
 base58
-requests
+requests>=2.33.0
 certifi
-urllib3==2.6.0
+urllib3>=2.6.3
 pydantic==2.9.2
 python-dotenv
 pyld>=2.0.4

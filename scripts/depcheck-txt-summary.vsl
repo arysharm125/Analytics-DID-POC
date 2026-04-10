@@ -1,0 +1,67 @@
+#**
+ See VSL templates in https://github.com/jeremylong/DependencyCheck/tree/main/core/src/main/resources/templates for information about available values
+ *###
+#set($double_hash = '##')
+#set($triple_hash = '###')
+# Dependency-Check Report
+
+[How to read the report](https://jeremylong.github.io/DependencyCheck/general/thereport.html) | [Suppressing false positives](https://jeremylong.github.io/DependencyCheck/general/suppression.html)
+
+$double_hash Project: $applicationName
+
+* application: $applicationName
+#if($applicationVersion)
+* application version: $applicationVersion
+#end
+* NVD API Last Checked: ${properties.getMetaData().get("NVD API Last Checked")}
+* NVD API Last Modified: ${properties.getMetaData().get("NVD API Last Modified")}
+* scan date: $scanDateXML
+* DependencyCheck version: $version
+#if($groupID)
+* groupID: $groupID
+#end
+#if($artifactID)
+* artifactID: $artifactID
+#end
+
+$double_hash Vulnerabilities
+
+#set($vulnerableDependencies = [])
+#foreach($dependency in $dependencies)
+    #if($dependency.getVulnerabilities().size()>0)
+        #set($ignore = $vulnerableDependencies.add($dependency))
+    #end
+#end
+#if($artifactID)
+There are $vulnerableDependencies.size() vulnerable dependencies for *$artifactID*
+#else
+There are $vulnerableDependencies.size() vulnerable dependencies for *$applicationName*
+#end
+#foreach($dependency in $vulnerableDependencies)
+
+$triple_hash $dependency.DisplayFileName
+
+    #set($depDesc = $dependency.description)
+    #if($depDesc && $depDesc.length() > 0)
+$depDesc.replaceAll("\n", " ").replaceAll("\s+", " ").trim()
+
+    #end
+    #foreach($vuln in $dependency.getVulnerabilities(true))
+        #if($vuln.description.length() < 80)
+* [$vuln.name](https://nvd.nist.gov/vuln/detail/$vuln.name): $vuln.description
+        #else
+* [$vuln.name](https://nvd.nist.gov/vuln/detail/$vuln.name): $vuln.description.substring(0,80)…
+        #end
+    * $vuln.getCwes().toString()
+        #if($vuln.cvssV3)
+    * CVSSv3 base severity / score: $vuln.cvssV3.cvssData.baseSeverity / $vuln.cvssV3.cvssData.baseScore
+        #else
+            #if($vuln.cvssV2)
+    * CVSSv2 base severity / score: $vuln.cvssV2.cvssData.baseSeverity / $vuln.cvssV2.cvssData.baseScore
+            #end
+        #end
+    #end
+#end
+
+Please check the attached HTML report to see full descriptions.
+Vulnerabilities might be reoccurring if they where suppressed (in the suppression-xml file) using an `until` date.

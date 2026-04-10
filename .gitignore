@@ -25,3 +25,7 @@ htmlcov/
 
 # Ignore local mock vault data when running a dev docker.
 local_vault_data
+
+# Audit report output
+audit-report.txt
+dependency-check*

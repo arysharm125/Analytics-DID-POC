@@ -64,7 +64,7 @@ python-dotenv==1.2.1
     #   uvicorn
 pyyaml==6.0.3
     # via uvicorn
-requests==2.32.5
+requests==2.33.1
     # via
     #   -r requirements.in
     #   hvac
@@ -80,7 +80,7 @@ typing-extensions==4.15.0
     #   typing-inspection
 typing-inspection==0.4.2
     # via fastapi
-urllib3==2.6.0
+urllib3==2.6.3
     # via
     #   -r requirements.in
     #   requests
