@@ -29,3 +29,4 @@ local_vault_data
 # Audit report output
 audit-report.txt
 dependency-check*
+fulltest-report.txt
