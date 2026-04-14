@@ -282,6 +282,83 @@ class DescendantsResponse(BaseModel):
     )
 
 
+class FieldDiffInfo(BaseModel):
+    """Represents a change in a simple field."""
+
+    old_value: Any | None = Field(
+        ...,
+        description="The value in the source version",
+    )
+    new_value: Any | None = Field(
+        ...,
+        description="The value in the target version",
+    )
+
+
+class ListDiffInfo(BaseModel):
+    """Represents changes in a list field (like provenance)."""
+
+    added: list[str] = Field(
+        ...,
+        description="Items that were added in the target version",
+        examples=[[]],
+    )
+    removed: list[str] = Field(
+        ...,
+        description="Items that were removed from the source version",
+        examples=[[]],
+    )
+
+
+class VersionDiffResponse(BaseModel):
+    """Response model for version diff endpoint."""
+
+    source_version_uid: UUIDString = Field(
+        ...,
+        description="The UID of the source (base) version",
+        examples=[_example_random_uuid],
+    )
+    target_version_uid: UUIDString = Field(
+        ...,
+        description="The UID of the target (comparison) version",
+        examples=["b8ff3b79-863f-4fa9-84ba-0067663f2b04"],
+    )
+    source_version: int = Field(
+        ...,
+        description="The version number of the source",
+        examples=[1, 2],
+    )
+    target_version: int = Field(
+        ...,
+        description="The version number of the target",
+        examples=[2, 3],
+    )
+    artefact_hash: FieldDiffInfo | None = Field(
+        default=None,
+        description="Diff for artefact_hash field (None if unchanged)",
+    )
+    artefact_metadata: FieldDiffInfo | None = Field(
+        default=None,
+        description="Diff for artefact_metadata field (None if unchanged)",
+    )
+    provenance: ListDiffInfo | None = Field(
+        default=None,
+        description="Diff for provenance list (None if unchanged)",
+    )
+    backlink: FieldDiffInfo | None = Field(
+        default=None,
+        description="Diff for backlink field (None if unchanged)",
+    )
+    division: FieldDiffInfo | None = Field(
+        default=None,
+        description="Diff for division field (None if unchanged)",
+    )
+    artefact_type: FieldDiffInfo | None = Field(
+        default=None,
+        description="Diff for artefact_type field (None if unchanged)",
+    )
+
+
 class DIDOverviewResponse(BaseModel):
     """Response model for DID overview endpoint."""
 
@@ -549,6 +626,92 @@ def artefact_descendants(
         page_size=result.page_size,
         has_more=result.has_more,
     )
+
+
+@app.get(
+    "/{uid}/diff/{compare_uid}",
+    responses={**APITokenDep401Response, **not_found_response()},
+    response_model_exclude_none=True,
+)
+def artefact_version_diff(
+    uid: PathUUID,
+    compare_uid: Annotated[
+        UUIDString,
+        Path(
+            description="The version UID to compare against",
+            examples=["b8ff3b79-863f-4fa9-84ba-0067663f2b04"],
+        ),
+    ],
+    api_token: DIDCheckTokenDep,
+    did_svc: DIDServiceDep,
+) -> VersionDiffResponse:
+    """Compare two versions of an artefact and return structured diff.
+
+    Compares the version identified by {uid} (source/base) against the version
+    identified by {compare_uid} (target). Returns a structured diff showing
+    changes in artefact_hash, artefact_metadata, provenance, backlink, division,
+    and artefact_type.
+
+    Fields that haven't changed are returned as None.
+
+    Args:
+        uid: The source/base version UID (currently viewed version)
+        compare_uid: The target version UID to compare against
+
+    Returns:
+        VersionDiffResponse with field-level differences
+
+    Raises:
+        404: If either artefact is not found
+        400: If the two UIDs belong to different artefacts (different external_uid)
+    """
+
+    # Compute diff using service
+    diff = did_svc.compute_version_diff(source_uid=uid, target_uid=compare_uid)
+
+    # Convert service dataclasses to Pydantic response models
+    response = VersionDiffResponse(
+        source_version_uid=diff.source_version_uid,
+        target_version_uid=diff.target_version_uid,
+        source_version=diff.source_version,
+        target_version=diff.target_version,
+    )
+
+    # Convert FieldDiff objects
+    if diff.artefact_hash is not None:
+        response.artefact_hash = FieldDiffInfo(
+            old_value=diff.artefact_hash.old_value,
+            new_value=diff.artefact_hash.new_value,
+        )
+    if diff.artefact_metadata is not None:
+        response.artefact_metadata = FieldDiffInfo(
+            old_value=diff.artefact_metadata.old_value,
+            new_value=diff.artefact_metadata.new_value,
+        )
+    if diff.backlink is not None:
+        response.backlink = FieldDiffInfo(
+            old_value=diff.backlink.old_value,
+            new_value=diff.backlink.new_value,
+        )
+    if diff.division is not None:
+        response.division = FieldDiffInfo(
+            old_value=diff.division.old_value,
+            new_value=diff.division.new_value,
+        )
+    if diff.artefact_type is not None:
+        response.artefact_type = FieldDiffInfo(
+            old_value=diff.artefact_type.old_value,
+            new_value=diff.artefact_type.new_value,
+        )
+
+    # Convert ListDiff object
+    if diff.provenance is not None:
+        response.provenance = ListDiffInfo(
+            added=diff.provenance.added,
+            removed=diff.provenance.removed,
+        )
+
+    return response
 
 
 # ==========================

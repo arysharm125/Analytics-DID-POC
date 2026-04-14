@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { fetchArtefactOverview, fetchVC, fetchArtefact as fetchArtefactApi, fetchProvenance as fetchProvenanceApi, fetchArtefactVersions as fetchArtefactVersionsApi, fetchDescendants as fetchDescendantsApi } from '@/services/api'
+import { fetchArtefactOverview, fetchVC, fetchArtefact as fetchArtefactApi, fetchProvenance as fetchProvenanceApi, fetchArtefactVersions as fetchArtefactVersionsApi, fetchDescendants as fetchDescendantsApi, fetchVersionDiff as fetchVersionDiffApi } from '@/services/api'
 
 export const useDIDStore = defineStore('did', () => {
   // State
@@ -94,6 +94,16 @@ export const useDIDStore = defineStore('did', () => {
   }
 
   /**
+   * Fetch version diff between two artefact versions
+   * @param {string} sourceUid - The base version UID (currently viewed version)
+   * @param {string} targetUid - The version UID to compare against
+   * @returns {Promise<Object>} The diff response with field-level differences
+   */
+  async function fetchVersionDiff(sourceUid, targetUid) {
+    return await fetchVersionDiffApi(sourceUid, targetUid)
+  }
+
+  /**
    * Clear the current overview data
    */
   function clearCurrent() {
@@ -121,6 +131,7 @@ export const useDIDStore = defineStore('did', () => {
     fetchProvenance,
     fetchVersions,
     fetchDescendants,
+    fetchVersionDiff,
     clearCurrent,
     clearCache
   }
