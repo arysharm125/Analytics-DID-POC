@@ -8,7 +8,15 @@ from pydantic import BaseModel, Field
 
 from app.config import get_config
 from app.did_utils.jsonld import canonicalize_document
-from app.routers.basetypes import ArtefactTypeStr, DivisionStr, Multihash, PathUUID, UUIDString
+from app.routers.basetypes import (
+    ArtefactTypeStr,
+    ArtefactVersionsResponse,
+    DivisionStr,
+    Multihash,
+    PathUUID,
+    UUIDString,
+    VersionInfo,
+)
 from app.routers.dependencies import APITokenDep401Response, DIDCheckTokenDep, DIDServiceDep
 from app.routers.responses import not_found_response
 from app.services.did_service import ProvenanceNode as ServiceProvenanceNode
@@ -173,44 +181,6 @@ class LatestVersionInfo(BaseModel):
         ...,
         description="Whether the latest version is revoked",
         examples=[False],
-    )
-
-
-class VersionInfo(BaseModel):
-    """Information about a single version of an artefact."""
-
-    version: int = Field(
-        ...,
-        description="Version number",
-        examples=[1, 2, 3],
-    )
-    version_uid: UUIDString = Field(
-        ...,
-        description="UUID identifying this specific version",
-        examples=["b8ff3b79-863f-4fa9-84ba-0067663f2b04"],
-    )
-    creation_date: datetime = Field(
-        ...,
-        description="Timestamp when this version was created",
-    )
-    revoked: bool = Field(
-        ...,
-        description="Whether this version is revoked",
-        examples=[False],
-    )
-
-
-class ArtefactVersionsResponse(BaseModel):
-    """Response model for artefact versions endpoint."""
-
-    external_uid: UUIDString = Field(
-        ...,
-        description="UUID identifying the artefact across versions",
-        examples=[_example_random_uuid],
-    )
-    versions: list[VersionInfo] = Field(
-        ...,
-        description="List of all versions sorted by version number (ascending)",
     )
 
 

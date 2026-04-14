@@ -1348,3 +1348,170 @@ class TestUpdateMultipleArtefactsRoute:
         assert response.successful == 3
         assert response.failed == 0
         assert response.partial_failure is False
+
+
+# =============================================================================
+# ArtefactVersions Route Tests
+# =============================================================================
+
+
+class TestArtefactVersionsRoute:
+    """Tests for /epdw/{uid}/versions endpoint logic."""
+
+    def test_returns_all_versions_for_epdw_artefact(self, did_service_no_migrations):
+        """Happy path - returns all versions for artefact in EPDW division."""
+        did_service = did_service_no_migrations
+
+        from app.routers.epdw import artefact_versions
+        from app.services.did_service import ArtefactInput
+
+        # Create multiple versions in EPDW division
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(ArtefactInput(
+            external_uid=external_uid,
+            division="epdw",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+        ))
+
+        v2 = did_service.upsert_artefact(ArtefactInput(
+            external_uid=external_uid,
+            division="epdw",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+        ))
+
+        v3 = did_service.upsert_artefact(ArtefactInput(
+            external_uid=external_uid,
+            division="epdw",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD3",
+        ))
+
+        # Call endpoint
+        import asyncio
+        response = asyncio.run(artefact_versions(external_uid, api_token="test-token", did_svc=did_service))
+
+        # Verify response
+        assert response.external_uid == external_uid
+        assert len(response.versions) == 3
+        assert response.versions[0].version == 1
+        assert response.versions[1].version == 2
+        assert response.versions[2].version == 3
+
+    def test_returns_404_when_artefact_in_different_division(self, did_service_no_migrations):
+        """Artefact in different division should raise ArtefactNotFoundError."""
+        did_service = did_service_no_migrations
+
+        from app.routers.epdw import artefact_versions
+        from app.services.did_service import ArtefactInput
+        from app.services.exceptions import ArtefactNotFoundError
+
+        # Create artefact in advisory division
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+        did_service.upsert_artefact(ArtefactInput(
+            external_uid=external_uid,
+            division="advisory",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+        ))
+
+        # Try to access via EPDW endpoint
+        import asyncio
+        with pytest.raises(ArtefactNotFoundError) as exc:
+            asyncio.run(artefact_versions(external_uid, api_token="test-token", did_svc=did_service))
+
+        # Should indicate EPDW division in error
+        assert "epdw" in str(exc.value).lower()
+
+    def test_returns_404_when_artefact_not_found(self, did_service_no_migrations):
+        """Non-existent artefact should raise ArtefactNotFoundError."""
+        did_service = did_service_no_migrations
+
+        from app.routers.epdw import artefact_versions
+        from app.services.exceptions import ArtefactNotFoundError
+
+        # Use a UUID that doesn't exist
+        nonexistent_uid = "99999999-9999-9999-9999-999999999999"
+
+        import asyncio
+        with pytest.raises(ArtefactNotFoundError):
+            asyncio.run(artefact_versions(nonexistent_uid, api_token="test-token", did_svc=did_service))
+
+    def test_works_with_version_uid(self, did_service_no_migrations):
+        """Should work when queried with version_uid."""
+        did_service = did_service_no_migrations
+
+        from app.routers.epdw import artefact_versions
+        from app.services.did_service import ArtefactInput
+
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        # Create multiple versions
+        v1 = did_service.upsert_artefact(ArtefactInput(
+            external_uid=external_uid,
+            division="epdw",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+        ))
+
+        v2 = did_service.upsert_artefact(ArtefactInput(
+            external_uid=external_uid,
+            division="epdw",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+        ))
+
+        # Query with version_uid of version 1
+        import asyncio
+        response = asyncio.run(artefact_versions(v1.version_uid, api_token="test-token", did_svc=did_service))
+
+        # Should return all versions
+        assert response.external_uid == external_uid
+        assert len(response.versions) == 2
+
+    def test_versions_sorted_ascending(self, did_service_no_migrations):
+        """Versions should be sorted by version number (ascending)."""
+        did_service = did_service_no_migrations
+
+        from app.routers.epdw import artefact_versions
+        from app.services.did_service import ArtefactInput
+
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        # Create versions
+        for i in range(1, 4):
+            did_service.upsert_artefact(ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata={"version": i},
+            ))
+
+        import asyncio
+        response = asyncio.run(artefact_versions(external_uid, api_token="test-token", did_svc=did_service))
+
+        # Verify ascending order
+        assert len(response.versions) == 3
+        assert response.versions[0].version == 1
+        assert response.versions[1].version == 2
+        assert response.versions[2].version == 3
+
+    def test_version_info_contains_required_fields(self, did_service_no_migrations):
+        """Each version should contain all required fields."""
+        did_service = did_service_no_migrations
+
+        from app.routers.epdw import artefact_versions
+        from app.services.did_service import ArtefactInput
+
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        did_service.upsert_artefact(ArtefactInput(
+            external_uid=external_uid,
+            division="epdw",
+            artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+        ))
+
+        import asyncio
+        response = asyncio.run(artefact_versions(external_uid, api_token="test-token", did_svc=did_service))
+
+        # Verify all required fields are present
+        version = response.versions[0]
+        assert version.version == 1
+        assert version.version_uid is not None
+        assert version.creation_date is not None
+        assert version.revoked is False

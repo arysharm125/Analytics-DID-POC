@@ -10,8 +10,10 @@ from pydantic import BaseModel, Field, field_validator
 from app.routers.basetypes import (
     AMDWebDID,
     ArtefactFieldsMixin,
+    ArtefactVersionsResponse,
     PathUUID,
     UUIDString,
+    VersionInfo,
     did_from_uuid,
 )
 from app.routers.dependencies import APITokenDep401Response, DIDServiceDep, EPDWTokenDep
@@ -279,6 +281,47 @@ async def artefact_vc(
 ):
     """Return a Verifiable Credential with proofs for a Digital Artefact."""
     return did_svc.issue_artefact_vc(division=_EPDW_DIVISION, uid=uid)
+
+
+@app.get(
+    "/{uid}/versions",
+    responses={**APITokenDep401Response, **not_found_response()},
+)
+async def artefact_versions(
+    uid: PathUUID,
+    api_token: EPDWTokenDep,
+    did_svc: DIDServiceDep,
+) -> ArtefactVersionsResponse:
+    """Return all versions of a digital artefact in the EPDW division.
+
+    Returns a list of all versions for the artefact identified by the given UID.
+    The versions are sorted by version number in ascending order (oldest first).
+
+    This endpoint only returns artefacts that belong to the EPDW division.
+    If the artefact exists in a different division, a 404 error is returned.
+    """
+    # Get all versions with division filter
+    # This will raise ArtefactNotFoundError if not found or in wrong division
+    versions = did_svc.get_all_versions(uid, division=_EPDW_DIVISION)
+
+    # Get external_uid from the first version (all versions share the same external_uid)
+    external_uid = versions[0]["external_uid"] if versions else uid
+
+    # Convert to VersionInfo models
+    version_infos = [
+        VersionInfo(
+            version=v["version"],
+            version_uid=v["version_uid"],
+            creation_date=v["created_at"],
+            revoked=v.get("revoked", False),
+        )
+        for v in versions
+    ]
+
+    return ArtefactVersionsResponse(
+        external_uid=external_uid,
+        versions=version_infos,
+    )
 
 
 @app.post("/record-benchmark", responses={**APITokenDep401Response, **bad_request_response(), **conflict_response(_EPDW_DIVISION)})
