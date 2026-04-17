@@ -149,6 +149,16 @@ export async function fetchCanonicalizedVC(uid) {
   return response.text()
 }
 
+/**
+ * Fetch version diff between two artefact versions
+ * @param {string} sourceUid - The base version UID (currently viewed version)
+ * @param {string} targetUid - The version UID to compare against
+ * @returns {Promise<Object>} The diff response with field-level differences
+ */
+export async function fetchVersionDiff(sourceUid, targetUid) {
+  return request(`/didcheck/${encodeURIComponent(sourceUid)}/diff/${encodeURIComponent(targetUid)}`)
+}
+
 export default {
   fetchDIDByIdentifier,
   fetchArtefactOverview,
@@ -156,6 +166,8 @@ export default {
   fetchArtefact,
   fetchProvenance,
   fetchArtefactVersions,
+  fetchDescendants,
   checkDIDStatus,
-  fetchCanonicalizedVC
+  fetchCanonicalizedVC,
+  fetchVersionDiff
 }

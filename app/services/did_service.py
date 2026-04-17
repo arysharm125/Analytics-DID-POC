@@ -155,6 +155,58 @@ class DescendantsResult:
 
 
 @dataclass
+class FieldDiff:
+    """Represents a change in a simple field.
+
+    Attributes:
+        old_value: The value in the source version
+        new_value: The value in the target version
+    """
+    old_value: Any
+    new_value: Any
+
+
+@dataclass
+class ListDiff:
+    """Represents changes in a list field (like provenance).
+
+    Attributes:
+        added: Items that were added in the target version
+        removed: Items that were removed from the source version
+    """
+    added: list[str]
+    removed: list[str]
+
+
+@dataclass
+class VersionDiff:
+    """Represents the differences between two artefact versions.
+
+    Attributes:
+        source_version_uid: The UID of the source (base) version
+        target_version_uid: The UID of the target (comparison) version
+        source_version: The version number of the source
+        target_version: The version number of the target
+        artefact_hash: Diff for artefact_hash field (None if unchanged)
+        artefact_metadata: Diff for artefact_metadata field (None if unchanged)
+        provenance: Diff for provenance list (None if unchanged)
+        backlink: Diff for backlink field (None if unchanged)
+        division: Diff for division field (None if unchanged)
+        artefact_type: Diff for artefact_type field (None if unchanged)
+    """
+    source_version_uid: str
+    target_version_uid: str
+    source_version: int
+    target_version: int
+    artefact_hash: FieldDiff | None = None
+    artefact_metadata: FieldDiff | None = None
+    provenance: ListDiff | None = None
+    backlink: FieldDiff | None = None
+    division: FieldDiff | None = None
+    artefact_type: FieldDiff | None = None
+
+
+@dataclass
 class IssuedVCRecord:
     """Record of an issued VC stored in the database.
 
@@ -1797,3 +1849,97 @@ class DIDService:
         matches = (regenerated_canonical == stored_canonical)
 
         return regenerated_vc, matches
+
+    def compute_version_diff(
+        self,
+        source_uid: CanonicalizedUUID,
+        target_uid: CanonicalizedUUID,
+    ) -> VersionDiff:
+        """
+        Compare two artefact versions and return structured diff.
+
+        The diff is always computed from old → new (lower version → higher version).
+        If the provided UIDs are in reverse order, they will be automatically swapped.
+
+        Args:
+            source_uid: A version UID to compare
+            target_uid: Another version UID to compare
+
+        Returns:
+            VersionDiff with field-level differences (always old → new)
+
+        Raises:
+            ArtefactNotFoundError: If either artefact is not found
+            DifferentArtefactError: If UIDs belong to different artefacts (different external_uid)
+        """
+        from app.services.exceptions import DifferentArtefactError
+
+        collection = self.db.get_collection(self._artefacts_col_name)
+
+        # Find both artefacts
+        source = self._find_artefact_by_uid(source_uid, collection)
+        target = self._find_artefact_by_uid(target_uid, collection)
+
+        if source is None:
+            raise ArtefactNotFoundError(uid=source_uid, division=None)
+        if target is None:
+            raise ArtefactNotFoundError(uid=target_uid, division=None)
+
+        # Verify they belong to the same artefact
+        if source["external_uid"] != target["external_uid"]:
+            raise DifferentArtefactError(source_uid, target_uid)
+
+        # Ensure we always compare old → new (swap if needed)
+        if source["version"] > target["version"]:
+            source, target = target, source
+
+        # Initialize diff object
+        diff = VersionDiff(
+            source_version_uid=source["version_uid"],
+            target_version_uid=target["version_uid"],
+            source_version=source["version"],
+            target_version=target["version"],
+        )
+
+        # Compare artefact_hash
+        source_hash = source.get("artefact_hash")
+        target_hash = target.get("artefact_hash")
+        if source_hash != target_hash:
+            diff.artefact_hash = FieldDiff(old_value=source_hash, new_value=target_hash)
+
+        # Compare artefact_metadata (deep comparison)
+        source_metadata = source.get("artefact_metadata")
+        target_metadata = target.get("artefact_metadata")
+        if not deep_equals(source_metadata, target_metadata):
+            diff.artefact_metadata = FieldDiff(old_value=source_metadata, new_value=target_metadata)
+
+        # Compare provenance (list diff)
+        source_prov = source.get("provenance") or []
+        target_prov = target.get("provenance") or []
+        if source_prov != target_prov:
+            # Calculate added and removed items
+            source_set = set(source_prov)
+            target_set = set(target_prov)
+            added = list(target_set - source_set)
+            removed = list(source_set - target_set)
+            diff.provenance = ListDiff(added=added, removed=removed)
+
+        # Compare backlink
+        source_backlink = source.get("backlink")
+        target_backlink = target.get("backlink")
+        if source_backlink != target_backlink:
+            diff.backlink = FieldDiff(old_value=source_backlink, new_value=target_backlink)
+
+        # Compare division
+        source_division = source.get("division")
+        target_division = target.get("division")
+        if source_division != target_division:
+            diff.division = FieldDiff(old_value=source_division, new_value=target_division)
+
+        # Compare artefact_type
+        source_type = source.get("artefact_type")
+        target_type = target.get("artefact_type")
+        if source_type != target_type:
+            diff.artefact_type = FieldDiff(old_value=source_type, new_value=target_type)
+
+        return diff

@@ -2277,6 +2277,579 @@ class TestRegenerateAndVerifyVc:
 # =============================================================================
 
 
+class TestComputeVersionDiff:
+    """Tests for compute_version_diff method."""
+
+    def test_no_changes_returns_empty_diff(self, did_service_no_migrations):
+        """Comparing same version should return diff with all None fields."""
+        did_service = did_service_no_migrations
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+                artefact_metadata={"key": "value"},
+            )
+        )
+
+        diff = did_service.compute_version_diff(artefact.version_uid, artefact.version_uid)
+
+        assert diff.source_version_uid == artefact.version_uid
+        assert diff.target_version_uid == artefact.version_uid
+        assert diff.source_version == 1
+        assert diff.target_version == 1
+        assert diff.artefact_hash is None
+        assert diff.artefact_metadata is None
+        assert diff.provenance is None
+        assert diff.backlink is None
+        assert diff.division is None
+        assert diff.artefact_type is None
+
+    def test_hash_change_detected(self, did_service_no_migrations):
+        """Diff should detect artefact_hash changes."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.artefact_hash is not None
+        assert diff.artefact_hash.old_value == "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1"
+        assert diff.artefact_hash.new_value == "QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2"
+        # Other fields should be None
+        assert diff.artefact_metadata is None
+        assert diff.provenance is None
+
+    def test_metadata_change_detected(self, did_service_no_migrations):
+        """Diff should detect artefact_metadata changes."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata={"key": "value1"},
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata={"key": "value2"},
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.artefact_metadata is not None
+        assert diff.artefact_metadata.old_value == {"key": "value1"}
+        assert diff.artefact_metadata.new_value == {"key": "value2"}
+
+    def test_metadata_deep_change_detected(self, did_service_no_migrations):
+        """Diff should detect deep changes in nested metadata."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata={"outer": {"inner": "value1"}},
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata={"outer": {"inner": "value2"}},
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.artefact_metadata is not None
+        assert diff.artefact_metadata.old_value == {"outer": {"inner": "value1"}}
+        assert diff.artefact_metadata.new_value == {"outer": {"inner": "value2"}}
+
+    def test_provenance_added_items(self, did_service_no_migrations):
+        """Diff should detect added provenance items."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                provenance=[],
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                provenance=[parent.version_uid],
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.provenance is not None
+        assert diff.provenance.added == [parent.version_uid]
+        assert diff.provenance.removed == []
+
+    def test_provenance_removed_items(self, did_service_no_migrations):
+        """Diff should detect removed provenance items."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                provenance=[parent.version_uid],
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                provenance=[],
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.provenance is not None
+        assert diff.provenance.added == []
+        assert diff.provenance.removed == [parent.version_uid]
+
+    def test_provenance_mixed_changes(self, did_service_no_migrations):
+        """Diff should detect both added and removed provenance items."""
+        did_service = did_service_no_migrations
+        parent1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Par111",
+            )
+        )
+        parent2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000002",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Par222",
+            )
+        )
+        parent3 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000003",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Par333",
+            )
+        )
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                provenance=[parent1.version_uid, parent2.version_uid],
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                provenance=[parent2.version_uid, parent3.version_uid],
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.provenance is not None
+        assert parent3.version_uid in diff.provenance.added
+        assert parent1.version_uid in diff.provenance.removed
+        # parent2 should not appear in either (it's in both)
+        assert parent2.version_uid not in diff.provenance.added
+        assert parent2.version_uid not in diff.provenance.removed
+
+    def test_backlink_change_detected(self, did_service_no_migrations):
+        """Diff should detect backlink changes."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                backlink="https://old.example.com",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                backlink="https://new.example.com",
+                artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.backlink is not None
+        assert diff.backlink.old_value == "https://old.example.com"
+        assert diff.backlink.new_value == "https://new.example.com"
+        # Hash also changed (backlink alone doesn't trigger new version)
+        assert diff.artefact_hash is not None
+
+    def test_artefact_type_change_detected(self, did_service_no_migrations):
+        """Diff should detect artefact_type changes."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_type="benchmark",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_type="benchmark_iteration",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.artefact_type is not None
+        assert diff.artefact_type.old_value == "benchmark"
+        assert diff.artefact_type.new_value == "benchmark_iteration"
+
+    def test_multiple_fields_changed(self, did_service_no_migrations):
+        """Diff should detect multiple field changes."""
+        did_service = did_service_no_migrations
+        parent = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Parent",
+            )
+        )
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+                artefact_metadata={"version": 1},
+                artefact_type="report",
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+                artefact_metadata={"version": 2},
+                artefact_type="benchmark",
+                provenance=[parent.version_uid],
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.artefact_hash is not None
+        assert diff.artefact_metadata is not None
+        assert diff.artefact_type is not None
+        assert diff.provenance is not None
+        assert diff.provenance.added == [parent.version_uid]
+
+    def test_source_not_found_raises(self, did_service_no_migrations):
+        """Diff with non-existent source should raise ArtefactNotFoundError."""
+        did_service = did_service_no_migrations
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        with pytest.raises(ArtefactNotFoundError):
+            did_service.compute_version_diff("nonexistent-uuid", artefact.version_uid)
+
+    def test_target_not_found_raises(self, did_service_no_migrations):
+        """Diff with non-existent target should raise ArtefactNotFoundError."""
+        did_service = did_service_no_migrations
+        artefact = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-4c5b-bb91-935983c16d9c",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        with pytest.raises(ArtefactNotFoundError):
+            did_service.compute_version_diff(artefact.version_uid, "nonexistent-uuid")
+
+    def test_different_artefacts_raises(self, did_service_no_migrations):
+        """Diff between different artefacts should raise DifferentArtefactError."""
+        from app.services.exceptions import DifferentArtefactError
+
+        did_service = did_service_no_migrations
+        artefact1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000001",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Arte11",
+            )
+        )
+        artefact2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid="95da4dd5-6e48-0000-bb91-000000000002",
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2G7Arte22",
+            )
+        )
+
+        with pytest.raises(DifferentArtefactError) as exc:
+            did_service.compute_version_diff(artefact1.version_uid, artefact2.version_uid)
+
+        assert exc.value.source_uid == artefact1.version_uid
+        assert exc.value.target_uid == artefact2.version_uid
+        assert "different artefacts" in str(exc.value).lower()
+
+    def test_can_compare_by_external_uid(self, did_service_no_migrations):
+        """Diff should work when using external_uid (resolves to latest)."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+            )
+        )
+
+        # Compare v1 (by version_uid) against external_uid (should resolve to v2)
+        diff = did_service.compute_version_diff(v1.version_uid, external_uid)
+
+        assert diff.source_version_uid == v1.version_uid
+        assert diff.target_version_uid == v2.version_uid
+        assert diff.artefact_hash is not None
+
+    def test_null_to_value_change(self, did_service_no_migrations):
+        """Diff should detect changes from None to a value."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+                # No artefact_type
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+                artefact_type="report",
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.artefact_type is not None
+        assert diff.artefact_type.old_value is None
+        assert diff.artefact_type.new_value == "report"
+
+    def test_value_to_null_change(self, did_service_no_migrations):
+        """Diff should detect changes from a value to None."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+                backlink="https://example.com",
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+                # No backlink (implicitly None)
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.backlink is not None
+        assert diff.backlink.old_value == "https://example.com"
+        assert diff.backlink.new_value is None
+
+    def test_reversed_order_auto_swaps_to_old_to_new(self, did_service_no_migrations):
+        """Diff should automatically swap versions to ensure old → new comparison."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+            )
+        )
+
+        # Compare in reverse order (v2 → v1), should be auto-swapped to v1 → v2
+        diff = did_service.compute_version_diff(v2.version_uid, v1.version_uid)
+
+        # Should be swapped to show v1 → v2 (old → new)
+        assert diff.source_version_uid == v1.version_uid
+        assert diff.target_version_uid == v2.version_uid
+        assert diff.source_version == 1
+        assert diff.target_version == 2
+        # The diff should show the change from old to new
+        assert diff.artefact_hash is not None
+        assert diff.artefact_hash.old_value == "QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1"
+        assert diff.artefact_hash.new_value == "QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2"
+
+    def test_metadata_list_change_detected(self, did_service_no_migrations):
+        """Diff should detect changes to lists inside artefact_metadata."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata={"items": ["a", "b", "c"]},
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata={"items": ["a", "b", "d"]},
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.artefact_metadata is not None
+        assert diff.artefact_metadata.old_value == {"items": ["a", "b", "c"]}
+        assert diff.artefact_metadata.new_value == {"items": ["a", "b", "d"]}
+
+    def test_metadata_as_list_change_detected(self, did_service_no_migrations):
+        """Diff should detect when artefact_metadata is a list (not an object)."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata=["item1", "item2", "item3"],
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata=["item1", "item2", "item4"],
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.artefact_metadata is not None
+        assert diff.artefact_metadata.old_value == ["item1", "item2", "item3"]
+        assert diff.artefact_metadata.new_value == ["item1", "item2", "item4"]
+
+    def test_metadata_as_string_change_detected(self, did_service_no_migrations):
+        """Diff should detect when artefact_metadata is a string (not an object)."""
+        did_service = did_service_no_migrations
+        external_uid = "95da4dd5-6e48-4c5b-bb91-935983c16d9c"
+
+        v1 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata="metadata string version 1",
+            )
+        )
+        v2 = did_service.upsert_artefact(
+            ArtefactInput(
+                external_uid=external_uid,
+                division="epdw",
+                artefact_metadata="metadata string version 2",
+            )
+        )
+
+        diff = did_service.compute_version_diff(v1.version_uid, v2.version_uid)
+
+        assert diff.artefact_metadata is not None
+        assert diff.artefact_metadata.old_value == "metadata string version 1"
+        assert diff.artefact_metadata.new_value == "metadata string version 2"
+
+
 class TestGetAllVersions:
     """Tests for get_all_versions method."""
 

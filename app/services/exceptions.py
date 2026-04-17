@@ -246,6 +246,17 @@ class IterationIdMatchesBenchmarkIdError(DIDServiceError, HTTPException):
         )
 
 
+class DifferentArtefactError(DIDServiceError, HTTPException):
+    """Raised when attempting to compare versions of different artefacts."""
+    def __init__(self, source_uid: str, target_uid: str):
+        self.source_uid = source_uid
+        self.target_uid = target_uid
+        super().__init__(
+            status_code=400,
+            detail=f"Cannot compare versions from different artefacts: '{source_uid}' and '{target_uid}' belong to different artefacts"
+        )
+
+
 class DuplicateExternalUidsError(DIDServiceError, HTTPException):
     """Raised when duplicate external UIDs are found in an update request."""
     def __init__(self, duplicate_uids: list[str]):

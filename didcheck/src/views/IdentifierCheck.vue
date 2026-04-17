@@ -30,6 +30,12 @@ const fetchingDescendants = ref(false)
 const fetchedDescendants = ref(null)
 const descendantsPage = ref(1)
 
+// Version diff state
+const showDiffDialog = ref(false)
+const fetchingDiff = ref(false)
+const diffData = ref(null)
+const compareVersionUid = ref(null)
+
 // Binary file verification state
 const selectedFile = ref(null)
 const verificationStatus = ref(null) // null, 'verifying', 'success', 'error'
@@ -241,6 +247,49 @@ const goHome = () => {
 
 const navigateToVersion = (versionUid) => {
   router.push(`/did/${versionUid}`)
+}
+
+// Compare version with current version
+const compareVersion = async (targetVersionUid) => {
+  if (!digitalArtefact.value?.version_uid) return
+
+  fetchingDiff.value = true
+  diffData.value = null
+  compareVersionUid.value = targetVersionUid
+  showDiffDialog.value = true
+
+  try {
+    const diff = await didStore.fetchVersionDiff(
+      digitalArtefact.value.version_uid,
+      targetVersionUid
+    )
+    diffData.value = diff
+  } catch (err) {
+    error.value = err.message || 'Failed to fetch version diff'
+    showDiffDialog.value = false
+  } finally {
+    fetchingDiff.value = false
+  }
+}
+
+// Close diff dialog
+const closeDiffDialog = () => {
+  showDiffDialog.value = false
+  diffData.value = null
+  compareVersionUid.value = null
+}
+
+// Check if a field has changes in the diff
+const hasDiffChanges = (diff) => {
+  if (!diff) return false
+  return !!(
+    diff.artefact_hash ||
+    diff.artefact_metadata ||
+    diff.provenance ||
+    diff.backlink ||
+    diff.division ||
+    diff.artefact_type
+  )
 }
 
 // Handle file selection
@@ -726,6 +775,7 @@ watch(() => props.identifier, () => {
                     <th>Creation Date</th>
                     <th>Version UID</th>
                     <th>Status</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -762,11 +812,189 @@ watch(() => props.identifier, () => {
                         Current
                       </v-chip>
                     </td>
+                    <td>
+                      <v-btn
+                        v-if="version.version_uid !== digitalArtefact.version_uid"
+                        size="small"
+                        variant="text"
+                        color="primary"
+                        @click="compareVersion(version.version_uid)"
+                      >
+                        <v-icon start size="small">mdi-compare</v-icon>
+                        Compare
+                      </v-btn>
+                    </td>
                   </tr>
                 </tbody>
               </v-table>
             </v-card-text>
           </v-card>
+
+          <!-- Version Diff Dialog -->
+          <v-dialog v-model="showDiffDialog" max-width="800px">
+            <v-card>
+              <v-card-title class="d-flex align-center justify-space-between">
+                <div class="d-flex align-center">
+                  <v-icon start>mdi-compare</v-icon>
+                  Version Comparison
+                </div>
+                <v-btn
+                  icon="mdi-close"
+                  variant="text"
+                  @click="closeDiffDialog"
+                />
+              </v-card-title>
+
+              <v-card-text>
+                <template v-if="fetchingDiff">
+                  <v-skeleton-loader type="article" />
+                </template>
+
+                <template v-else-if="diffData">
+                  <!-- Version info header -->
+                  <div class="mb-4 pa-3 bg-grey-lighten-4 rounded">
+                    <div class="d-flex justify-space-between align-center">
+                      <div>
+                        <div class="text-caption text-grey">Source Version</div>
+                        <div class="text-body-2 font-weight-medium">v{{ diffData.source_version }}</div>
+                      </div>
+                      <v-icon color="grey">mdi-arrow-right</v-icon>
+                      <div>
+                        <div class="text-caption text-grey">Target Version</div>
+                        <div class="text-body-2 font-weight-medium">v{{ diffData.target_version }}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- No changes message -->
+                  <v-alert
+                    v-if="!hasDiffChanges(diffData)"
+                    type="info"
+                    variant="tonal"
+                    class="mb-4"
+                  >
+                    No differences found between these versions.
+                  </v-alert>
+
+                  <!-- Changes list -->
+                  <div v-else class="diff-changes">
+                    <!-- Artefact Hash -->
+                    <div v-if="diffData.artefact_hash" class="diff-field mb-4">
+                      <div class="text-subtitle-2 font-weight-bold mb-2">Artefact Hash</div>
+                      <div class="diff-values">
+                        <div class="diff-old pa-2 rounded mb-1">
+                          <span class="text-caption text-grey">Old:</span>
+                          <pre class="text-mono">{{ diffData.artefact_hash.old_value || '(none)' }}</pre>
+                        </div>
+                        <div class="diff-new pa-2 rounded">
+                          <span class="text-caption text-grey">New:</span>
+                          <pre class="text-mono">{{ diffData.artefact_hash.new_value || '(none)' }}</pre>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Artefact Type -->
+                    <div v-if="diffData.artefact_type" class="diff-field mb-4">
+                      <div class="text-subtitle-2 font-weight-bold mb-2">Artefact Type</div>
+                      <div class="diff-values">
+                        <div class="diff-old pa-2 rounded mb-1">
+                          <span class="text-caption text-grey">Old:</span>
+                          <span class="ml-2">{{ diffData.artefact_type.old_value || '(none)' }}</span>
+                        </div>
+                        <div class="diff-new pa-2 rounded">
+                          <span class="text-caption text-grey">New:</span>
+                          <span class="ml-2">{{ diffData.artefact_type.new_value || '(none)' }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Division -->
+                    <div v-if="diffData.division" class="diff-field mb-4">
+                      <div class="text-subtitle-2 font-weight-bold mb-2">Division</div>
+                      <div class="diff-values">
+                        <div class="diff-old pa-2 rounded mb-1">
+                          <span class="text-caption text-grey">Old:</span>
+                          <span class="ml-2">{{ diffData.division.old_value || '(none)' }}</span>
+                        </div>
+                        <div class="diff-new pa-2 rounded">
+                          <span class="text-caption text-grey">New:</span>
+                          <span class="ml-2">{{ diffData.division.new_value || '(none)' }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Backlink -->
+                    <div v-if="diffData.backlink" class="diff-field mb-4">
+                      <div class="text-subtitle-2 font-weight-bold mb-2">Backlink</div>
+                      <div class="diff-values">
+                        <div class="diff-old pa-2 rounded mb-1">
+                          <span class="text-caption text-grey">Old:</span>
+                          <span class="ml-2">{{ diffData.backlink.old_value || '(none)' }}</span>
+                        </div>
+                        <div class="diff-new pa-2 rounded">
+                          <span class="text-caption text-grey">New:</span>
+                          <span class="ml-2">{{ diffData.backlink.new_value || '(none)' }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Provenance -->
+                    <div v-if="diffData.provenance" class="diff-field mb-4">
+                      <div class="text-subtitle-2 font-weight-bold mb-2">Provenance</div>
+                      <div v-if="diffData.provenance.added.length > 0" class="mb-2">
+                        <div class="text-caption text-success font-weight-bold mb-1">
+                          <v-icon size="small" color="success">mdi-plus-circle</v-icon>
+                          Added ({{ diffData.provenance.added.length }})
+                        </div>
+                        <div class="diff-added pa-2 rounded">
+                          <div v-for="item in diffData.provenance.added" :key="item" class="text-mono text-body-2">
+                            {{ item }}
+                          </div>
+                        </div>
+                      </div>
+                      <div v-if="diffData.provenance.removed.length > 0">
+                        <div class="text-caption text-error font-weight-bold mb-1">
+                          <v-icon size="small" color="error">mdi-minus-circle</v-icon>
+                          Removed ({{ diffData.provenance.removed.length }})
+                        </div>
+                        <div class="diff-removed pa-2 rounded">
+                          <div v-for="item in diffData.provenance.removed" :key="item" class="text-mono text-body-2">
+                            {{ item }}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Artefact Metadata -->
+                    <div v-if="diffData.artefact_metadata" class="diff-field mb-4">
+                      <div class="text-subtitle-2 font-weight-bold mb-2">Artefact Metadata</div>
+                      <div class="diff-values">
+                        <div class="diff-old pa-2 rounded mb-1">
+                          <span class="text-caption text-grey">Old:</span>
+                          <pre class="metadata-json">{{ JSON.stringify(diffData.artefact_metadata.old_value, null, 2) || '(none)' }}</pre>
+                        </div>
+                        <div class="diff-new pa-2 rounded">
+                          <span class="text-caption text-grey">New:</span>
+                          <pre class="metadata-json">{{ JSON.stringify(diffData.artefact_metadata.new_value, null, 2) || '(none)' }}</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </v-card-text>
+
+              <v-card-actions>
+                <v-spacer />
+                <v-btn
+                  color="primary"
+                  variant="text"
+                  @click="closeDiffDialog"
+                >
+                  Close
+                </v-btn>
+              </v-card-actions>
+            </v-card>
+          </v-dialog>
 
           <!-- Descendants Card -->
           <v-card class="mb-4">
@@ -948,5 +1176,43 @@ watch(() => props.identifier, () => {
 
 .version-link:hover {
   text-decoration: underline;
+}
+
+/* Diff display styles */
+.diff-old {
+  background-color: #ffebee;
+  border-left: 3px solid #f44336;
+}
+
+.diff-new {
+  background-color: #e8f5e9;
+  border-left: 3px solid #4caf50;
+}
+
+.diff-added {
+  background-color: #e8f5e9;
+  border-left: 3px solid #4caf50;
+}
+
+.diff-removed {
+  background-color: #ffebee;
+  border-left: 3px solid #f44336;
+}
+
+.metadata-json {
+  font-family: monospace;
+  font-size: 0.85rem;
+  margin: 4px 0 0 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.diff-field {
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 16px;
+}
+
+.diff-field:last-child {
+  border-bottom: none;
 }
 </style>

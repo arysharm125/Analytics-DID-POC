@@ -1125,3 +1125,266 @@ class TestArtefactDescendants:
         data = response.json()
 
         assert data["total_count"] == 5
+
+
+# =============================================================================
+# Test Artefact Version Diff Endpoint
+# =============================================================================
+
+
+class TestArtefactVersionDiff:
+    """Tests for the /{uid}/diff/{compare_uid} endpoint."""
+
+    @pytest.fixture
+    def multiple_versions(self, did_service_no_migrations, sample_uuid):
+        """Create multiple versions of an artefact for diff testing."""
+        from app.services.did_service import ArtefactInput
+
+        # Create version 1
+        v1 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+                artefact_metadata={"version": 1, "data": "old"},
+                artefact_type="report",
+            )
+        )
+
+        # Create version 2 with changes
+        v2 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+                artefact_metadata={"version": 2, "data": "new"},
+                artefact_type="benchmark",
+                backlink="https://example.com/new",
+            )
+        )
+
+        # Create version 3
+        v3 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA3t8auVZRn8x5M3kN1p6yZR2oG7wJGD3",
+                artefact_metadata={"version": 3, "data": "newer"},
+                artefact_type="benchmark",
+                backlink="https://example.com/newer",
+            )
+        )
+
+        return {
+            "external_uid": sample_uuid,
+            "v1": v1,
+            "v2": v2,
+            "v3": v3,
+        }
+
+    @pytest.fixture
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+        """Create a test client with DIDService dependency override and auth headers."""
+        set_did_service_dependency(did_service_no_migrations)
+        vault_service.ensure_division_signing_key("epdw")
+        client = TestClient(app)
+        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+
+    def test_returns_successful_response_with_changes(self, client_with_service, multiple_versions):
+        """Endpoint should return 200 with structured diff when versions differ."""
+        v1_uid = multiple_versions["v1"].version_uid
+        v2_uid = multiple_versions["v2"].version_uid
+
+        response = client_with_service.get(f"/didcheck/{v1_uid}/diff/{v2_uid}")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Verify required fields are always present
+        assert "source_version_uid" in data
+        assert "target_version_uid" in data
+        assert "source_version" in data
+        assert "target_version" in data
+        assert data["source_version_uid"] == v1_uid
+        assert data["target_version_uid"] == v2_uid
+        assert data["source_version"] == 1
+        assert data["target_version"] == 2
+        # At least one diff field should be present (versions are different)
+        assert len(data) > 4  # More than just the version info fields
+
+    def test_serializes_provenance_list_diff(
+        self, client_with_service, did_service_no_migrations, sample_uuid, sample_uuid_2
+    ):
+        """Endpoint should properly serialize provenance ListDiffInfo with added/removed lists."""
+        from app.services.did_service import ArtefactInput
+
+        # Create parent artefacts
+        parent1 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+            )
+        )
+        parent2 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid_2,
+                division="epdw",
+            )
+        )
+
+        # Create child versions with different provenance
+        child_uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        v1 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=child_uid,
+                division="epdw",
+                provenance=[parent1.version_uid],
+            )
+        )
+        v2 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=child_uid,
+                division="epdw",
+                provenance=[parent2.version_uid],
+            )
+        )
+
+        response = client_with_service.get(f"/didcheck/{v1.version_uid}/diff/{v2.version_uid}")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Verify provenance diff is properly serialized with ListDiffInfo structure
+        assert "provenance" in data
+        assert data["provenance"] is not None
+        assert "added" in data["provenance"]
+        assert "removed" in data["provenance"]
+        assert isinstance(data["provenance"]["added"], list)
+        assert isinstance(data["provenance"]["removed"], list)
+        assert parent2.version_uid in data["provenance"]["added"]
+        assert parent1.version_uid in data["provenance"]["removed"]
+
+    def test_no_changes_returns_empty_diff(
+        self, client_with_service, did_service_no_migrations, sample_uuid
+    ):
+        """Comparing same version should return diff with null fields."""
+        from app.services.did_service import ArtefactInput
+
+        artefact = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnAzt8auVZRn8x5M3kN1p6yZR2oG7wJGDk",
+            )
+        )
+
+        response = client_with_service.get(
+            f"/didcheck/{artefact.version_uid}/diff/{artefact.version_uid}"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # With response_model_exclude_none=True, None fields are excluded from response
+        # Only source/target version info should be present
+        assert "source_version_uid" in data
+        assert "target_version_uid" in data
+        assert "source_version" in data
+        assert "target_version" in data
+        # Diff fields should not be present (excluded because they're None)
+        assert "artefact_hash" not in data
+        assert "artefact_metadata" not in data
+        assert "provenance" not in data
+        assert "backlink" not in data
+        assert "division" not in data
+        assert "artefact_type" not in data
+
+
+    def test_returns_404_when_source_not_found(
+        self, client_with_service, multiple_versions, sample_uuid_2
+    ):
+        """Endpoint should return 404 when source artefact doesn't exist."""
+        response = client_with_service.get(
+            f"/didcheck/{sample_uuid_2}/diff/{multiple_versions['v1'].version_uid}"
+        )
+
+        assert response.status_code == 404
+
+    def test_returns_404_when_target_not_found(
+        self, client_with_service, multiple_versions, sample_uuid_2
+    ):
+        """Endpoint should return 404 when target artefact doesn't exist."""
+        response = client_with_service.get(
+            f"/didcheck/{multiple_versions['v1'].version_uid}/diff/{sample_uuid_2}"
+        )
+
+        assert response.status_code == 404
+
+    def test_returns_400_when_different_artefacts(
+        self, client_with_service, did_service_no_migrations, sample_uuid, sample_uuid_2
+    ):
+        """Endpoint should return 400 when comparing versions from different artefacts."""
+        from app.services.did_service import ArtefactInput
+
+        artefact1 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA1t8auVZRn8x5M3kN1p6yZR2oG7wJGD1",
+            )
+        )
+        artefact2 = did_service_no_migrations.upsert_artefact(
+            ArtefactInput(
+                external_uid=sample_uuid_2,
+                division="epdw",
+                artefact_hash="QmYwAPJzv5CZsnA2t8auVZRn8x5M3kN1p6yZR2oG7wJGD2",
+            )
+        )
+
+        response = client_with_service.get(
+            f"/didcheck/{artefact1.version_uid}/diff/{artefact2.version_uid}"
+        )
+
+        assert response.status_code == 400
+        assert "different artefacts" in response.json()["detail"].lower()
+
+    def test_returns_401_with_wrong_token(self, client_with_service, multiple_versions):
+        """Endpoint should return 401 when provided with an invalid token."""
+        v1_uid = multiple_versions["v1"].version_uid
+        v2_uid = multiple_versions["v2"].version_uid
+
+        response = client_with_service.get(
+            f"/didcheck/{v1_uid}/diff/{v2_uid}",
+            headers={"X-API-Token": "wrong-token"}
+        )
+
+        assert response.status_code == 401
+
+    def test_returns_422_with_missing_token(self, client_with_service, multiple_versions):
+        """Endpoint should return 422 when authentication token is missing."""
+        v1_uid = multiple_versions["v1"].version_uid
+        v2_uid = multiple_versions["v2"].version_uid
+
+        response = client_with_service.raw.get(f"/didcheck/{v1_uid}/diff/{v2_uid}")
+
+        assert response.status_code == 422
+
+    def test_response_model_excludes_none(self, client_with_service, multiple_versions):
+        """Endpoint should exclude None fields from response."""
+        v2_uid = multiple_versions["v2"].version_uid
+        v3_uid = multiple_versions["v3"].version_uid
+
+        # v2 and v3 have same artefact_type, so that field should be None
+        response = client_with_service.get(f"/didcheck/{v2_uid}/diff/{v3_uid}")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Changed fields should be present
+        assert "artefact_hash" in data
+        assert data["artefact_hash"] is not None
+
+        # Unchanged artefact_type should not be in response (or be None)
+        # With response_model_exclude_none=True, None fields are excluded
+        if "artefact_type" in data:
+            assert data["artefact_type"] is None
