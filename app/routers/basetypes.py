@@ -1,6 +1,7 @@
 """Base types for route requests and responses."""
 
 import re
+from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -563,6 +564,48 @@ class ArtefactFieldsMixin(BaseModel):
         default=None,
         description="Optional AMD email of the person who made this update",
         json_schema_extra={"example": "user@amd.com"},
+    )
+
+
+# =============================================================================
+# Common Response Models
+# =============================================================================
+
+class VersionInfo(BaseModel):
+    """Information about a single version of an artefact."""
+
+    version: int = Field(
+        ...,
+        description="Version number",
+        examples=[1, 2, 3],
+    )
+    version_uid: UUIDString = Field(
+        ...,
+        description="UUID identifying this specific version",
+        examples=["b8ff3b79-863f-4fa9-84ba-0067663f2b04"],
+    )
+    creation_date: datetime = Field(
+        ...,
+        description="Timestamp when this version was created",
+    )
+    revoked: bool = Field(
+        ...,
+        description="Whether this version is revoked",
+        examples=[False],
+    )
+
+
+class ArtefactVersionsResponse(BaseModel):
+    """Response model for artefact versions endpoint."""
+
+    external_uid: UUIDString = Field(
+        ...,
+        description="UUID identifying the artefact across versions",
+        examples=["95da4dd5-6e48-4c5b-bb91-935983c16d9c"],
+    )
+    versions: list[VersionInfo] = Field(
+        ...,
+        description="List of all versions sorted by version number (ascending)",
     )
 
 

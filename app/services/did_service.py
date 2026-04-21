@@ -1366,26 +1366,32 @@ class DIDService:
 
         return artefact, latest_version
 
-    def get_all_versions(self, uid: CanonicalizedUUID) -> list[dict]:
+    def get_all_versions(self, uid: CanonicalizedUUID, division: DivisionStr | None = None) -> list[dict]:
         """
         Get all versions of an artefact.
 
         Args:
             uid: The canonicalized UUID to search for (version_uid or external_uid)
+            division: Optional division filter. If specified, only artefacts in that division are returned.
 
         Returns:
             List of version documents sorted by version number (ascending).
             Each document contains: external_uid, version, version_uid, created_at, revoked.
 
         Raises:
-            ArtefactNotFoundError: If the artefact is not found.
+            ArtefactNotFoundError: If the artefact is not found or doesn't belong to the specified division.
         """
         collection = self.db.get_collection(self._artefacts_col_name)
 
         # Find the artefact by uid to get the external_uid
         artefact = self._find_artefact_by_uid(uid, collection)
         if artefact is None:
-            raise ArtefactNotFoundError(uid=uid, division=None)
+            raise ArtefactNotFoundError(uid=uid, division=division)
+
+        # Validate division if specified
+        if division is not None and artefact.get("division") != division:
+            # Artefact exists but is in wrong division - return 404 to avoid leaking division info
+            raise ArtefactNotFoundError(uid=uid, division=division)
 
         # Query all versions by external_uid, sorted by version (ascending)
         cursor = collection.find(
