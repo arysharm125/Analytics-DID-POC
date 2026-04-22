@@ -19,6 +19,7 @@
 PYTHON := python3
 VENV := .venv
 AUDIT_REPORT_FILE := audit-report.txt
+FULLTEST_REPORT_FILE := fulltest-report.txt
 
 
 ######################################################################
@@ -136,10 +137,6 @@ test-vccompat: venv-check nvm-check ## Run vc_compat backend+frontend integratio
 	pytest -m vc_compat
 	(cd didcheck && npm run test:vc-compat)
 
-# TODO: Maybe the script is now redundant? Move to using the make targets.
-test-full: venv-check nvm-check ## Run the full_test.py script
-	python scripts/full_test.py
-
 example-excelreport-install: venv-check ## Install dependencies for excel_report example
 	(cd examples/excel_report && pip install -r requirements.txt)
 
@@ -179,7 +176,28 @@ audit-report: venv-check nvm-check ## Run all audit/check tasks and write a text
 	@rm -f $(AUDIT_REPORT_FILE)
 	@$(MAKE) audit-report-inner | tee $(AUDIT_REPORT_FILE)
 	@cat dependency-check-report.txt >> $(AUDIT_REPORT_FILE)
-	@cat $(AUDIT_REPORT_FILE)
+
+
+full-test-inner: venv-check nvm-check
+	@echo "Full DIDservice Test Report"
+	@date
+	@echo "-------------------- DIDSvc lint --------------------"
+	@$(MAKE) didsvc-lint
+	@echo "-------------------- DIDSvc coverage report --------------------"
+	@$(MAKE) didsvc-test-coverage
+	@echo "-------------------- VC Compat testing --------------------"
+	@$(MAKE) test-vccompat
+	@echo "-------------------- Load test (sanity) --------------------"
+	@$(MAKE) didsvc-loadtest-sanity
+	@$(MAKE) didsvc-loadtest-down
+	@echo "-------------------- Finished --------------------"
+	@echo "Full-test finished"
+	@date
+
+full-test: venv-check nvm-check ## Run all relevant tests
+	@rm -f $(FULLTEST_REPORT_FILE)
+	@$(MAKE) full-test-inner | tee $(FULLTEST_REPORT_FILE)
+
 
 ######################################################################
 ## Docker targets
