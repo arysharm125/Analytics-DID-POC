@@ -74,6 +74,12 @@ didsvc-install: venv-check ## Install base runtime dependencies
 didsvc-install-dev: venv-check ## Install additional dev dependencies
 	pip install -r requirements-dev.txt
 
+didsvc-regen-reqs: venv-check ## Regenerate requirements.txt from requirements.in
+	pip-compile --output-file=requirements.txt requirements.in
+
+didsvc-upgrade-reqs: venv-check ## Upgrade dependencies in requirements.txt based on requirements.in
+	pip-compile --upgrade --output-file=requirements.txt requirements.in
+
 didsvc-dev: venv-check ## Run the backend app in local machine
 	uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-access-log
 
