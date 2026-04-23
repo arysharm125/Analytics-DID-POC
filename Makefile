@@ -150,21 +150,24 @@ example-excelreport-dev: venv-check ## Run excel_report example dev environment
 	(cd examples/excel_report && uvicorn main:app --reload --port 3001)
 
 owasp-depcheck: ## Run OWASP depedency-check tool in both front and back end code
-	@dependency-check.sh \
+	@docker run --rm \
+		-v "$(PWD):/src" \
+		registry.gitlab.com/gitlab-ci-utils/docker-dependency-check:latest \
+		/usr/share/dependency-check/bin/dependency-check.sh \
 		--project "DIDService" \
-		--scan ./requirements.txt \
-		--scan ./didcheck \
-		--enableExperimental \
-		--format ./scripts/depcheck-txt-summary.vsl \
-		-o ./dependency-check-report.txt \
-		--junitFailOnCVSS 0
+		--scan /src/requirements.txt \
+		--scan /src/didcheck \
+		--format /src/scripts/depcheck-txt-summary.vsl \
+		--out /src/dependency-check-report.txt \
+		--junitFailOnCVSS 0 \
+		--noupdate
 
 trivy-check: ## Run trivy check in both front and back end code
-	@docker run --rm \
-		-v $(PWD):/project \
+	@git archive --format=tar HEAD | docker run --rm -i \
 		-v ~/.cache/trivy:/root/.cache/trivy \
+		--entrypoint sh \
 		aquasec/trivy:0.69.3 \
-		fs /project
+		-c 'mkdir /project && tar -xf - -C /project && ls /project && trivy fs /project'
 
 audit-report-inner: venv-check nvm-check
 	@echo "Full DIDservice Audit Report"
