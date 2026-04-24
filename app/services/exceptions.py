@@ -280,3 +280,12 @@ class ArtefactsNotFoundError(DIDServiceError, HTTPException):
             status_code=404,
             detail=f"Artefacts not found in division '{division}': {', '.join(missing_uids)}"
         )
+
+
+class CSResponseParseError(DIDServiceError, HTTPException):
+    """Raised when CS API response cannot be parsed into expected structure."""
+    def __init__(self, details: str = ""):
+        detail = "Failed to parse CS API response"
+        if details:
+            detail += f": {details}"
+        super().__init__(status_code=500, detail=detail)

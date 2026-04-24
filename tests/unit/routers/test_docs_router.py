@@ -24,6 +24,7 @@ class TestDocsRouter:
                 demodiv_router=False,
                 docs_router=False, # Disabled
             ),
+            auth=test_config.auth,
             expose_error_details=True,
         )
 
@@ -52,6 +53,7 @@ class TestDocsRouter:
                 demodiv_router=False,
                 docs_router=True, # Enabled
             ),
+            auth=test_config.auth,
             expose_error_details=True,
         )
 

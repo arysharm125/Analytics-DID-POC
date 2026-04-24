@@ -1,10 +1,13 @@
 """Application configuration with lazy loading and test override support."""
 
 import os
+import secrets
 from dataclasses import dataclass
 from functools import lru_cache
 
 from dotenv import load_dotenv
+
+from app.constants import LOGIN_MODE_CS, LOGIN_MODE_MOCK
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,17 @@ class FeatureFlags:
 
 
 @dataclass(frozen=True)
+class AuthConfig:
+    """Authentication configuration."""
+
+    login_mode: str  # "cs" or "mock"
+    cs_api_url: str  # CS API base URL (e.g., https://dev.epycadvisory.amd.com/csapi)
+    cs_login_url: str  # CS login page URL (e.g., https://dev.epycadvisory.amd.com)
+    mock_jwt_secret: str  # Secret for signing mock JWTs (auto-generated if empty)
+    token_expiry_minutes: int  # JWT expiry time in minutes
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """Root application configuration."""
 
@@ -64,6 +78,7 @@ class AppConfig:
     tokens: TokenConfig
     mongo_pool: MongoPoolConfig
     features: FeatureFlags
+    auth: AuthConfig
     expose_error_details: bool
 
 
@@ -71,8 +86,25 @@ def _load_config_from_env() -> AppConfig:
     """Load configuration from environment variables.
 
     Calls load_dotenv() to ensure .env file is loaded.
+
+    Raises:
+        ValueError: If LOGIN_MODE is not one of the supported values
     """
     load_dotenv(verbose=True)
+
+    # Validate login mode
+    login_mode = os.getenv("LOGIN_MODE", LOGIN_MODE_MOCK)
+    if login_mode not in (LOGIN_MODE_MOCK, LOGIN_MODE_CS):
+        raise ValueError(
+            f"Invalid LOGIN_MODE: '{login_mode}'. "
+            f"Must be one of: {LOGIN_MODE_MOCK}, {LOGIN_MODE_CS}"
+        )
+
+    # Auto-generate mock JWT secret if not provided
+    mock_jwt_secret = os.getenv("MOCK_JWT_SECRET", "")
+    if not mock_jwt_secret:
+        # Generate a secure random secret (32 bytes = 256 bits)
+        mock_jwt_secret = secrets.token_urlsafe(32)
 
     return AppConfig(
         vault=VaultConfig(
@@ -99,6 +131,13 @@ def _load_config_from_env() -> AppConfig:
             demodiv_router=bool(os.getenv("FEATURE_DEMODIV_ROUTER", "")),
             docs_router=bool(os.getenv("FEATURE_DOCS_ROUTER", "")),
             debug_vc_nquads=bool(os.getenv("FEATURE_DEBUG_VC_NQUADS", "")),
+        ),
+        auth=AuthConfig(
+            login_mode=login_mode,
+            cs_api_url=os.getenv("CS_API_URL", ""),
+            cs_login_url=os.getenv("CS_LOGIN_URL", ""),
+            mock_jwt_secret=mock_jwt_secret,
+            token_expiry_minutes=int(os.getenv("TOKEN_EXPIRY_MINUTES", "60")),
         ),
         expose_error_details=bool(os.getenv("EXPOSE_ERROR_DETAILS", "")),
     )

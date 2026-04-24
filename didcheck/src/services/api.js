@@ -5,22 +5,35 @@
  * stripping the /api prefix.
  */
 
+import { useAuthStore } from '@/stores/auth'
+
 const API_BASE = '/api'
 
 /**
- * Generic fetch wrapper with error handling
+ * Generic fetch wrapper with error handling and authentication
  */
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`
+  const authStore = useAuthStore()
 
-  const defaultOptions = {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers
-    }
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers
   }
 
-  const response = await fetch(url, { ...defaultOptions, ...options })
+  // Add Bearer token if authenticated
+  if (authStore.accessToken) {
+    headers['Authorization'] = `Bearer ${authStore.accessToken}`
+  }
+
+  const response = await fetch(url, { ...options, headers })
+
+  // Handle 401 Unauthorized - redirect to login
+  if (response.status === 401) {
+    authStore.logout()
+    authStore.redirectToLogin()
+    throw new Error('Authentication required')
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))

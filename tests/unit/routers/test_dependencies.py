@@ -24,7 +24,7 @@ from app.routers.dependencies import (
     set_vault_dependency,
     verify_advisory_token,
     verify_demodiv_token,
-    verify_didcheck_token,
+    verify_didcheck_user,
     verify_epdw_token,
 )
 
@@ -79,51 +79,108 @@ class TestVerifyAdvisoryToken:
         assert exc_info.value.detail == "Invalid Advisory token"
 
 
-class TestVerifyDidcheckToken:
-    """Tests for verify_didcheck_token dependency."""
+class TestVerifyDidcheckUser:
+    """Tests for verify_didcheck_user dependency."""
 
-    async def test_valid_token_returns_token(self, test_config, override_test_config):
-        """Valid DIDCheck token returns the token string."""
-        token = test_config.tokens.didcheck_access_token
-        result = await verify_didcheck_token(x_api_token=token)
-        assert result == token
+    async def test_valid_bearer_token_returns_user_info(self, test_config, override_test_config):
+        """Valid Bearer token returns UserInfo with email."""
+        from app.services.auth_service import AuthService
 
-    async def test_invalid_token_raises_401(self, override_test_config):
-        """Invalid token raises HTTPException with 401."""
+        auth_service = AuthService(test_config.auth)
+        token = auth_service.create_mock_jwt("testuser@amd.com")
+
+        result = await verify_didcheck_user(authorization=f"Bearer {token}")
+
+        assert result.email == "testuser@amd.com"
+
+    async def test_invalid_bearer_token_raises_401(self, override_test_config):
+        """Invalid Bearer token raises HTTPException with 401."""
         with pytest.raises(HTTPException) as exc_info:
-            await verify_didcheck_token(x_api_token="invalid-token")
+            await verify_didcheck_user(authorization="Bearer invalid-token-12345")
 
         assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Invalid DIDCheck token"
+        assert "Invalid or expired token" in exc_info.value.detail
 
-    async def test_empty_config_token_bypasses_validation(self, test_config):
-        """When didcheck_access_token is not set, validation is bypassed (dev mode)."""
-        # Create config with empty didcheck token
-        from app.config import (
-            override_config,
+    async def test_missing_bearer_prefix_raises_401(self, override_test_config):
+        """Authorization header without 'Bearer ' prefix raises 401."""
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_didcheck_user(authorization="invalid-token-12345")
+
+        assert exc_info.value.status_code == 401
+        assert "Invalid authorization header format" in exc_info.value.detail
+
+    async def test_bearer_without_space_raises_401(self, override_test_config):
+        """Authorization header 'Bearer' without space raises 401."""
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_didcheck_user(authorization="Bearertoken123")
+
+        assert exc_info.value.status_code == 401
+        assert "Invalid authorization header format" in exc_info.value.detail
+
+    async def test_lowercase_bearer_raises_401(self, override_test_config):
+        """Authorization header with lowercase 'bearer' raises 401."""
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_didcheck_user(authorization="bearer token123")
+
+        assert exc_info.value.status_code == 401
+        assert "Invalid authorization header format" in exc_info.value.detail
+
+    async def test_empty_token_after_bearer_raises_401(self, override_test_config):
+        """Authorization header 'Bearer ' with empty token raises 401."""
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_didcheck_user(authorization="Bearer ")
+
+        assert exc_info.value.status_code == 401
+        assert "Invalid or expired token" in exc_info.value.detail
+
+    async def test_bearer_with_only_whitespace_raises_401(self, override_test_config):
+        """Authorization header 'Bearer ' with only whitespace raises 401."""
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_didcheck_user(authorization="Bearer    ")
+
+        assert exc_info.value.status_code == 401
+        assert "Invalid or expired token" in exc_info.value.detail
+
+    async def test_just_bearer_no_space_raises_401(self, override_test_config):
+        """Authorization header with just 'Bearer' (no space or token) raises 401."""
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_didcheck_user(authorization="Bearer")
+
+        assert exc_info.value.status_code == 401
+        assert "Invalid authorization header format" in exc_info.value.detail
+
+    async def test_expired_bearer_token_raises_401(self, test_config, override_test_config):
+        """Expired Bearer token raises HTTPException with 401."""
+        from datetime import datetime, timedelta, timezone
+
+        import jwt
+
+        # Create an expired JWT (expired 1 hour ago)
+        now = datetime.now(timezone.utc)
+        expired_time = now - timedelta(hours=1)
+
+        claims = {
+            "sub": "testuser@amd.com",
+            "first_name": "testuser",
+            "last_name": "",
+            "org": "amd",
+            "role_name": "mock_user",
+            "role_id": 0,
+            "iat": expired_time - timedelta(hours=1),
+            "exp": expired_time,  # Expired 1 hour ago
+        }
+
+        expired_token = jwt.encode(
+            claims,
+            test_config.auth.mock_jwt_secret,
+            algorithm="HS256"
         )
 
-        config = AppConfig(
-            vault=VaultConfig(addr="", token="", mount="secret", local_mock_path=""),
-            tokens=TokenConfig(
-                epdw_access_token="epdw",
-                advisory_access_token="advisory",
-                didcheck_access_token="",  # Empty token
-                demodiv_access_token="",
-            ),
-            mongo_pool=test_config.mongo_pool,
-            features=test_config.features,
-            expose_error_details=True,
-        )
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_didcheck_user(authorization=f"Bearer {expired_token}")
 
-        override_config(config)
-
-        try:
-            # Any token should be accepted when config token is empty
-            result = await verify_didcheck_token(x_api_token="any-token-works")
-            assert result == "any-token-works"
-        finally:
-            override_config(None)
+        assert exc_info.value.status_code == 401
+        assert "Invalid or expired token" in exc_info.value.detail
 
 
 class TestVerifyDemoDivToken:
@@ -190,6 +247,7 @@ class TestGetVaultClient:
             ),
             mongo_pool=test_config.mongo_pool,
             features=test_config.features,
+            auth=test_config.auth,
             expose_error_details=True,
         )
 
@@ -229,6 +287,7 @@ class TestGetVaultClient:
             ),
             mongo_pool=test_config.mongo_pool,
             features=test_config.features,
+            auth=test_config.auth,
             expose_error_details=True,
         )
 
@@ -644,6 +703,7 @@ class TestResetAllDependencies:
             ),
             mongo_pool=test_config.mongo_pool,
             features=test_config.features,
+            auth=test_config.auth,
             expose_error_details=True,
         )
         override_config(custom_config)

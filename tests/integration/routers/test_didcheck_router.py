@@ -49,11 +49,7 @@ def test_client(db_connector, vault_service, override_test_config):
     return TestClient(app)
 
 
-@pytest.fixture
-def didcheck_headers(test_config):
-    """Headers with valid didcheck API token."""
-    return {"X-API-Token": test_config.tokens.didcheck_access_token}
-
+# Note: didcheck_headers is now provided by tests/conftest.py with Bearer token
 
 @pytest.fixture
 def epdw_headers(test_config):
@@ -556,18 +552,28 @@ class TestDIDCheckRouterFullWorkflow:
         assert len(page3_data["descendants"]) == 1  # Only 1 item on last page
         assert page3_data["has_more"] is False
 
-    def test_missing_api_token_returns_422(self, test_client):
-        """Test that missing API token returns 422 for missing required header."""
+    def test_missing_bearer_token_returns_422(self, test_client):
+        """Test that missing Bearer token returns 422 for missing required header."""
 
         response = test_client.get("/didcheck/11111111-2222-3333-4444-555555555555/vc.json")
         assert response.status_code == 422
 
-    def test_invalid_api_token_returns_401(self, test_client):
-        """Test that invalid API token returns 401 Unauthorized."""
+    def test_invalid_bearer_token_returns_401(self, test_client):
+        """Test that invalid Bearer token returns 401 Unauthorized."""
 
         response = test_client.get(
             "/didcheck/11111111-2222-3333-4444-555555555555/vc.json",
-            headers={"X-API-Token": "invalid-token"},
+            headers={"Authorization": "Bearer invalid-token-12345"},
+        )
+        assert response.status_code == 401
+
+    def test_malformed_authorization_header_returns_401(self, test_client):
+        """Test that malformed Authorization header returns 401."""
+
+        # Missing "Bearer " prefix
+        response = test_client.get(
+            "/didcheck/11111111-2222-3333-4444-555555555555/vc.json",
+            headers={"Authorization": "invalid-token-12345"},
         )
         assert response.status_code == 401
 
