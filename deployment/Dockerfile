@@ -71,6 +71,11 @@ RUN pip install --no-cache-dir /wheels/* \
  && pip uninstall -y ecdsa || true \
  && rm -rf /wheels
 
+# Copy AMD root CA certificate and update trust store
+# This is needed to access CS_API in https mode.
+COPY deployment/certs/amd-corporate-root-ca.crt /usr/local/share/ca-certificates/amd-corporate-root-ca.crt
+RUN update-ca-certificates
+
 # Copy application code (allowlist approach)
 COPY app/ /app/app/
 COPY requirements.txt /app/
@@ -82,7 +87,8 @@ COPY --from=build /app/app/version_metadata.py /app/app/version_metadata.py
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=45603
+    PORT=45603 \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 USER appuser
 
