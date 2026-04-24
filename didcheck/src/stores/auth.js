@@ -112,8 +112,8 @@ export const useAuthStore = defineStore('auth', () => {
       // Redirect to mock login page
       window.location.href = '/login'
     } else if (isCSMode.value && authConfig.value?.cs_login_url) {
-      // Redirect to CS login page
-      window.location.href = authConfig.value.cs_login_url
+      // Redirect to CS login instructions page
+      window.location.href = '/cs-login'
     } else {
       // Fallback to mock login
       window.location.href = '/login'

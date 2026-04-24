@@ -3,6 +3,7 @@ import HomeView from '@/views/HomeView.vue'
 import IdentifierCheck from '@/views/IdentifierCheck.vue'
 import VCValidationView from '@/views/VCValidationView.vue'
 import LoginView from '@/views/LoginView.vue'
+import CSLoginInstructionsView from '@/views/CSLoginInstructionsView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const routes = [
@@ -10,6 +11,12 @@ const routes = [
     path: '/login',
     name: 'login',
     component: LoginView,
+    meta: { public: true }
+  },
+  {
+    path: '/cs-login',
+    name: 'cs-login',
+    component: CSLoginInstructionsView,
     meta: { public: true }
   },
   {
