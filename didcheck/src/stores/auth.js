@@ -6,27 +6,33 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
 /**
- * Helper function to read jwt_token from cookie
+ * Helper function to read jwt_token or access_token from cookie
  * @returns {string|null} The JWT token or null if not found
  */
 function getTokenFromCookie() {
   const cookies = document.cookie.split(';')
+  // Try jwt_token first, then fall back to access_token
   const jwtCookie = cookies.find(c => c.trim().startsWith('jwt_token='))
   if (jwtCookie) {
     return jwtCookie.split('=')[1]?.trim() || null
+  }
+  const accessCookie = cookies.find(c => c.trim().startsWith('access_token='))
+  if (accessCookie) {
+    return accessCookie.split('=')[1]?.trim() || null
   }
   return null
 }
 
 /**
- * Helper function to clear jwt_token cookie
+ * Helper function to clear jwt_token and access_token cookies
  */
 function clearTokenCookie() {
-  // Clear cookie by setting expiration to past date
+  // Clear both possible cookie names by setting expiration to past date
   // Use conditional domain: .amd.com for production, no domain for localhost
   const isProduction = window.location.hostname.endsWith('.amd.com')
   const domainPart = isProduction ? '; domain=.amd.com' : ''
   document.cookie = `jwt_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/${domainPart}`
+  document.cookie = `access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/${domainPart}`
 }
 
 export const useAuthStore = defineStore('auth', () => {
