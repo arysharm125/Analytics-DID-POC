@@ -5,6 +5,9 @@
 # Ignore Python cache directories
 __pycache__/
 
+# Ignore python virtual env
+.venv
+
 # Ignore auto-generated version metadata (generated during Docker build)
 app/version_metadata.py
 

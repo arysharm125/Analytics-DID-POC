@@ -151,6 +151,7 @@ example-excelreport-dev: venv-check ## Run excel_report example dev environment
 
 owasp-depcheck: ## Run OWASP depedency-check tool in both front and back end code
 	@docker run --rm \
+		--user "$$(id -u)" \
 		-v "$(PWD):/src" \
 		registry.gitlab.com/gitlab-ci-utils/docker-dependency-check:latest \
 		/usr/share/dependency-check/bin/dependency-check.sh \
