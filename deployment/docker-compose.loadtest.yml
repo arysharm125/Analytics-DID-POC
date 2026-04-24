@@ -7,7 +7,7 @@ networks:
 
 services:
   mongodb:
-    image: mongo:6.0
+    image: mongo:8.0
     container_name: didsvc-loadtest-mongodb
     restart: unless-stopped
     volumes:
