@@ -63,5 +63,4 @@ $depDesc.replaceAll("\n", " ").replaceAll("\s+", " ").trim()
     #end
 #end
 
-Please check the attached HTML report to see full descriptions.
 Vulnerabilities might be reoccurring if they where suppressed (in the suppression-xml file) using an `until` date.
