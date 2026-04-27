@@ -100,7 +100,7 @@ didsvc-test-coverage: venv-check ## Run all tests and generate coverage report
 	coverage html
 
 didsvc-loadtest-up: ## Rebuild/restart loadtest containers
-	docker compose -f deployment/docker-compose.loadtest.yml down
+	docker compose -f deployment/docker-compose.loadtest.yml down --remove-orphans -v
 	docker compose -f deployment/docker-compose.loadtest.yml build
 	docker compose -f deployment/docker-compose.loadtest.yml up -d
 	sleep 1s
