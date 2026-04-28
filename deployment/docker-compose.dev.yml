@@ -1,11 +1,13 @@
-# Docker compose file for use in DEV environment (no SSL/TLS).
-# Mounts the nginx reverse proxy to port 8092 and the DIDCheck SPA in port 8090.
+version: "3.9"
 
 networks:
   default:
     name: didsvc-dev
 
 services:
+  # =========================
+  # 🔹 API SERVICE
+  # =========================
   api:
     container_name: didsvc-dev-api
     build:
@@ -16,21 +18,12 @@ services:
       - /etc/didsvc/env
     restart: always
     expose:
-      - "8000"   # private, nginx will access this
+      - "8000"
 
-  nginx: # Reverse nginx proxy in front of backend API (didsvc.amd.com)
-    image: nginx:1.29.6-alpine3.23-slim
-    container_name: didsvc-dev-nginx
-    restart: always
-    volumes:
-      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - api
-    expose:
-      - "8090"
-
-
-  didcheck:  # Nginx for didcheck SPA frontend (didcheck.amd.com)
+  # =========================
+  # 🔹 DIDCHECK FRONTEND
+  # =========================
+  didcheck:
     container_name: didsvc-dev-didcheck
     build:
       context: ..
@@ -45,4 +38,20 @@ services:
     environment:
       - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
     expose:
-      - "8092"
+      - "8090"
+
+  # =========================
+  # 🔹 PUBLIC NGINX (TLS GATEWAY)
+  # =========================
+  nginx-public:
+    container_name: nginx-public
+    build:
+      context: /home/matheus/nginx   # <-- where your Dockerfile + conf.d + ssl exist
+    restart: always
+    depends_on:
+      - api
+      - didcheck
+    ports:
+      - "443:443"
+    networks:
+      - default
