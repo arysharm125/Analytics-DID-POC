@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
     from app.database import MongoConnector
+    from app.services.auth_service import AuthService
+    from app.services.auth_types import UserInfo
     from app.services.did_service import DIDService
     from app.services.vault_protocol import VaultClientProtocol
     from app.services.vault_service import VaultService
@@ -73,36 +75,44 @@ async def verify_advisory_token(
     return x_api_token
 
 
-async def verify_didcheck_token(
-    x_api_token: str = Header(
+async def verify_didcheck_user(
+    authorization: str = Header(
         ...,
-        description="DIDCheck API access token required for authentication.",
-        openapi_examples={"normal":{"value":EXAMPLE_API_TOKEN}},
-        alias="X-API-Token",
+        description="Bearer token for user authentication",
+        alias="Authorization",
     )
-) -> str:
+) -> UserInfo:
     """
-    Dependency that validates the DIDCheck API token from the request header.
+    Validate user authentication for DIDCheck routes.
 
-    Uses lazy config loading to allow test overrides.
-    In development, if DIDCHECK_ACCESS_TOKEN is not set, token validation is bypassed.
+    - In CS mode: Validates token against CS API
+    - In Mock mode: Validates mock JWT signature
 
     Raises:
-        HTTPException: 401 if token is invalid (when token is configured)
+        HTTPException: 401 if token is invalid or expired
 
     Returns:
-        The validated token string
+        UserInfo with email and permissions
     """
-    config = get_config()
-    expected_token = config.tokens.didcheck_access_token
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authorization header format. Expected 'Bearer <token>'",
+        )
 
-    # Allow bypass in development if token not configured
-    if not expected_token:
-        return x_api_token
+    token = authorization[7:]  # Strip "Bearer "
 
-    if not secrets.compare_digest(x_api_token, expected_token):
-        raise HTTPException(status_code=401, detail="Invalid DIDCheck token")
-    return x_api_token
+    auth_service = get_auth_service()
+
+    user = await auth_service.validate_token(token)
+
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token",
+        )
+
+    return user
 
 async def verify_demodiv_token(
     x_api_token: str = Header(
@@ -138,8 +148,8 @@ EPDWTokenDep = Annotated[str, Depends(verify_epdw_token)]
 # Advisory-specific token dependency
 AdvisoryTokenDep = Annotated[str, Depends(verify_advisory_token)]
 
-# DIDCheck-specific token dependency
-DIDCheckTokenDep = Annotated[str, Depends(verify_didcheck_token)]
+# DIDCheck user authentication dependency
+DIDCheckUserDep = Annotated["UserInfo", Depends(verify_didcheck_user)]
 
 # Demodiv-specific token dependency
 DemoDivTokenDep = Annotated[str, Depends(verify_demodiv_token)]
@@ -395,6 +405,67 @@ def set_did_service_dependency(did_svc: DIDService) -> None:
 DIDServiceDep = Annotated["DIDService", Depends(get_did_service)]
 
 
+# =============================================================================
+# AuthService Dependency
+# =============================================================================
+
+_auth_service: AuthService | None = None
+_auth_service_initialized: bool = False
+
+
+def get_auth_service() -> AuthService:
+    """FastAPI dependency to get AuthService instance.
+
+    The AuthService is lazily initialized on first access and cached
+    for subsequent requests. It uses the current configuration to
+    determine authentication mode (CS or Mock).
+
+    Returns:
+        AuthService instance
+
+    Example:
+        @router.post("/login")
+        async def login(auth: AuthServiceDep):
+            user = await auth.validate_token(token)
+    """
+    global _auth_service, _auth_service_initialized
+
+    if not _auth_service_initialized:
+        from app.services.auth_service import AuthService
+        config = get_config()
+        _auth_service = AuthService(config.auth)
+        _auth_service_initialized = True
+
+    return _auth_service  # type: ignore
+
+
+def reset_auth_service_dependency() -> None:
+    """Reset the AuthService dependency cache.
+
+    Use this in tests to clear the cached AuthService.
+    """
+    global _auth_service, _auth_service_initialized
+    _auth_service = None
+    _auth_service_initialized = False
+
+
+def set_auth_service_dependency(auth_svc: AuthService) -> None:
+    """Set the AuthService dependency directly.
+
+    Use this in tests to inject a mock or test AuthService.
+
+    Args:
+        auth_svc: The AuthService instance to use
+    """
+    global _auth_service, _auth_service_initialized
+    _auth_service = auth_svc
+    _auth_service_initialized = True
+
+
+# Type alias for AuthService dependency injection
+AuthServiceDep = Annotated["AuthService", Depends(get_auth_service)]
+
+
 @asynccontextmanager
 async def did_service_lifespan() -> AsyncGenerator[None, None]:
     """Control lifespan of global DIDService instance."""
@@ -413,11 +484,12 @@ async def did_service_lifespan() -> AsyncGenerator[None, None]:
 def reset_all_dependencies() -> None:
     """Reset all cached dependencies.
 
-    Use this in tests to clear all cached services (vault, database, and DIDService).
+    Use this in tests to clear all cached services (vault, database, DIDService, and AuthService).
     Should be called in test teardown to ensure clean state.
     """
     reset_vault_client()
     reset_vault_dependency()
     reset_db_dependency()
     reset_did_service_dependency()
+    reset_auth_service_dependency()
     reset_config_cache()

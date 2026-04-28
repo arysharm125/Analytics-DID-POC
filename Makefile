@@ -127,6 +127,7 @@ didsvc-audit: venv-check ## Perform a pip-audit in backend dependencies
 
 didcheck-install: nvm-check ## Install dependencies for DIDCheck development
 	(cd didcheck && npm install)
+	(cd didcheck/tests/backend-compat && npm install)
 
 didcheck-dev: nvm-check ## Run DIDCheck local development server
 	(cd didcheck && npm run dev)

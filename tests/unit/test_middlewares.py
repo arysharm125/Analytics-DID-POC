@@ -14,6 +14,7 @@ from app.config import (
     VaultConfig,
     override_config,
 )
+from app.constants import LOGIN_MODE_MOCK
 from app.middlewares import (
     _build_error_response,
     exception_handler_middleware,
@@ -83,6 +84,8 @@ class TestBuildErrorResponse:
     def test_includes_traceback_when_expose_error_details_is_true(self):
         """Traceback should be included when config.expose_error_details=True."""
         # Create test config with expose_error_details=True
+        from app.config import AuthConfig
+
         test_config = AppConfig(
             vault=VaultConfig(addr="", token="", mount="", local_mock_path=""),
             tokens=TokenConfig(
@@ -103,6 +106,13 @@ class TestBuildErrorResponse:
                 debug_vc_nquads=False,
                 demodiv_router=False,
                 docs_router=False,
+            ),
+            auth=AuthConfig(
+                login_mode=LOGIN_MODE_MOCK,
+                cs_api_url="",
+                cs_login_url="",
+                mock_jwt_secret="test-jwt-secret-min-32-bytes-length",
+                token_expiry_minutes=60,
             ),
             expose_error_details=True,
         )
@@ -130,6 +140,8 @@ class TestBuildErrorResponse:
     def test_excludes_traceback_when_expose_error_details_is_false(self):
         """Traceback should be excluded when config.expose_error_details=False."""
         # Create test config with expose_error_details=False
+        from app.config import AuthConfig
+
         test_config = AppConfig(
             vault=VaultConfig(addr="", token="", mount="", local_mock_path=""),
             tokens=TokenConfig(
@@ -150,6 +162,13 @@ class TestBuildErrorResponse:
                 debug_vc_nquads=False,
                 demodiv_router=False,
                 docs_router=False,
+            ),
+            auth=AuthConfig(
+                login_mode=LOGIN_MODE_MOCK,
+                cs_api_url="",
+                cs_login_url="",
+                mock_jwt_secret="test-jwt-secret-min-32-bytes-length",
+                token_expiry_minutes=60,
             ),
             expose_error_details=False,
         )

@@ -85,6 +85,9 @@ export default defineConfig(({ mode }) => {
       }
     },
     server: {
+      allowedHosts: [
+        "localhost", "localmock.amd.com",
+      ],
       proxy: { // Upstream proxy to /api.
         '/api': {
           target: 'http://localhost:8000',

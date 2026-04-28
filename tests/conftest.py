@@ -18,6 +18,7 @@ import pytest
 
 from app.config import (
     AppConfig,
+    AuthConfig,
     FeatureFlags,
     MongoCollectionConfig,
     MongoPoolConfig,
@@ -26,6 +27,7 @@ from app.config import (
     override_config,
     reset_config_cache,
 )
+from app.constants import LOGIN_MODE_MOCK
 from app.database import MongoConnector
 
 
@@ -256,6 +258,13 @@ def test_config() -> AppConfig:
             demodiv_router=True,
             docs_router=True,
         ),
+        auth=AuthConfig(
+            login_mode=LOGIN_MODE_MOCK,
+            cs_api_url="",
+            cs_login_url="",
+            mock_jwt_secret="test-secret-for-testing-only-do-not-use-in-production",
+            token_expiry_minutes=60,
+        ),
         expose_error_details=True,
     )
 
@@ -470,3 +479,31 @@ def sample_vp(sample_vc_with_proof) -> dict:
         "holder": "did:web:did.amd.com:holder123",
         "verifiableCredential": [sample_vc_with_proof],
     }
+
+
+# =============================================================================
+# Authentication Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def mock_bearer_token(test_config) -> str:
+    """Generate a valid mock JWT for testing.
+
+    Returns:
+        A valid Bearer token string for use in didcheck endpoints
+    """
+    from app.services.auth_service import AuthService
+
+    auth_service = AuthService(test_config.auth)
+    return auth_service.create_mock_jwt("testuser@amd.com")
+
+
+@pytest.fixture
+def didcheck_headers(mock_bearer_token) -> dict:
+    """Headers with valid Bearer token for didcheck endpoints.
+
+    Returns:
+        Dictionary with Authorization header containing Bearer token
+    """
+    return {"Authorization": f"Bearer {mock_bearer_token}"}

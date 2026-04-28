@@ -77,12 +77,12 @@ class TestArtefactVCNquads:
         return result.version_uid
 
     @pytest.fixture
-    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config, didcheck_headers):
         """Create a test client with DIDService dependency override and auth headers."""
         set_did_service_dependency(did_service_no_migrations)
         vault_service.ensure_division_signing_key("epdw")
         client = TestClient(app)
-        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+        return AuthenticatedTestClient(client, didcheck_headers)
 
     def test_returns_text_plain_content_type(
         self, client_with_service, test_artefact_uid
@@ -142,7 +142,7 @@ class TestArtefactVCNquads:
         assert response.status_code == 404
 
     def test_returns_404_when_feature_flag_disabled(
-        self, did_service_no_migrations, test_artefact_uid, test_config
+        self, did_service_no_migrations, test_artefact_uid, test_config, didcheck_headers
     ):
         """Endpoint should return 404 when FEATURE_DEBUG_VC_NQUADS is disabled."""
         # Create config with debug flag disabled
@@ -156,6 +156,7 @@ class TestArtefactVCNquads:
                 demodiv_router=False,
                 docs_router=False,
             ),
+            auth=test_config.auth,
             expose_error_details=True,
         )
 
@@ -165,7 +166,7 @@ class TestArtefactVCNquads:
 
         response = client.get(
             f"/didcheck/{test_artefact_uid}/vc.nq",
-            headers={"X-API-Token": "test-didcheck-token"}
+            headers=didcheck_headers
         )
 
         assert response.status_code == 404
@@ -222,7 +223,7 @@ class TestArtefactVCNquads:
         """Endpoint should return 401 when provided with an invalid token."""
         response = client_with_service.get(
             f"/didcheck/{test_artefact_uid}/vc.nq",
-            headers={"X-API-Token": "wrong-token"}
+            headers={"Authorization": "Bearer invalid-token"}
         )
 
         assert response.status_code == 401
@@ -297,12 +298,12 @@ class TestArtefactVersions:
         }
 
     @pytest.fixture
-    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config, didcheck_headers):
         """Create a test client with DIDService dependency override and auth headers."""
         set_did_service_dependency(did_service_no_migrations)
         vault_service.ensure_division_signing_key("epdw")
         client = TestClient(app)
-        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+        return AuthenticatedTestClient(client, didcheck_headers)
 
     def test_returns_all_versions_for_external_uid(
         self, client_with_service, multiple_versions
@@ -383,7 +384,7 @@ class TestArtefactVersions:
         """Endpoint should return 401 when provided with an invalid token."""
         response = client_with_service.get(
             f"/didcheck/{multiple_versions['external_uid']}/versions",
-            headers={"X-API-Token": "wrong-token"}
+            headers={"Authorization": "Bearer invalid-token"}
         )
 
         assert response.status_code == 401
@@ -424,12 +425,12 @@ class TestArtefactVC:
         return result.version_uid
 
     @pytest.fixture
-    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config, didcheck_headers):
         """Create a test client with DIDService dependency override and auth headers."""
         set_did_service_dependency(did_service_no_migrations)
         vault_service.ensure_division_signing_key("epdw")
         client = TestClient(app)
-        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+        return AuthenticatedTestClient(client, didcheck_headers)
 
     def test_returns_valid_vc_structure(self, client_with_service, test_artefact_uid):
         """Endpoint should return a valid VC structure."""
@@ -470,7 +471,7 @@ class TestArtefactVC:
         """Endpoint should return 401 when provided with an invalid token."""
         response = client_with_service.get(
             f"/didcheck/{test_artefact_uid}/vc.json",
-            headers={"X-API-Token": "wrong-token"}
+            headers={"Authorization": "Bearer invalid-token"}
         )
 
         assert response.status_code == 401
@@ -507,12 +508,12 @@ class TestDIDOverview:
         return result.version_uid
 
     @pytest.fixture
-    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config, didcheck_headers):
         """Create a test client with DIDService dependency override and auth headers."""
         set_did_service_dependency(did_service_no_migrations)
         vault_service.ensure_division_signing_key("epdw")
         client = TestClient(app)
-        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+        return AuthenticatedTestClient(client, didcheck_headers)
 
     def test_returns_overview_for_latest_version(self, client_with_service, test_artefact_uid):
         """Endpoint should return overview for the latest version."""
@@ -616,7 +617,7 @@ class TestDIDOverview:
         """Endpoint should return 401 when provided with an invalid token."""
         response = client_with_service.get(
             f"/didcheck/{test_artefact_uid}/overview",
-            headers={"X-API-Token": "wrong-token"}
+            headers={"Authorization": "Bearer invalid-token"}
         )
 
         assert response.status_code == 401
@@ -647,12 +648,12 @@ class TestArtefactFull:
         return result.version_uid
 
     @pytest.fixture
-    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config, didcheck_headers):
         """Create a test client with DIDService dependency override and auth headers."""
         set_did_service_dependency(did_service_no_migrations)
         vault_service.ensure_division_signing_key("epdw")
         client = TestClient(app)
-        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+        return AuthenticatedTestClient(client, didcheck_headers)
 
     def test_returns_all_artefact_fields(self, client_with_service, test_artefact_uid):
         """Endpoint should return all artefact fields."""
@@ -723,7 +724,7 @@ class TestArtefactFull:
         """Endpoint should return 401 when provided with an invalid token."""
         response = client_with_service.get(
             f"/didcheck/{test_artefact_uid}/artefact.json",
-            headers={"X-API-Token": "wrong-token"}
+            headers={"Authorization": "Bearer invalid-token"}
         )
 
         assert response.status_code == 401
@@ -738,12 +739,12 @@ class TestArtefactProvenance:
     """Tests for the /{uid}/provenance endpoint."""
 
     @pytest.fixture
-    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config, didcheck_headers):
         """Create a test client with DIDService dependency override and auth headers."""
         set_did_service_dependency(did_service_no_migrations)
         vault_service.ensure_division_signing_key("epdw")
         client = TestClient(app)
-        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+        return AuthenticatedTestClient(client, didcheck_headers)
 
     def test_returns_provenance_tree(
         self, client_with_service, did_service_no_migrations, sample_uuid, sample_uuid_2
@@ -822,7 +823,7 @@ class TestArtefactProvenance:
 
         response = client_with_service.get(
             f"/didcheck/{artefact.version_uid}/provenance",
-            headers={"X-API-Token": "wrong-token"}
+            headers={"Authorization": "Bearer invalid-token"}
         )
 
         assert response.status_code == 401
@@ -837,13 +838,13 @@ class TestDivisionDIDDocument:
     """Tests for the /{division}/did.json endpoint."""
 
     @pytest.fixture
-    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config, didcheck_headers):
         """Create a test client with DIDService dependency override and auth headers."""
         set_did_service_dependency(did_service_no_migrations)
         vault_service.ensure_division_signing_key("epdw")
         vault_service.ensure_division_signing_key("advisory")
         client = TestClient(app)
-        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+        return AuthenticatedTestClient(client, didcheck_headers)
 
     def test_returns_valid_did_document_structure(self, client_with_service):
         """Endpoint should return a valid DID document structure."""
@@ -897,7 +898,7 @@ class TestDivisionDIDDocument:
         """Endpoint should return 401 when provided with an invalid token."""
         response = client_with_service.get(
             "/didcheck/epdw/did.json",
-            headers={"X-API-Token": "wrong-token"}
+            headers={"Authorization": "Bearer invalid-token"}
         )
 
         assert response.status_code == 401
@@ -948,12 +949,12 @@ class TestArtefactDescendants:
         }
 
     @pytest.fixture
-    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config, didcheck_headers):
         """Create a test client with DIDService dependency override and auth headers."""
         set_did_service_dependency(did_service_no_migrations)
         vault_service.ensure_division_signing_key("epdw")
         client = TestClient(app)
-        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+        return AuthenticatedTestClient(client, didcheck_headers)
 
     def test_returns_descendants_for_existing_artefact(
         self, client_with_service, parent_with_descendants
@@ -1059,7 +1060,7 @@ class TestArtefactDescendants:
         """Endpoint should return 401 when provided with an invalid token."""
         response = client_with_service.get(
             f"/didcheck/{parent_with_descendants['parent_uid']}/descendants",
-            headers={"X-API-Token": "wrong-token"}
+            headers={"Authorization": "Bearer invalid-token"}
         )
 
         assert response.status_code == 401
@@ -1183,12 +1184,12 @@ class TestArtefactVersionDiff:
         }
 
     @pytest.fixture
-    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config):
+    def client_with_service(self, did_service_no_migrations, vault_service, override_test_config, didcheck_headers):
         """Create a test client with DIDService dependency override and auth headers."""
         set_did_service_dependency(did_service_no_migrations)
         vault_service.ensure_division_signing_key("epdw")
         client = TestClient(app)
-        return AuthenticatedTestClient(client, {"X-API-Token": "test-didcheck-token"})
+        return AuthenticatedTestClient(client, didcheck_headers)
 
     def test_returns_successful_response_with_changes(self, client_with_service, multiple_versions):
         """Endpoint should return 200 with structured diff when versions differ."""
@@ -1355,7 +1356,7 @@ class TestArtefactVersionDiff:
 
         response = client_with_service.get(
             f"/didcheck/{v1_uid}/diff/{v2_uid}",
-            headers={"X-API-Token": "wrong-token"}
+            headers={"Authorization": "Bearer invalid-token"}
         )
 
         assert response.status_code == 401

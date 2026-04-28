@@ -17,7 +17,7 @@ from app.routers.basetypes import (
     UUIDString,
     VersionInfo,
 )
-from app.routers.dependencies import APITokenDep401Response, DIDCheckTokenDep, DIDServiceDep
+from app.routers.dependencies import APITokenDep401Response, DIDCheckUserDep, DIDServiceDep
 from app.routers.responses import not_found_response
 from app.services.did_service import ProvenanceNode as ServiceProvenanceNode
 
@@ -351,7 +351,7 @@ app = APIRouter(tags=["DID Check"], prefix="/didcheck")
 @app.get("/{uid}/vc.json", responses={**APITokenDep401Response, **not_found_response()})
 def artefact_vc(
     uid: PathUUID,
-    api_token: DIDCheckTokenDep,
+    user: DIDCheckUserDep,
     did_svc: DIDServiceDep,
 ):
     """Return a Verifiable Credential with proofs for a Digital Artefact."""
@@ -361,7 +361,7 @@ def artefact_vc(
 @app.get("/{uid}/overview", responses={**APITokenDep401Response, **not_found_response()}, response_model_exclude_none=True)
 def did_overview(
     uid: PathUUID,
-    api_token: DIDCheckTokenDep,
+    user: DIDCheckUserDep,
     did_svc: DIDServiceDep,
 ) -> DIDOverviewResponse:
     """Return basic information about a digital artefact.
@@ -417,7 +417,7 @@ def did_overview(
 )
 def artefact_full(
     uid: PathUUID,
-    api_token: DIDCheckTokenDep,
+    user: DIDCheckUserDep,
     did_svc: DIDServiceDep,
 ) -> FullArtefactInfo:
     """Return the full digital artefact data including metadata.
@@ -466,7 +466,7 @@ def _service_node_to_response(node: ServiceProvenanceNode) -> ProvenanceNode:
 )
 def artefact_provenance(
     uid: PathUUID,
-    api_token: DIDCheckTokenDep,
+    user: DIDCheckUserDep,
     did_svc: DIDServiceDep,
 ) -> ProvenanceTreeResponse:
     """Return the recursive provenance tree for a digital artefact.
@@ -501,7 +501,7 @@ def artefact_provenance(
 )
 def artefact_versions(
     uid: PathUUID,
-    api_token: DIDCheckTokenDep,
+    user: DIDCheckUserDep,
     did_svc: DIDServiceDep,
 ) -> ArtefactVersionsResponse:
     """Return all versions of a digital artefact.
@@ -543,7 +543,7 @@ def artefact_versions(
 )
 def artefact_descendants(
     uid: PathUUID,
-    api_token: DIDCheckTokenDep,
+    user: DIDCheckUserDep,
     did_svc: DIDServiceDep,
     page: int = 1,
     page_size: int = 20,
@@ -612,7 +612,7 @@ def artefact_version_diff(
             examples=["b8ff3b79-863f-4fa9-84ba-0067663f2b04"],
         ),
     ],
-    api_token: DIDCheckTokenDep,
+    user: DIDCheckUserDep,
     did_svc: DIDServiceDep,
 ) -> VersionDiffResponse:
     """Compare two versions of an artefact and return structured diff.
@@ -696,7 +696,7 @@ def artefact_version_diff(
 )
 def artefact_vc_nquads(
     uid: PathUUID,
-    api_token: DIDCheckTokenDep,
+    user: DIDCheckUserDep,
     did_svc: DIDServiceDep,
 ) -> str:
     """[DEBUG] Return the canonicalized VC in N-Quads format.
@@ -748,7 +748,7 @@ PathDivision = Annotated[
 @app.get("/{division}/did.json", responses={**APITokenDep401Response, **not_found_response("Division")})
 def division_did_document(
     division: PathDivision,
-    api_token: DIDCheckTokenDep,
+    user: DIDCheckUserDep,
     did_svc: DIDServiceDep,
 ):
     """Return the DID document for a division.
