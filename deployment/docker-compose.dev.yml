@@ -46,7 +46,7 @@ services:
   nginx-public:
     container_name: nginx-public
     build:
-      context: /home/matheus/nginx   # <-- where your Dockerfile + conf.d + ssl exist
+      context: /home/aryan/nginx   # <-- where your Dockerfile + conf.d + ssl exist
     restart: always
     depends_on:
       - api
