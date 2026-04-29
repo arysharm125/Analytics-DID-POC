@@ -43,8 +43,8 @@ services:
   # =========================
   # 🔹 PUBLIC NGINX (TLS GATEWAY)
   # =========================
-  nginx-public:
-    container_name: nginx-public
+  didsvc-dev-nginx:
+    container_name: didsvc-dev-nginx
     build:
       context: /home/aryan/nginx   # <-- where your Dockerfile + conf.d + ssl exist
     restart: always
