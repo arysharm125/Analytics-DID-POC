@@ -46,7 +46,7 @@ services:
   didsvc-dev-nginx:
     container_name: didsvc-dev-nginx
     build:
-      context: /home/aryan/nginx   # <-- where your Dockerfile + conf.d + ssl exist
+      context: /etc/nginx   # <-- where your Dockerfile + conf.d + ssl exist
     restart: always
     depends_on:
       - api
