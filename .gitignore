@@ -4,8 +4,6 @@
 .env.dev
 # Ignore Python cache directories
 __pycache__/
-agent.jar
-deployment/docker-compose.dev.yml.bkp
 # Ignore python virtual env
 .venv
 

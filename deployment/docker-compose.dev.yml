@@ -44,14 +44,16 @@ services:
   # 🔹 PUBLIC NGINX (TLS GATEWAY)
   # =========================
   didsvc-dev-nginx:
-    container_name: didsvc-dev-nginx
-    build:
-      context: /etc/nginx   # <-- where your Dockerfile + conf.d + ssl exist
-    restart: always
-    depends_on:
-      - api
-      - didcheck
-    ports:
-      - "443:443"
-    networks:
-      - default
+  container_name: didsvc-dev-nginx
+  image: nginx:1.29.6-alpine
+  restart: always
+  depends_on:
+    - api
+    - didcheck
+  ports:
+    - "443:443"
+  volumes:
+    - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    - ./nginx/ssl:/etc/nginx/ssl:ro
+  networks:
+    - default
